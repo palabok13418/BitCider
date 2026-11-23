@@ -3,6 +3,9 @@
   "name": "bitcider",
   "main": "cloudflare/worker.mjs",
   "compatibility_date": "2026-11-22",
+  "vars": {
+    "BITCIDER_BACKEND_ORIGIN": "https://bitcider.de.deplexo.com"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
