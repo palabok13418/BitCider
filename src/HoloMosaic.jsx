@@ -696,8 +696,9 @@ const HoloMosaic = ({
     const ready = () => {
       if (surface) return true;
       if (!job || !parallel || !gl.getProgramParameter(job.program, parallel.COMPLETION_STATUS_KHR)) return false;
-      surface = finishProgram(gl, job);
+      const pending = job;
       job = null;
+      surface = finishProgram(gl, pending);
       return true;
     };
 
