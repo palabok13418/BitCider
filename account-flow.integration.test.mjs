@@ -140,7 +140,7 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   });
   assert.equal(firstConnection.response.status, 200);
   const savedAddonUrl = firstConnection.payload.addonUrl;
-  assert.match(savedAddonUrl, /\\/manifest\\.json$/);
+  assert.equal(savedAddonUrl.endsWith('/manifest.json'), true);
 
   const legacyStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
   const legacySession = Object.values(legacyStore.sessions)[0];
