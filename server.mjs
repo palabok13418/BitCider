@@ -216,6 +216,24 @@ function requireCsrf(req, res, next) {
   next();
 }
 
+function requireDedicatedTokenEncryption(_req, res, next) {
+  try {
+    if (!dedicatedTokenEncryptionKey()) {
+      return res.status(503).json({
+        error: 'SECURE_STORAGE_NOT_CONFIGURED',
+        message: 'Secure cloud accounts are unavailable until BITCIDER_ENCRYPTION_KEY is configured on Deplexo.'
+      });
+    }
+    next();
+  } catch (error) {
+    console.error('BitCider encryption-key configuration error:', error.message);
+    return res.status(503).json({
+      error: 'SECURE_STORAGE_MISCONFIGURED',
+      message: 'Secure cloud storage is not configured correctly. Contact the BitCider administrator.'
+    });
+  }
+}
+
 function createAuthenticatedSession(store, accountId, res) {
   const now = Date.now();
   const active = Object.entries(store.authSessions)
@@ -692,7 +710,7 @@ app.get('/api/status', localOnly, (req, res) => {
   });
 });
 
-app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, async (req, res) => {
+app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const username = validateUsername(req.body?.username);
   const password = req.body?.password;
   if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Use 3–24 characters: letters, numbers, dots, underscores, or hyphens.' });
@@ -737,7 +755,7 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, asyn
   }
 });
 
-app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, async (req, res) => {
+app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const username = validateUsername(req.body?.username);
   const password = req.body?.password;
   if (!username || typeof password !== 'string' || password.length > 128) {
@@ -794,7 +812,7 @@ app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const username = validateUsername(req.body?.username);
   const recoveryCode = req.body?.recoveryCode;
   const newPassword = req.body?.newPassword;
@@ -832,6 +850,12 @@ app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, async
 
 app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
   const { sessionId, user: previous, accountId, authenticated } = getUserSession(req, res);
+  if (authenticated && !dedicatedTokenEncryptionKey()) {
+    return res.status(503).json({
+      error: 'SECURE_STORAGE_NOT_CONFIGURED',
+      message: 'Secure cloud accounts are unavailable until BITCIDER_ENCRYPTION_KEY is configured on Deplexo.'
+    });
+  }
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
   if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))){
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Cider returned an invalid app token. Please authorize BitCider again.' });
