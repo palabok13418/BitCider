@@ -592,6 +592,10 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.indexOf('className={`mode-switcher') > appSource.indexOf('className="connection-card"'));
   assert.ok(appSource.includes("setModeTransitionPhase('encrypt')"));
   assert.ok(appSource.includes("setModeTransitionPhase('decrypt')"));
+  assert.ok(appSource.includes("setModeTransitionPhase('handoff')"));
+  assert.ok(appSource.includes("setModeTransitionTarget(nextMode)"));
+  assert.ok(appSource.includes('mode-target-${modeTransitionTarget}'));
+  assert.ok(appSource.includes('One shared timeline coordinates the outgoing brand, visual handoff and incoming reveal.'));
   assert.ok(appSource.includes("document.title = mono ? 'BitMono' : 'BitCider'"));
   assert.ok(appSource.includes("'/monofavicon.svg?v=bitmono-brand-20261123'"));
   assert.ok(appSource.includes("window.location.origin + '/bitmono/manifest.json'"));
@@ -606,6 +610,12 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(styleSource.includes('@keyframes cipher-encode'));
   assert.ok(styleSource.includes('@keyframes cipher-decode'));
   assert.ok(styleSource.includes('@keyframes logo-decode'));
+  assert.ok(styleSource.includes('@keyframes source-veil-cover'));
+  assert.ok(styleSource.includes('@keyframes source-veil-reveal'));
+  assert.ok(styleSource.includes('@keyframes source-beam-out'));
+  assert.ok(styleSource.includes('@keyframes source-background-awake'));
+  assert.ok(styleSource.includes('@keyframes source-card-in'));
+  assert.ok(styleSource.includes('mode-phase-handoff'));
   assert.ok(styleSource.includes('.bitmono-quality-note'));
   assert.ok(backgroundSource.includes("if (mode === 'mono')"));
   assert.ok(backgroundSource.includes("colors={['#030303', '#151515'"));
