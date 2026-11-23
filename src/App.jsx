@@ -499,7 +499,7 @@ export default function App() {
     document.title = mono ? 'BitMono' : 'BitCider';
     const favicon = document.querySelector('link[rel~="icon"]');
     if (favicon) favicon.href = mono
-      ? '/monochrome-logo.svg?v=bitmono-brand-20261123'
+      ? '/monofavicon.svg?v=bitmono-brand-20261123'
       : '/favicon.svg?v=bitcider-brand-20261122';
     const themeColor = document.querySelector('meta[name="theme-color"]');
     if (themeColor) themeColor.content = mono ? '#080808' : '#0d0708';
@@ -1140,7 +1140,7 @@ export default function App() {
         <a className={`brand ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} href="/" aria-label={pageMode === 'mono' ? 'BitMono home' : 'BitCider home'}>
           <span className="brand-logo-stack" aria-hidden="true">
             <img className="brand-logo brand-logo-cider" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
-            <img className="brand-logo brand-logo-mono" src="/monochrome-logo.svg?v=bitmono-brand-20261123" alt="" />
+            <img className="brand-logo brand-logo-mono" src="/monofavicon.svg?v=bitmono-brand-20261123" alt="" />
           </span>
           <span className="brand-word-stack" aria-hidden="true">
             <span className="brand-word brand-word-cider">Bit<span>Cider</span></span>
