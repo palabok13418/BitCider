@@ -607,6 +607,10 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(styleSource.includes('brand-logo-mono'));
   assert.ok(styleSource.includes('.connection-column'));
   assert.ok(styleSource.includes('.mode-switcher'));
+  assert.ok(styleSource.includes('@keyframes source-cipher-encode'));
+  assert.ok(styleSource.includes('@keyframes source-cipher-decode'));
+  assert.ok(styleSource.includes('@keyframes source-logo-encode'));
+  assert.ok(styleSource.includes('@keyframes source-logo-decode'));
   assert.ok(styleSource.includes('@keyframes source-veil-cover'));
   assert.ok(styleSource.includes('@keyframes source-veil-reveal'));
   assert.ok(styleSource.includes('@keyframes source-beam-out'));
