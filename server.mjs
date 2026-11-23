@@ -1832,11 +1832,6 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
   }
 });
 
-app.get('/bitcider-relay.mjs', (_req, res) => {
-  res.set('Cache-Control', 'public, max-age=300');
-  res.download(path.join(ROOT, 'bitcider-relay.mjs'), 'bitcider-relay.mjs');
-});
-
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST, { index: false, maxAge: '1h' }));
   app.get('/', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
