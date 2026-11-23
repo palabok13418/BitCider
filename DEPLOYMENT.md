@@ -67,13 +67,13 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitChord addon URL
 
-The personal addon URL is generated on the Deplexo backend, so the same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:
+The personal addon URL is generated on the Deplexo backend after the browser receives Cider's approved token and saves it to the user's session. The same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:
 
 ```
 https://YOUR-DEPLEXO-APP/<personal-key>/manifest.json
 ```
 
-Do not manually invent or publish a user's personal key. The backend generates one per browser session after the Cider bridge verifies the account link.
+Do not manually invent or publish a user's personal key. The backend generates one per browser session after the Cider consent flow returns a token and BitCider stores it.
 
 ## Cider account linking
 
