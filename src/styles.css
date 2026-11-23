@@ -1534,7 +1534,9 @@ h1 .bitchord-word {
   width: 100%;
   max-width: none;
   justify-self: stretch;
-  overflow: hidden;
+  position: relative;
+  z-index: 2;
+  overflow: visible;
 }
 
 .mode-switcher {
@@ -1570,27 +1572,6 @@ h1 .bitchord-word {
   background: rgba(255,255,255,.035);
 }
 
-.mode-pull-grip {
-  justify-self: start;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: 28px;
-  height: 16px;
-}
-
-.mode-pull-grip i {
-  display: block;
-  width: 20px;
-  height: 2px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: .7;
-  transition: width .22s ease, opacity .22s ease;
-}
-
 .mode-pull-label {
   justify-self: center;
   white-space: nowrap;
@@ -1609,46 +1590,48 @@ h1 .bitchord-word {
   transform: rotate(180deg);
 }
 
-.mode-switcher.is-open .mode-pull-grip i:nth-child(2) {
-  width: 25px;
+/* The selector sits below the card in the stack, so it unfolds from
+   behind the connection panel instead of expanding inside its content. */
+.mode-switch-reveal-slot {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-height: 0;
+  margin-top: -14px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
+  transition:
+    max-height .55s cubic-bezier(.16,1,.3,1),
+    opacity .28s ease,
+    transform .48s cubic-bezier(.16,1,.3,1),
+    margin-top .48s cubic-bezier(.16,1,.3,1);
+}
+
+.mode-switch-reveal-slot.is-open {
+  max-height: 128px;
+  margin-top: -7px;
   opacity: 1;
+  transform: translateY(0);
+  overflow: visible;
+  pointer-events: auto;
 }
 
 .mode-switch-panel {
-  max-height: 0;
-  padding: 0 26px;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateY(-9px);
-  visibility: hidden;
-  transition:
-    max-height .48s cubic-bezier(.18,.82,.24,1),
-    padding .42s cubic-bezier(.18,.82,.24,1),
-    opacity .25s ease,
-    transform .42s cubic-bezier(.18,.82,.24,1),
-    visibility 0s linear .48s;
+  padding: 22px 26px 18px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-top: 0;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(145deg, rgba(40,22,26,.97), rgba(19,9,12,.97));
+  box-shadow: 0 18px 38px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.035);
+  transform: translateY(-9px) scale(.99);
+  transform-origin: top center;
+  transition: transform .5s cubic-bezier(.16,1,.3,1);
 }
 
-.mode-switcher.is-open .mode-switch-panel {
-  max-height: 130px;
-  padding: 0 26px 19px;
-  opacity: 1;
-  transform: translateY(0);
-  visibility: visible;
-  transition:
-    max-height .52s cubic-bezier(.18,.82,.24,1),
-    padding .42s cubic-bezier(.18,.82,.24,1),
-    opacity .3s ease .06s,
-    transform .42s cubic-bezier(.18,.82,.24,1),
-    visibility 0s;
-}
-
-.mode-switch-caption {
-  margin: 0 0 10px;
-  color: #a8898e;
-  font: 8px var(--mono);
-  letter-spacing: .13em;
-  text-align: center;
+.mode-switch-reveal-slot.is-open .mode-switch-panel {
+  transform: translateY(0) scale(1);
 }
 
 .mode-toggle {
@@ -1767,6 +1750,11 @@ h1 .bitchord-word {
   color: #d2d2d2;
 }
 
+.site-shell.mono-mode .mode-switch-panel {
+  border-color: rgba(255,255,255,.16);
+  background: linear-gradient(145deg, rgba(27,27,27,.98), rgba(8,8,8,.98));
+}
+
 .site-shell.mono-mode .mode-toggle {
   border-color: rgba(255,255,255,.18);
   background: rgba(7,7,7,.88);
@@ -1801,8 +1789,8 @@ h1 .bitchord-word {
 @media (prefers-reduced-motion: reduce) {
   .mode-pull-chevron,
   .mode-toggle-thumb { transition-duration: .01ms !important; }
-  .mode-switch-panel,
-  .mode-switcher.is-open .mode-switch-panel { transition-duration: .01ms !important; }
+  .mode-switch-reveal-slot,
+  .mode-switch-panel { transition-duration: .01ms !important; }
   .mode-toggle.is-dragging .mode-toggle-thumb,
   .mode-toggle.is-dragging .mode-toggle-thumb::after,
   .mode-toggle.is-switching .mode-toggle-thumb::after { animation: none !important; }
@@ -1811,8 +1799,7 @@ h1 .bitchord-word {
 @media (max-width: 760px) {
   .mode-switcher { margin-top: 10px; }
   .mode-switcher { margin-left: calc(0px - var(--connection-card-inset)); margin-right: calc(0px - var(--connection-card-inset)); }
-  .mode-switch-panel,
-  .mode-switcher.is-open .mode-switch-panel { padding-left: 20px; padding-right: 20px; }
+  .mode-switch-panel { padding-left: 20px; padding-right: 20px; }
   .mode-toggle { min-height: 48px; }
   .mode-toggle-option { min-height: 38px; font-size: 9px; }
 }
