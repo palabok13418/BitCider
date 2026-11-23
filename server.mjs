@@ -13,6 +13,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
+const API_VERSION = '2026-11-23-cider-auth-v2';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
@@ -434,7 +435,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider' }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider', apiVersion: API_VERSION }));
 
 app.get('/api/status', localOnly, (req, res) => {
   const { store, sessionId, user } = getUserSession(req, res);
@@ -443,6 +444,7 @@ app.get('/api/status', localOnly, (req, res) => {
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
   res.set('Cache-Control', 'no-store');
   res.json({
+    apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
     publicUrlConfigured: Boolean(PUBLIC_URL),
@@ -478,6 +480,14 @@ app.post('/api/connect', localOnly, async (req, res) => {
   res.json({
     ok: true,
     addonUrl: addonBaseUrl() + '/' + latestStore.sessions[sessionId].addonKey + '/manifest.json'
+  });
+});
+
+app.get('/api/connect', localOnly, (_req, res) => {
+  res.set('Allow', 'POST');
+  res.status(405).json({
+    error: 'METHOD_NOT_ALLOWED',
+    message: 'Use POST from the BitCider linking flow. Opening this endpoint in the address bar sends GET and cannot link Cider.'
   });
 });
 
