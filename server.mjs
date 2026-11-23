@@ -58,12 +58,31 @@ function ensureSecret() {
   return fs.readFileSync(KEY_FILE);
 }
 
+let cachedDedicatedEncryptionKey;
+let checkedDedicatedEncryptionKey = false;
+
+function dedicatedTokenEncryptionKey() {
+  if (checkedDedicatedEncryptionKey) return cachedDedicatedEncryptionKey;
+  checkedDedicatedEncryptionKey = true;
+  const encoded = String(process.env.BITCIDER_ENCRYPTION_KEY || '').trim();
+  if (!encoded) return null;
+  const secret = Buffer.from(encoded, 'base64url');
+  if (secret.length !== 32 || secret.toString('base64url') !== encoded) {
+    throw new Error('BITCIDER_ENCRYPTION_KEY must be a 32-byte base64url value generated once and stored as a Deplexo secret.');
+  }
+  cachedDedicatedEncryptionKey = crypto.scryptSync(secret, 'bitcider-token-encryption-v2', 32);
+  return cachedDedicatedEncryptionKey;
+}
+
 function encryptToken(token) {
-  const key = crypto.scryptSync(ensureSecret(), 'bitcider-local-token-v1', 32);
+  const dedicatedKey = dedicatedTokenEncryptionKey();
+  const keyVersion = dedicatedKey ? 2 : 1;
+  const key = dedicatedKey || crypto.scryptSync(ensureSecret(), 'bitcider-local-token-v1', 32);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const ciphertext = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
   return {
+    keyVersion,
     iv: iv.toString('base64url'),
     tag: cipher.getAuthTag().toString('base64url'),
     value: ciphertext.toString('base64url')
@@ -72,13 +91,39 @@ function encryptToken(token) {
 
 function decryptToken(box) {
   if (!box?.iv || !box?.tag || !box?.value) return null;
-  const key = crypto.scryptSync(ensureSecret(), 'bitcider-local-token-v1', 32);
+  let key;
+  if (box.keyVersion === 2) {
+    key = dedicatedTokenEncryptionKey();
+    if (!key) throw new Error('BITCIDER_ENCRYPTION_KEY is required to decrypt this saved Cider token.');
+  } else {
+    key = crypto.scryptSync(ensureSecret(), 'bitcider-local-token-v1', 32);
+  }
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(box.iv, 'base64url'));
   decipher.setAuthTag(Buffer.from(box.tag, 'base64url'));
   return Buffer.concat([
     decipher.update(Buffer.from(box.value, 'base64url')),
     decipher.final()
   ]).toString('utf8');
+}
+
+function migrateTokenEncryption() {
+  const dedicatedKey = dedicatedTokenEncryptionKey();
+  if (!dedicatedKey) return { configured: false, migrated: 0 };
+  const store = readStore();
+  let migrated = 0;
+  const owners = [
+    ...Object.values(store.sessions || {}),
+    ...Object.values(store.accounts || {})
+  ];
+  for (const owner of owners) {
+    if (!owner?.ciderToken || owner.ciderToken.keyVersion === 2) continue;
+    const plaintext = decryptToken(owner.ciderToken);
+    if (!plaintext) throw new Error('A legacy Cider token could not be decrypted during key migration.');
+    owner.ciderToken = encryptToken(plaintext);
+    migrated += 1;
+  }
+  if (migrated) writeStore(store);
+  return { configured: true, migrated };
 }
 
 const SESSION_COOKIE = 'bitcider_session';
@@ -634,6 +679,7 @@ app.get('/api/status', localOnly, (req, res) => {
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
     csrfToken: csrfTokenForSession(sessionId),
+    tokenEncryptionConfigured: Boolean(dedicatedTokenEncryptionKey()),
     account: authenticated ? {
       authenticated: true,
       username: user.username,
@@ -909,6 +955,13 @@ if (fs.existsSync(DIST)) {
 app.use((req, res) => {
   res.status(404).json({ error: 'NOT_FOUND', path: req.path });
 });
+
+const tokenEncryptionStatus = migrateTokenEncryption();
+if (!tokenEncryptionStatus.configured) {
+  console.warn('BITCIDER_ENCRYPTION_KEY is not configured. Saved Cider tokens are encrypted with the persistent volume key; configure the Deplexo-only key for stronger separation.');
+} else {
+  console.log('BitCider token encryption key is configured; migrated legacy tokens:', tokenEncryptionStatus.migrated);
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('');
