@@ -160,9 +160,11 @@ export default function App() {
       setNotice('Cider approved BitCider. Saving your encrypted connection…');
       await saveToken(authorization.token, authorization.scopes);
       setConnectPhase('promoting');
+      // Keep the staged success choreography alive until the final
+      // Disconnect action has finished rising into the shared button slot.
       window.setTimeout(() => {
         setConnectPhase(current => current === 'promoting' ? 'idle' : current);
-      }, 1050);
+      }, 2300);
     } catch (error) {
       setNotice(error.message || 'Could not complete Cider authorization.');
       setNoticeType('warning');
@@ -175,9 +177,14 @@ export default function App() {
         } catch {
           // The visual shake remains available when device vibration is unsupported.
         }
+        // Hold the contracted red state briefly, then expand the button
+        // and bring the normal label back into its original left-aligned place.
         window.setTimeout(() => {
-          setConnectPhase(current => current === 'denied' ? 'idle' : current);
-        }, 1020);
+          setConnectPhase(current => current === 'denied' ? 'denied-return' : current);
+          window.setTimeout(() => {
+            setConnectPhase(current => current === 'denied-return' ? 'idle' : current);
+          }, 540);
+        }, 1160);
       } else {
         setConnectPhase('idle');
       }
