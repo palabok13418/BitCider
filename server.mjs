@@ -175,7 +175,9 @@ function artworkUrl(attributes) {
 
 function normalizeSong(song) {
   const attributes = song?.attributes || song || {};
-  const id = song?.id || attributes?.id || attributes?.catalogId;
+  // Apple Music library rows may carry an "i." library id as their row id.
+  // The play-item route needs the underlying catalog id when playParams exists.
+  const id = attributes?.playParams?.id || song?.id || attributes?.id || attributes?.catalogId;
   if (!id) return null;
   const durationMs = Number(attributes.durationInMillis || attributes.durationMs || 0);
   return {
@@ -385,7 +387,7 @@ app.post('/api/disconnect', localOnly, (_req, res) => {
 app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json({
-    id: 'com.bitcider.personal.' + req.params.addonKey.slice(0, 12),
+    id: 'com.bitcider.personal.' + req.params.addonKey.slice(0, 12).replace(/[^a-zA-Z0-9]/g, ''),
     name: 'BitCider',
     version: '1.0.0',
     description: 'Your linked Cider account as a personal BitChord source.',
