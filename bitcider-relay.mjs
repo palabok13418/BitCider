@@ -63,14 +63,6 @@ function allowedCiderRequest(job) {
       || !Number.isInteger(offset) || offset < 0 || offset > 10000) return null;
     return { target, method };
   }
-  if (method === 'GET' && target.pathname === '/api/v2/library/songs') {
-    const keys = [...target.searchParams.keys()];
-    if (keys.some(key => !['offset', 'limit'].includes(key))) return null;
-    const offset = Number(target.searchParams.get('offset') || 0);
-    const limit = Number(target.searchParams.get('limit') || 100);
-    if (!Number.isInteger(offset) || offset < 0 || offset > 10000 || !Number.isInteger(limit) || limit < 1 || limit > 100) return null;
-    return { target, method };
-  }
   if (method === 'POST' && target.pathname === '/api/v2/playback/play-item') {
     const id = String(job.body?.id || '');
     if (!/^[A-Za-z0-9._:-]{1,180}$/.test(id) || job.body?.type !== 'songs') return null;
