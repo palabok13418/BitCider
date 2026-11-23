@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import LineWaves from './LineWaves.jsx';
+import Lightfall from './Lightfall.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-22-cider-token-account-v6';
@@ -405,6 +405,7 @@ export default function App() {
   const [status, setStatus] = useState({ loading: true, connected: false });
   const [busy, setBusy] = useState(false);
   const [connectPhase, setConnectPhase] = useState('idle');
+  const [addonUrlGenerating, setAddonUrlGenerating] = useState(false);
   const [notice, setNotice] = useState('');
   const [noticeType, setNoticeType] = useState('info');
   const [copied, setCopied] = useState(false);
@@ -869,7 +870,13 @@ export default function App() {
     try {
       const authorization = await requestCiderToken();
       setNotice('Cider approved BitCider. Checking whether this token is already linked…');
-      const result = await saveToken(authorization.token, authorization.scopes);
+      setAddonUrlGenerating(true);
+      let result;
+      try {
+        result = await saveToken(authorization.token, authorization.scopes);
+      } finally {
+        setAddonUrlGenerating(false);
+      }
 
       if (result.accountLinked) {
         if (result.alreadyAuthenticated) {
@@ -971,25 +978,29 @@ export default function App() {
 
   return (
     <main className="site-shell">
-      <LineWaves
+      <Lightfall
         className="site-waves"
-        color1="#d7e5ff"
-        color2="#aab7ff"
-        color3="#80d9e8"
-        colorCycleSpeed={0.22}
+        colors={['#d7e5ff', '#aab7ff', '#80d9e8']}
+        backgroundColor="#80d9e8"
         speed={0.23}
-        lineCount={88}
-        lineWidth={1.05}
-        glow={0.8}
-        brightness={0.72}
-        highlight={0.88}
-        highlightWidth={1.15}
-        warpIntensity={1.2}
-        warpScale={1.1}
-        rotation={-31}
-        edgeFade={0.35}
-        mouseInfluence={1.4}
+        streakCount={3}
+        streakWidth={1}
+        streakLength={1.2}
+        glow={0.9}
+        density={0.72}
+        twinkle={0.3}
+        zoom={3}
+        backgroundGlow={0.1}
+        headGlow={0.65}
+        depth={0.5}
+        bloom={0.35}
         opacity={0.68}
+        mouseInteraction={false}
+        holdToWarp={false}
+        warping={addonUrlGenerating}
+        intro={false}
+        fade={0.35}
+        dpr={1.5}
       />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
