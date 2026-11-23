@@ -65,7 +65,13 @@ export default function App() {
     }
   }
 
-  useEffect(() => { refreshStatus(); }, []);
+  useEffect(() => {
+    refreshStatus();
+    // Keep last-active timestamps meaningful for the five-device limit while
+    // this account page remains open, even when the user is just listening.
+    const heartbeat = window.setInterval(refreshStatus, 5 * 60 * 1000);
+    return () => window.clearInterval(heartbeat);
+  }, []);
 
   async function accountRequest(path, payload) {
     setAccountBusy(true);
