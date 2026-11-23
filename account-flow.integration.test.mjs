@@ -188,6 +188,8 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
 
   const oldAccountStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
   const oldAccount = Object.values(oldAccountStore.accounts)[0];
+  assert.equal(typeof oldAccount.accountKeyHash, 'string');
+  assert.equal(JSON.stringify(oldAccountStore).includes(registration.payload.accountKey), false);
   oldAccount.username = 'legacy-account-name';
   delete oldAccount.accountKeyHash;
   await fs.writeFile(path.join(dataDir, 'connection.json'), JSON.stringify(oldAccountStore, null, 2));
@@ -201,6 +203,7 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.equal(Object.hasOwn(migratedAccount, 'username'), false);
   assert.equal(firstDeviceStatus.payload.account.authenticated, true);
   assert.equal(Object.hasOwn(firstDeviceStatus.payload.account, 'username'), false);
+  assert.equal(Object.hasOwn(firstDeviceStatus.payload.account, 'accountKey'), false);
   assert.equal(firstDeviceStatus.payload.connected, true);
   assert.equal(firstDeviceStatus.payload.addonUrl, savedAddonUrl);
 
