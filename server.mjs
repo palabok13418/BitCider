@@ -675,7 +675,7 @@ function browserBridgeStatus(ownerKey, connected) {
   const lastSeen = registration?.lastSeenAt || 0;
   const online = Boolean(connected && registration && Date.now() - lastSeen < BROWSER_BRIDGE_ONLINE_WINDOW_MS);
   return {
-    provisioned: Boolean(connected),
+    provisioned: Boolean(connected && registration),
     online,
     lastSeenAt: lastSeen ? new Date(lastSeen).toISOString() : null,
     mode: 'browser'
@@ -1030,7 +1030,6 @@ app.get('/health', (_req, res) => res.json({
   ok: true,
   service: 'BitCider',
   apiVersion: API_VERSION,
-  ciderBridgeConfigured: false,
   browserCiderBridgeSupported: true
 }));
 
