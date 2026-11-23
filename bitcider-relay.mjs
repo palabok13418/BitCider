@@ -50,6 +50,19 @@ function allowedCiderRequest(job) {
   catch { return null; }
   if (target.origin !== 'http://127.0.0.1:10767' || !target.pathname.startsWith('/api/v2/')) return null;
 
+  if (method === 'GET' && target.pathname === '/api/v2/amapi/search') {
+    const keys = [...target.searchParams.keys()];
+    const allowedKeys = new Set(['term', 'types', 'limit', 'offset']);
+    if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !allowedKeys.has(key))) return null;
+    const term = String(target.searchParams.get('term') || '').trim();
+    const types = String(target.searchParams.get('types') || '');
+    const limit = Number(target.searchParams.get('limit'));
+    const offset = Number(target.searchParams.get('offset'));
+    if (!term || term.length > 160 || types !== 'songs'
+      || !Number.isInteger(limit) || limit < 1 || limit > 25
+      || !Number.isInteger(offset) || offset < 0 || offset > 10000) return null;
+    return { target, method };
+  }
   if (method === 'GET' && target.pathname === '/api/v2/library/songs') {
     const keys = [...target.searchParams.keys()];
     if (keys.some(key => !['offset', 'limit'].includes(key))) return null;
