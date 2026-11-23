@@ -84,6 +84,27 @@ export function allowedLocalCiderJob(job) {
   return null;
 }
 
+async function probeLocalCider(signal) {
+  const response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'error',
+    headers: { Accept: 'application/json' },
+    targetAddressSpace: 'loopback',
+    signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
+  });
+  if (!response.ok) {
+    throw new Error('Cider responded with HTTP ' + response.status + '. Keep Cider open and confirm Loopback network access is allowed for BitCider.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (payload?.error) {
+    const message = payload.error?.message || payload.error?.code || payload.error;
+    throw new Error('Cider is reachable but its local status request failed: ' + message);
+  }
+}
+
 async function executeLocalCiderJob(job, token) {
   const allowed = allowedLocalCiderJob(job);
   if (!allowed) {
@@ -179,7 +200,12 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       if (!registration) {
         registration = await registerBridge(csrfToken, signal);
         ciderToken = registration.ciderToken;
-        setState('connected', 'This BitCider tab is connected to Cider on this computer.');
+        try {
+          await probeLocalCider(signal);
+          setState('connected', 'This BitCider tab is connected to Cider on this computer.');
+        } catch (error) {
+          setState('cider-unavailable', error?.message || 'Cider is not reachable from this browser yet.');
+        }
         retry = BRIDGE_RETRY_MS;
       }
 
