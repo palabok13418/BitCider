@@ -462,6 +462,12 @@ export default function App() {
       </section>
 
       <section className="account-card" aria-label="BitCider account">
+        {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
+          <div className="account-security-warning">
+            <strong>Extra storage protection is not configured yet.</strong>
+            Add a stable 32-byte base64url <code>BITCIDER_ENCRYPTION_KEY</code> secret to Deplexo. Existing Cider tokens will be upgraded automatically on the next backend start.
+          </div>
+        )}
         {status.account?.authenticated ? (
           <>
             <div className="account-card-header">
