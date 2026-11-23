@@ -21,11 +21,14 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_PUBLIC_URL` | The HTTPS origin of this Deplexo app, with no trailing slash |
 | `BITCIDER_PROXY_SECRET` | A long random secret, shared only with the Netlify and Cloudflare gateways |
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
+| `BITCIDER_ALLOWED_ORIGINS` | Optional comma-separated HTTPS origins if a custom Deplexo domain is used |
 | `CIDER_API_URL` | Reserved for the per-user Cider bridge; do not point this at a public Cider port |
 
 Deplexo mounts the app's durable data volume at `/data`. BitCider stores its encrypted connection data and encryption key under `/data/bitcider`. Back up that volume before deleting or recreating the Deplexo app.
 
 Keep `BITCIDER_PROXY_SECRET` out of Git, frontend build variables, and browser code. Set it as a secret in each gateway provider. The value on Deplexo must exactly match the value set on Netlify and Cloudflare.
+
+The Deplexo website can call its own `/api/*` routes directly. The backend accepts same-host HTTPS requests through Deplexo's reverse proxy, so you do not need to add the Deplexo domain to `BITCIDER_ALLOWED_ORIGINS` in the normal setup. Add the exact origin there only when using a separate custom frontend domain.
 
 ## 2. Deploy the website on Netlify
 
