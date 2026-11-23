@@ -42,7 +42,7 @@ function loadConfig() {
   };
 }
 
-function allowedCiderRequest(job) {
+export function allowedCiderRequest(job) {
   if (!job || typeof job !== 'object') return null;
   const method = String(job.method || 'GET').toUpperCase();
   let target;
