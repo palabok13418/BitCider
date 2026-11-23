@@ -443,3 +443,9 @@ test('main App owns the browser bridge state used by its relay effect and panel'
   assert.equal(appSource.includes('runCiderBrowserRelay({'), true);
   assert.equal(appSource.includes('setBrowserBridge('), true);
 });
+
+test('GradientASCII declares its shader-link readiness helper only once', async () => {
+  const source = await fs.readFile(path.join(ROOT, 'src/GradientASCII.jsx'), 'utf8');
+  const declarations = source.match(/const linked = \\(\\) =>/g) || [];
+  assert.equal(declarations.length, 1, 'duplicate linked declarations break the production Vite build');
+});
