@@ -85,19 +85,32 @@ export function allowedLocalCiderJob(job) {
 }
 
 async function probeLocalCider(signal, token) {
-  const response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
-    method: 'GET',
-    mode: 'cors',
-    credentials: 'omit',
-    cache: 'no-store',
-    redirect: 'error',
-    headers: {
-      Accept: 'application/json',
-      apptoken: token
-    },
-    targetAddressSpace: 'loopback',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
-  });
+  let response;
+  try {
+    response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'error',
+      headers: {
+        Accept: 'application/json',
+        apptoken: token
+      },
+      targetAddressSpace: 'loopback',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
+    });
+  } catch (cause) {
+    if (cause?.name === 'TypeError') {
+      const error = new Error(
+        'Chrome cannot read Cider’s local API response. The Cider app must allow https://bitcider.de.deplexo.com and the apptoken request header in its CORS preflight. BitCider cannot add those response headers to Cider.'
+      );
+      error.code = 'LOCAL_CIDER_CORS_BLOCKED';
+      error.cause = cause;
+      throw error;
+    }
+    throw cause;
+  }
   const payload = await response.json().catch(() => ({}));
   const apiError = payload?.error;
   const ciderCode = typeof apiError === 'object'
@@ -217,6 +230,8 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
   let localCiderAvailable = false;
   let localCiderAuthFailed = false;
   let nextProbeAt = 0;
+  let terminalState = 'offline';
+  let terminalMessage = 'The BitCider browser tab is no longer relaying Cider requests.';
   const setState = (state, message = '') => onState?.(state, message);
 
   setState('connecting', 'Connecting this browser to the local Cider app.');
@@ -244,6 +259,9 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
               'cider-auth-required',
               error?.message || 'Cider rejected BitCider’s saved app token. Reconnect Cider on this device and approve the authorization request again.'
             );
+          } else if (error?.code === 'LOCAL_CIDER_CORS_BLOCKED') {
+            nextProbeAt = Date.now() + 15000;
+            setState('cider-access-blocked', error.message);
           } else {
             nextProbeAt = Date.now() + 10000;
             setState('cider-unavailable', error?.message || 'Cider is not reachable from this browser yet.');
@@ -264,6 +282,14 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
         const error = new Error(pollPayload.message || 'The in-browser Cider bridge disconnected (HTTP ' + pollResponse.status + ').');
         error.status = pollResponse.status;
         throw error;
+      }
+      if (pollPayload.replaced === true) {
+        registration = null;
+        ciderToken = '';
+        terminalState = 'replaced';
+        terminalMessage = pollPayload.message || 'Another BitCider tab has taken over the Cider bridge. Use the most recently opened BitCider tab.';
+        setState(terminalState, terminalMessage);
+        break;
       }
 
       const job = pollPayload.job;
@@ -290,8 +316,12 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
         );
       } else if (result.status >= 500) {
         localCiderAvailable = false;
-        nextProbeAt = Date.now() + 10000;
-        setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this computer.');
+        nextProbeAt = Date.now() + 15000;
+        if (result.body?.error?.code === 'LOCAL_CIDER_CORS_BLOCKED') {
+          setState('cider-access-blocked', result.body.error.message || 'Cider’s local API is blocked by browser CORS.');
+        } else {
+          setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this computer.');
+        }
       } else {
         localCiderAvailable = true;
         setState('connected', 'This BitCider tab is connected to Cider on this computer.');
@@ -302,7 +332,9 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       if ([401, 403, 409].includes(Number(error?.status))) {
         registration = null;
         ciderToken = '';
-        setState('offline', error?.message || 'This BitCider tab is no longer the active Cider bridge. Refresh it to reconnect.');
+        terminalState = 'offline';
+        terminalMessage = error?.message || 'This BitCider tab is no longer the active Cider bridge.';
+        setState(terminalState, terminalMessage);
         break;
       }
       registration = null;
@@ -329,5 +361,5 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       // The backend expires inactive browser relays automatically.
     }
   }
-  setState('offline', 'The BitCider browser tab is no longer relaying Cider requests.');
+  setState(terminalState, terminalMessage);
 }
