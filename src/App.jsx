@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-22-secure-accounts-v1';
+const API_VERSION = '2026-11-22-secure-accounts-v2';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   if (name === 'arrow') return <svg {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
@@ -476,7 +476,7 @@ export default function App() {
                 <h2>Saved to your account</h2>
                 <p>Signed in as <strong>@{status.account.username}</strong>. Your Cider connection and personal addon URL are stored securely in your BitCider account.</p>
               </div>
-              <button className="account-secondary-button" type="button" onClick={logoutAccount} disabled={accountBusy}>
+              <button className="account-secondary-button" type="button" onClick={logoutAccount} disabled={accountBusy || status.backendCompatible !== true}>
                 {accountBusy ? 'PLEASE WAIT…' : 'SIGN OUT'}
               </button>
             </div>
@@ -552,7 +552,7 @@ export default function App() {
                   />
                 </label>
               )}
-              <button className="account-submit-button" type="submit" disabled={accountBusy || !csrfToken}>
+              <button className="account-submit-button" type="submit" disabled={accountBusy || !csrfToken || status.backendCompatible !== true}>
                 {accountBusy ? 'SECURING YOUR ACCOUNT…' : accountMode === 'register' ? 'CREATE SECURE ACCOUNT' : accountMode === 'recover' ? 'RESET PASSPHRASE' : 'SIGN IN'}
               </button>
             </form>
