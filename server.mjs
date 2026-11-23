@@ -18,7 +18,6 @@ const app = express();
 
 // Deplexo terminates TLS in front of this Node service. Trust the immediate
 // platform proxy so Express can read the forwarded public host/protocol.
-const app = express();
 app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
@@ -198,7 +197,12 @@ function trustedFrontend(request) {
 }
 
 function localOnly(req, res, next) {
-  if (!isLoopback(req.socket.remoteAddress || '') && !trustedProxy(req) && !trustedFrontend(req)) {
+  // Reverse proxies may connect from loopback even when the visitor is remote.
+  // Hosted requests must carry the gateway secret or a verified first-party
+  // HTTPS origin. Loopback bypass is opt-in for local development only.
+  const localDevelopment = process.env.BITCIDER_ALLOW_LOOPBACK_ADMIN === 'true'
+    && isLoopback(req.socket.remoteAddress || '');
+  if (!localDevelopment && !trustedProxy(req) && !trustedFrontend(req)) {
     return res.status(403).json({
       error: 'LOCAL_ONLY',
       message: 'Use the BitCider site on Deplexo, Netlify, or Cloudflare to manage this connection.'
