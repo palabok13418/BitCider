@@ -84,24 +84,45 @@ export function allowedLocalCiderJob(job) {
   return null;
 }
 
-async function probeLocalCider(signal) {
+async function probeLocalCider(signal, token) {
   const response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
     method: 'GET',
     mode: 'cors',
     credentials: 'omit',
     cache: 'no-store',
     redirect: 'error',
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+      // Cider requires a valid app token even for client-info (the endpoint
+      // is scope-free, not unauthenticated).
+      apptoken: token
+    },
     targetAddressSpace: 'loopback',
     signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
   });
-  if (!response.ok) {
-    throw new Error('Cider responded with HTTP ' + response.status + '. Keep Cider open and confirm Loopback network access is allowed for BitCider.');
-  }
   const payload = await response.json().catch(() => ({}));
-  if (payload?.error) {
-    const message = payload.error?.message || payload.error?.code || payload.error;
-    throw new Error('Cider is reachable but its local status request failed: ' + message);
+  const apiError = payload?.error;
+  const ciderCode = typeof apiError === 'object'
+    ? apiError?.code
+    : (typeof apiError === 'string' ? apiError : payload?.code || '');
+  const ciderMessage = typeof apiError === 'object'
+    ? apiError?.message
+    : (typeof payload?.message === 'string' ? payload.message : '');
+
+  if (!response.ok) {
+    const message = ciderCode === 'UNAUTHORIZED_APP_TOKEN'
+      ? 'Cider rejected BitCider’s saved app token. Reconnect Cider on this device and approve the authorization request again.'
+      : 'Cider responded with HTTP ' + response.status + (ciderMessage ? ': ' + ciderMessage : '.');
+    const error = new Error(message);
+    error.status = response.status;
+    error.ciderCode = ciderCode;
+    throw error;
+  }
+  if (apiError) {
+    const message = ciderMessage || ciderCode || String(apiError);
+    const error = new Error('Cider is reachable but its local status request failed: ' + message);
+    error.ciderCode = ciderCode;
+    throw error;
   }
 }
 
@@ -211,13 +232,21 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
 
       if (!localCiderAvailable && !localCiderAuthFailed && Date.now() >= nextProbeAt) {
         try {
-          await probeLocalCider(signal);
+          await probeLocalCider(signal, ciderToken);
           localCiderAvailable = true;
           setState('connected', 'This BitCider tab is connected to Cider on this computer.');
         } catch (error) {
           localCiderAvailable = false;
-          nextProbeAt = Date.now() + 10000;
-          setState('cider-unavailable', error?.message || 'Cider is not reachable from this browser yet.');
+          if (error?.ciderCode === 'UNAUTHORIZED_APP_TOKEN' || error?.status === 401) {
+            localCiderAuthFailed = true;
+            setState(
+              'cider-auth-required',
+              error?.message || 'Cider rejected BitCider’s saved app token. Reconnect Cider on this device and approve the authorization request again.'
+            );
+          } else {
+            nextProbeAt = Date.now() + 10000;
+            setState('cider-unavailable', error?.message || 'Cider is not reachable from this browser yet.');
+          }
         }
       }
 
