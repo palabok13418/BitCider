@@ -1550,16 +1550,18 @@ export default function App() {
               aria-expanded={modeSwitcherOpen}
               aria-controls="bitcider-mode-panel"
             >
-              <span className="mode-pull-grip" aria-hidden="true"><i /><i /><i /></span>
               <span className="mode-pull-label">SWITCH SOURCE</span>
               <span className="mode-pull-chevron" aria-hidden="true">⌄</span>
             </button>
+
+          </section>
+        </section>
+        <div className={`mode-switch-reveal-slot ${modeSwitcherOpen ? 'is-open' : ''}`} aria-hidden={!modeSwitcherOpen}>
             <div
               className="mode-switch-panel"
               id="bitcider-mode-panel"
               aria-hidden={!modeSwitcherOpen}
             >
-              <div className="mode-switch-caption">DRAG THE HIGHLIGHT OR CHOOSE A SOURCE</div>
               <div
                 className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''} ${modeTransitionPhase !== 'idle' ? 'is-switching' : ''}`}
                 role="group"
@@ -1603,8 +1605,7 @@ export default function App() {
                 </svg>
               </div>
             </div>
-          </section>
-        </section>
+        </div>
 
         </div>
       </section>
