@@ -39,7 +39,7 @@ Content-Type: application/json
 
 Cider displays its native approval dialog. Once the user approves, Cider returns the app token in the API response (`data.token`). BitCider sends that token to the Deplexo backend, where it is encrypted before storage. No custom URL protocol or manual token copy/paste is needed.
 
-Cider's web API security may require the user to allow the exact BitCider website origin. In Cider, review **Settings → Connections → Extension security** and approve the site when prompted. Cider must be open on the same device as the browser.
+Cider must be running on the same device as the browser. Current Chrome releases gate HTTPS-to-`127.0.0.1` requests behind the **Loopback network** permission. Choose Allow when Chrome prompts; if access was previously denied, change the BitCider site's Loopback network permission to Allow in Chrome Site settings, reload, and retry. Cider's `403 AUTH_REQUEST_DENIED` means the user denied the native consent dialog.
 
 ## Critical Cider bridge limitation
 
