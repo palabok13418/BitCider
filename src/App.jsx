@@ -1176,6 +1176,12 @@ export default function App() {
             </>
           )}
 
+          {connected && status.ciderBridgeConfigured === false && (
+            <div className="notice notice-warning addon-bridge-notice">
+              Your Cider connection and BitChord addon URL are saved, but the hosted Cider relay is not configured. BitChord search and stream resolution cannot reach Cider on your computer until a secure per-user relay is online. Do not set the Deplexo CIDER_API_URL to http://127.0.0.1:10767.
+              {status.ciderBridgeConfigurationError && <span> {status.ciderBridgeConfigurationError}</span>}
+            </div>
+          )}
           {status.backendCompatible === false && (
             <div className="notice notice-warning sync-mismatch-notice">
               <span className="sync-mismatch-copy">{status.deploymentWarning}</span>
