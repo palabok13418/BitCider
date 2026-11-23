@@ -34,6 +34,9 @@ const API_VERSION = '2026-11-22-secure-accounts-v1';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
+const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
+  crypto.randomBytes(32).toString('base64url') + '-dummy-account-passphrase'
+);
 
 // Deplexo terminates TLS in front of this Node service. Trust the immediate
 // platform proxy so Express can read the forwarded public host/protocol.
@@ -605,6 +608,11 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider', apiVersion: API_VERSION }));
 
+app.use('/api/account', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 app.get('/api/status', localOnly, (req, res) => {
   const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
   const token = tokenForUser(user);
@@ -684,7 +692,9 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, async (
   const match = Object.entries(initialStore.accounts).find(([, account]) => account?.username === username);
   const accountId = match?.[0];
   const accountSnapshot = match?.[1];
-  const valid = await verifyPassword(password, accountSnapshot?.password);
+  // Use an equally expensive dummy scrypt verification for unknown usernames
+  // so account existence is not disclosed by a fast response.
+  const valid = await verifyPassword(password, accountSnapshot?.password || DUMMY_PASSWORD_RECORD);
   if (!accountId || !valid) {
     return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
   }
