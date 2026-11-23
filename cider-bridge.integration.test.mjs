@@ -155,11 +155,23 @@ async function createAuthenticatedRelayConfig(backend) {
     body: {}
   });
   assert.equal(setup.response.status, 200, JSON.stringify(setup.payload));
+  const credentialsResponse = await fetch(backend.origin + '/api/relay/credentials', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + setup.payload.config.relayKey,
+      'Content-Type': 'application/json'
+    },
+    body: '{}',
+    cache: 'no-store'
+  });
+  const credentials = await credentialsResponse.json();
+  assert.equal(credentialsResponse.status, 200, JSON.stringify(credentials));
   return {
     addonUrl: status.payload.addonUrl,
     cookie: accountCookie,
     status: status.payload,
-    config: setup.payload.config
+    config: setup.payload.config,
+    ciderToken: credentials.ciderToken
   };
 }
 
@@ -359,7 +371,8 @@ test('authenticated addon search and stream resolve through the matching local d
   });
 
   const linked = await createAuthenticatedRelayConfig(backend);
-  assert.equal(linked.config.ciderToken, 'fake-cider-api-token-for-relay-test');
+  assert.equal(Object.hasOwn(linked.config, 'ciderToken'), false, 'the downloaded config must not persist the Cider token');
+  assert.equal(linked.ciderToken, 'fake-cider-api-token-for-relay-test');
   assert.match(linked.config.relayKey, /^[A-Za-z0-9_-]{43}$/);
   assert.equal(linked.config.ciderApiUrl, 'http://127.0.0.1:10767');
 
@@ -385,7 +398,7 @@ test('authenticated addon search and stream resolve through the matching local d
           method: next.job.method,
           headers: {
             Accept: 'application/json',
-            apptoken: linked.config.ciderToken,
+            apptoken: linked.ciderToken,
             ...(next.job.body ? { 'Content-Type': 'application/json' } : {})
           },
           ...(next.job.body ? { body: JSON.stringify(next.job.body) } : {})
@@ -432,7 +445,7 @@ test('authenticated addon search and stream resolve through the matching local d
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/play-item' && item.method === 'POST'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/pause' && item.method === 'POST'));
-    assert.ok(ciderRequests.every(item => item.token === linked.config.ciderToken));
+    assert.ok(ciderRequests.every(item => item.token === linked.ciderToken));
     assert.ok(ciderRequests.every(item => item.token !== linked.config.relayKey));
   } finally {
     controller.abort();
