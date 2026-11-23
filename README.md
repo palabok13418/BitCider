@@ -16,7 +16,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 - Requests a Cider app token directly through `POST http://127.0.0.1:10767/api/v2/auth/request` as **BitCider**.
 - Requests `playback`, `queue`, `library`, and `audio` scopes.
-- Includes the supplied LineWaves WebGL background.
+- Includes the supplied Lightfall WebGL background, with request-driven warping while a personal addon URL is created.
 - Gives each BitCider account its own encrypted Cider connection and personal BitChord addon URL; anonymous browser sessions can be upgraded into accounts.
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Encrypts saved Cider app tokens with AES-256-GCM.
