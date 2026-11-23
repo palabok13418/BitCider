@@ -19,6 +19,59 @@ function Icon({ name, size = 18 }) {
   return null;
 }
 
+
+const CIPHER_GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789#$%&*+=<>?';
+
+function randomCipherGlyph() {
+  return CIPHER_GLYPHS[Math.floor(Math.random() * CIPHER_GLYPHS.length)];
+}
+
+function CipherText({ text, phase }) {
+  const [displayText, setDisplayText] = useState(text);
+
+  useEffect(() => {
+    if (phase === 'idle') {
+      setDisplayText(text);
+      return undefined;
+    }
+
+    const characters = Array.from(text);
+    const scramble = character => /[A-Za-z0-9]/.test(character) ? randomCipherGlyph() : character;
+    const revealOrder = characters
+      .map((character, index) => ({ character, index }))
+      .filter(item => /[A-Za-z0-9]/.test(item.character))
+      .map(item => item.index)
+      .sort(() => Math.random() - 0.5);
+
+    if (phase === 'decrypt') {
+      setDisplayText(characters.map(scramble).join(''));
+    }
+
+    let step = 0;
+    const totalSteps = phase === 'encrypt' ? 11 : 15;
+    const interval = window.setInterval(() => {
+      step += 1;
+      if (phase === 'encrypt') {
+        setDisplayText(step >= totalSteps ? text : characters.map(scramble).join(''));
+      } else {
+        const revealed = new Set(revealOrder.slice(0, Math.ceil(revealOrder.length * step / totalSteps)));
+        setDisplayText(characters.map((character, index) => (
+          revealed.has(index) || !/[A-Za-z0-9]/.test(character) ? character : scramble(character)
+        )).join(''));
+      }
+
+      if (step >= totalSteps) {
+        window.clearInterval(interval);
+        setDisplayText(text);
+      }
+    }, phase === 'encrypt' ? 30 : 36);
+
+    return () => window.clearInterval(interval);
+  }, [phase, text]);
+
+  return <span aria-label={text}>{displayText}</span>;
+}
+
 function getErrorMessage(payload, fallback) {
   return payload?.error?.message || payload?.message || payload?.error || fallback;
 }
@@ -465,7 +518,7 @@ export default function App() {
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [pageMode, setPageMode] = useState('cider');
   const [modePickerOpen, setModePickerOpen] = useState(false);
-  const [modeTransitioning, setModeTransitioning] = useState(false);
+  const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
   const [bitMonoCopied, setBitMonoCopied] = useState(false);
   const bitMonoAddonUrl = typeof window !== 'undefined'
     ? window.location.origin + '/bitmono/manifest.json'
@@ -1095,14 +1148,19 @@ export default function App() {
 
   function switchPageMode(nextMode) {
     if (nextMode !== 'cider' && nextMode !== 'mono') return;
+    if (modeTransitionPhase !== 'idle') return;
     if (nextMode === pageMode) {
       setModePickerOpen(false);
       return;
     }
-    setModeTransitioning(true);
-    setPageMode(nextMode);
+
     setModePickerOpen(false);
-    window.setTimeout(() => setModeTransitioning(false), 920);
+    setModeTransitionPhase('encrypt');
+    window.setTimeout(() => {
+      setPageMode(nextMode);
+      setModeTransitionPhase('decrypt');
+      window.setTimeout(() => setModeTransitionPhase('idle'), 650);
+    }, 420);
   }
 
   async function disconnect() {
@@ -1131,7 +1189,7 @@ export default function App() {
   if (isAccountPopup) return <AccountSetupWindow />;
 
   return (
-    <main className={`site-shell ${pageMode === 'mono' ? 'mono-mode' : 'cider-mode'} ${modeTransitioning ? 'is-mode-transitioning' : ''}`}>
+    <main className={`site-shell ${pageMode === 'mono' ? 'mono-mode' : 'cider-mode'} ${modeTransitionPhase !== 'idle' ? `mode-phase-${modeTransitionPhase}` : ''}`}>
       <BackgroundSwitcher warping={addonUrlGenerating} mode={pageMode} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
@@ -1143,8 +1201,8 @@ export default function App() {
             <img className="brand-logo brand-logo-mono" src="/monofavicon.svg?v=bitmono-brand-20261123" alt="" />
           </span>
           <span className="brand-word-stack" aria-hidden="true">
-            <span className="brand-word brand-word-cider">Bit<span>Cider</span></span>
-            <span className="brand-word brand-word-mono">Bit<span>Mono</span></span>
+            <span className="brand-word brand-word-cider">Bit<span><CipherText text="Cider" phase={modeTransitionPhase} /></span></span>
+            <span className="brand-word brand-word-mono">Bit<span><CipherText text="Mono" phase={modeTransitionPhase} /></span></span>
           </span>
         </a>
       </header>
@@ -1154,7 +1212,7 @@ export default function App() {
           {pageMode === 'mono' ? (
             <>
               <div className="eyebrow"><span className="eyebrow-line" /> MONOCHROME × BITCHORD</div>
-              <h1>Your <span className="monochrome-word">Monochrome.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
+              <h1>Your <span className="monochrome-word"><CipherText text="Monochrome." phase={modeTransitionPhase} /></span><br /><span className="bitchord-word">Your BitChord.</span></h1>
               <p className="hero-description">
                 Use Monochrome as your free personal music source in BitChord. Copy the BitMono addon link below to add it.
               </p>
@@ -1162,7 +1220,7 @@ export default function App() {
           ) : (
             <>
               <div className="eyebrow"><span className="eyebrow-line" /> CIDER × BITCHORD</div>
-              <h1>Your <span className="cider-word">Cider.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
+              <h1>Your <span className="cider-word"><CipherText text="Cider." phase={modeTransitionPhase} /></span><br /><span className="bitchord-word">Your BitChord.</span></h1>
               <p className="hero-description">
                 Connect your Cider account now to use as a source within BitChord as your personal source of music.
               </p>
@@ -1170,6 +1228,7 @@ export default function App() {
           )}
         </div>
 
+        <div className="connection-column">
         <section className="connection-card" aria-live="polite">
           {pageMode === 'mono' ? (
             <div className="bitmono-card-content">
@@ -1362,8 +1421,6 @@ export default function App() {
             </>
           )}
         </section>
-      </section>
-
       <section className={`mode-switcher ${modePickerOpen ? 'is-open' : ''}`} aria-label="Switch source experience">
         <button
           className="mode-pull-tab"
@@ -1387,6 +1444,10 @@ export default function App() {
           </div>
         )}
       </section>
+        </div>
+      </section>
+
+
 
       {pageMode === 'cider' && inlineAccountFlow && (
         <AccountSetupWindow
