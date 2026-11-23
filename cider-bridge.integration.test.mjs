@@ -585,7 +585,13 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   const styleSource = await fs.readFile(path.join(ROOT, 'src/styles.css'), 'utf8');
   const backgroundSource = await fs.readFile(path.join(ROOT, 'src/BackgroundSwitcher.jsx'), 'utf8');
   assert.ok(appSource.includes('MONOCHROME × BITCHORD'));
-  assert.ok(appSource.includes('Your <span className="monochrome-word">Monochrome.</span>'));
+  assert.ok(appSource.includes('<CipherText text="Monochrome." phase={modeTransitionPhase} />'));
+  assert.ok(appSource.includes('<CipherText text="Cider." phase={modeTransitionPhase} />'));
+  assert.ok(appSource.includes('<CipherText text="Cider" phase={modeTransitionPhase} />'));
+  assert.ok(appSource.includes('<div className="connection-column">'));
+  assert.ok(appSource.indexOf('className={`mode-switcher') > appSource.indexOf('className="connection-card"'));
+  assert.ok(appSource.includes("setModeTransitionPhase('encrypt')"));
+  assert.ok(appSource.includes("setModeTransitionPhase('decrypt')"));
   assert.ok(appSource.includes("document.title = mono ? 'BitMono' : 'BitCider'"));
   assert.ok(appSource.includes("'/monofavicon.svg?v=bitmono-brand-20261123'"));
   assert.ok(appSource.includes("window.location.origin + '/bitmono/manifest.json'"));
@@ -595,6 +601,11 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.includes('The extra Atmos, Hi-Res, High, and Low choices stay available in BitChord'));
   assert.ok(styleSource.includes('.site-shell.mono-mode'));
   assert.ok(styleSource.includes('brand-logo-mono'));
+  assert.ok(styleSource.includes('.connection-column'));
+  assert.ok(styleSource.includes('.mode-switcher'));
+  assert.ok(styleSource.includes('@keyframes cipher-encode'));
+  assert.ok(styleSource.includes('@keyframes cipher-decode'));
+  assert.ok(styleSource.includes('@keyframes logo-decode'));
   assert.ok(styleSource.includes('.bitmono-quality-note'));
   assert.ok(backgroundSource.includes("if (mode === 'mono')"));
   assert.ok(backgroundSource.includes("colors={['#030303', '#151515'"));
