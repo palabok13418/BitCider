@@ -109,7 +109,7 @@ h1 .bitchord-word {
 }
 .card-label { font-size: 9px; color: #ac8c91; }
 .step-counter { font-size: 9px; color: #9a797f; }
-.card-heading { display: flex; align-items: center; gap: 15px; padding: 27px 0 24px; }
+.card-heading { display: flex; align-items: center; gap: 15px; padding: 0 0 24px; }
 .library-music-icon {
   display: block;
   flex: 0 0 auto;
