@@ -39,7 +39,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-23-account-key-v10';
+const API_VERSION = '2026-11-23-account-key-v11';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const CIDER_API_CONFIG = normalizeCiderApiUrl(process.env.CIDER_API_URL);
 const CIDER_API = CIDER_API_CONFIG.url;
@@ -800,57 +800,10 @@ async function ciderRequest(apiPath, { method = 'GET', body, token, bridgeOwnerK
     status = result.status;
     payload = result.body;
   } else {
-    if (!CIDER_API) {
-      if (CIDER_API_CONFIG.error) {
-        throw ciderBridgeError(
-          'CIDER_BRIDGE_MISCONFIGURED',
-          CIDER_API_CONFIG.error + ' Do not use Deplexo container localhost as a substitute for the Cider desktop bridge.'
-        );
-      }
-      throw ciderBridgeError(
-        'CIDER_BRIDGE_NOT_CONFIGURED',
-        'No Cider bridge is configured for this hosted BitCider service. Deplexo cannot reach the Cider app at 127.0.0.1 on the user’s computer. A secure per-user Cider relay must be online before addon search or streaming can work.'
-      );
-    }
-
-    const timeoutValue = Number(process.env.BITCIDER_CIDER_REQUEST_TIMEOUT_MS || 12000);
-    const timeoutMs = Number.isFinite(timeoutValue)
-      ? Math.max(1000, Math.min(Math.floor(timeoutValue), 30000))
-      : 12000;
-    let response;
-    try {
-      const target = new URL(apiPath, CIDER_API + '/');
-      if (target.origin !== CIDER_API || !target.pathname.startsWith('/api/v2/')) {
-        throw ciderBridgeError('CIDER_BRIDGE_INVALID_REQUEST', 'BitCider refused an invalid Cider API path.', 400);
-      }
-      response = await fetch(target, {
-        method,
-        headers: {
-          Accept: 'application/json',
-          apptoken: token,
-          ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: 'no-store',
-        redirect: 'error',
-        signal: AbortSignal.timeout(timeoutMs)
-      });
-    } catch (cause) {
-      if (cause?.ciderCode) throw cause;
-      const timedOut = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
-      throw ciderBridgeError(
-        timedOut ? 'CIDER_BRIDGE_TIMEOUT' : 'CIDER_BRIDGE_UNAVAILABLE',
-        timedOut
-          ? 'The configured Cider bridge did not respond within ' + Math.round(timeoutMs / 1000) + ' seconds.'
-          : 'The configured Cider bridge is offline or unreachable. Confirm that the secure per-user relay is running and reachable over HTTPS.',
-        timedOut ? 504 : 503
-      );
-    }
-
-    status = response.status;
-    const responseText = await response.text();
-    try { payload = responseText ? JSON.parse(responseText) : {}; }
-    catch { payload = { raw: responseText.slice(0, 400) }; }
+    throw ciderBridgeError(
+      'CIDER_BRIDGE_OFFLINE',
+      'No in-browser Cider bridge is registered for this addon. Keep BitCider open in a browser tab on the computer where Cider is running.'
+    );
   }
 
   if (status < 200 || status >= 300) {
@@ -1076,9 +1029,8 @@ app.get('/health', (_req, res) => res.json({
   ok: true,
   service: 'BitCider',
   apiVersion: API_VERSION,
-  ciderBridgeConfigured: Boolean(CIDER_API),
-  perUserCiderRelaySupported: true,
-  ciderBridgeConfigurationError: CIDER_API_CONFIG.error || null
+  ciderBridgeConfigured: false,
+  browserCiderBridgeSupported: true
 }));
 
 app.use('/api/account', (_req, res, next) => {
@@ -1312,7 +1264,9 @@ app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   const sessionId = req.bitciderSessionId;
   const session = getUserSession(req, res);
   if (session.authenticated) {
-    invalidateBrowserBridge(browserBridgeOwnerKey(session.accountId, sessionId), 'This BitCider account session was signed out.');
+    if (browserBridgeByOwner.get(browserBridgeOwnerKey(session.accountId, sessionId))) {
+      invalidateBrowserBridge(browserBridgeOwnerKey(session.accountId, sessionId), 'This BitCider account session was signed out.');
+    }
   }
   await updateStore(store => {
     delete store.authSessions[hashSessionId(sessionId)];
@@ -1724,9 +1678,10 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
     if (!target) throw new Error('The signed-in account is no longer available.');
     target.addonKey = previous?.addonKey || target.addonKey || crypto.randomBytes(32).toString('base64url');
     if (tokenForUser(target) !== token) {
-      delete target.ciderRelayKeyHash;
-      delete target.ciderRelayKeyCreatedAt;
-      if (authenticated) invalidateRelaySession(accountId);
+      invalidateBrowserBridge(
+        browserBridgeOwnerKey(accountId, sessionId),
+        'The Cider connection changed. Refresh this BitCider tab to reconnect.'
+      );
     }
     target.ciderToken = encryptToken(token);
     target.authMethod = 'cider-api-auth-request';
