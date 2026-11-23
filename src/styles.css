@@ -762,7 +762,8 @@ h1 .bitchord-word {
   .hero { min-height: auto; gap: 32px; padding: 59px 0 48px; }
   h1 { font-size: clamp(53px, 15vw, 75px); }
   .hero-description { margin: 22px 0; font-size: 13px; }
-  .connection-card { --connection-card-inset: 20px; padding: 20px; border-radius: 17px; }
+  .connection-card { padding: 20px; border-radius: 17px; }
+  .connection-column .connection-card { --connection-card-inset: 20px; }
   .footer { flex-wrap: wrap; justify-content: center; padding: 19px 0; text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) {
