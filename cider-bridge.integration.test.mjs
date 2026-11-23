@@ -760,7 +760,7 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
   assert.equal(searchPayload.tracks[0].title, 'Deezer Recovery Song');
   assert.equal(searchPayload.tracks[0].artist, 'Recovery Artist');
   assert.equal(searchPayload.tracks[0].duration, 201);
-  assert.ok(deezerRequests.some(path => path.startsWith('/search?q=Deezer+Recovery+Song')));
+  assert.ok(deezerRequests.some(path => path.startsWith('/search?q=Deezer+Recovery+Song&quality=HIGH')));
 
   const stream = await fetch(backend.origin + '/bitmono/stream/dzr_dz-track-42?quality=auto');
   const streamPayload = await stream.json();
@@ -768,7 +768,7 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
   assert.equal(streamPayload.url, 'https://media.example.invalid/deezer-track.mp3');
   assert.equal(streamPayload.codec, 'mp3');
   assert.equal(streamPayload.encrypted, false);
-  assert.ok(deezerRequests.includes('/stream/dz-track-42?quality=LOSSLESS'));
+  assert.ok(deezerRequests.includes('/stream/dz-track-42?quality=HIGH'));
   assert.match(backend.output(), /"event":"search.fallback_selected"/);
   assert.match(backend.output(), /"event":"fallback.deezer.stream_resolved"/);
 });
