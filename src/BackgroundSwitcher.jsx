@@ -5,6 +5,7 @@ import AcidSquares from './AcidSquares.jsx';
 
 const Balatro = lazy(() => import('./Balatro.jsx'));
 const GradientWaves = lazy(() => import('./GradientWaves.jsx'));
+const LaserFlow = lazy(() => import('./LaserFlow.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -210,6 +211,37 @@ const BACKGROUND_REGISTRY = [
           mouseStrength={0.62}
           swellOnClick
           dpr={1.35}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'laser-flow',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <LaserFlow
+          className="site-waves"
+          beamPosition={0.52}
+          surfaceLevel={0.82}
+          color="#fd3f57"
+          intensity={0.95}
+          beamWidth={1.25}
+          flare={1.3}
+          spread={1.25}
+          spill={0.62}
+          fog={0.18}
+          dust={0.7}
+          streaks={1.05}
+          dots={0.34}
+          pulse={0.5}
+          speed={0.52}
+          seed={7}
+          mouseInteraction
+          intro
+          theme="dark"
+          paused={false}
+          dpr={1.25}
           onError={onError}
         />
       </Suspense>
