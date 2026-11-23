@@ -1126,12 +1126,12 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className={\`addon-url-panel \${connectPhase === 'promoting' ? 'is-entering' : ''}\`}>
+                <div className={`addon-url-panel ${connectPhase === 'promoting' ? 'is-entering' : ''}`}>
                   <div className="scope-title">YOUR BITCHORD ADDON URL</div>
                   <div className="url-row">
                     <code>{status.addonUrl}</code>
                     <button
-                      className={\`copy-button \${connectPhase === 'promoting' ? 'copy-button-entering' : ''} \${copied ? 'is-copied' : ''}\`}
+                      className={`copy-button ${connectPhase === 'promoting' ? 'copy-button-entering' : ''} ${copied ? 'is-copied' : ''}`}
                       onClick={copyAddonUrl}
                       aria-label="Copy addon URL"
                     >
