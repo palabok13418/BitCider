@@ -221,8 +221,7 @@ function findQueueRows(payload) {
 }
 
 function findAssetUrl(queue, trackId) {
-  const match = queue.find(item => String(item?.id || item?.attributes?.playParams?.id || '') === String(trackId))
-    || queue.find(item => item?.assetURL || item?.attributes?.assetURL);
+  const match = queue.find(item => String(item?.id || item?.attributes?.playParams?.id || '') === String(trackId));
   return match?.assetURL || match?.attributes?.assetURL || match?.url || match?.attributes?.url || null;
 }
 
@@ -264,6 +263,15 @@ async function resolveCiderStream(trackId) {
       const parsed = new URL(url);
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
         throw new Error('Cider returned a non-HTTP media URL.');
+      }
+      // Cider resolves the authorized media URL; let BitChord be the audible
+      // output instead of leaving the desktop player playing in parallel.
+      if (String(process.env.BITCIDER_PAUSE_CIDER_AFTER_RESOLVE || 'true').toLowerCase() !== 'false') {
+        try {
+          await ciderRequest('/api/v1/playback/pause', { method: 'POST', body: {} });
+        } catch (error) {
+          console.warn('Could not pause Cider after resolving the stream:', error.message);
+        }
       }
       return streamDetails(url, item || queueRows[0]);
     }
