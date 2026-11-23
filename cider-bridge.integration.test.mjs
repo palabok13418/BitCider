@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { allowedCiderRequest } from './bitcider-relay.mjs';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -437,5 +438,41 @@ test('authenticated addon search and stream resolve through the matching local d
     controller.abort();
     await relayLoop;
   }
+});
+
+
+test('desktop relay accepts only the bounded Cider catalog search and playback routes', () => {
+  const catalog = allowedCiderRequest({
+    method: 'GET',
+    apiPath: '/api/v2/amapi/search?term=bridge+test&types=songs&limit=25&offset=0'
+  });
+  assert.equal(catalog?.method, 'GET');
+
+  assert.equal(allowedCiderRequest({
+    method: 'GET',
+    apiPath: '/api/v2/amapi/search?term=bridge&types=albums&limit=25&offset=0'
+  }), null);
+  assert.equal(allowedCiderRequest({
+    method: 'GET',
+    apiPath: '/api/v2/amapi/search?term=bridge&types=songs&limit=100&offset=0'
+  }), null);
+  assert.equal(allowedCiderRequest({
+    method: 'GET',
+    apiPath: '/api/v2/amapi/raw/v1/me/library/songs'
+  }), null);
+  assert.equal(allowedCiderRequest({
+    method: 'GET',
+    apiPath: 'https://example.com/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0'
+  }), null);
+  assert.equal(allowedCiderRequest({
+    method: 'POST',
+    apiPath: '/api/v2/playback/play-item',
+    body: { id: 'catalog-track-123', type: 'songs' }
+  })?.method, 'POST');
+  assert.equal(allowedCiderRequest({
+    method: 'POST',
+    apiPath: '/api/v2/plugins/install',
+    body: { url: 'https://example.com/plugin.zip' }
+  }), null);
 });
 
