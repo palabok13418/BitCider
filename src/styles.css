@@ -878,3 +878,47 @@ h1 .bitchord-word {
   .security-list-item .account-secondary-button { min-height: 32px; padding: 0 9px; }
   .security-current-device { padding-top: 9px; }
 }
+
+
+.sync-mismatch-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 11px;
+}
+.sync-mismatch-copy {
+  display: block;
+  max-width: 100%;
+}
+.sync-notification-button {
+  min-height: 37px;
+  max-width: 100%;
+  padding: 0 13px;
+  border: 1px solid rgba(232, 193, 122, .3);
+  border-radius: 7px;
+  color: #f2ddb5;
+  background: rgba(190, 146, 78, .12);
+  font: 9px var(--mono);
+  letter-spacing: .06em;
+  text-align: left;
+  transition: border-color .18s ease, background .18s ease, opacity .18s ease;
+}
+.sync-notification-button:hover:not(:disabled) {
+  border-color: rgba(240, 204, 145, .6);
+  background: rgba(190, 146, 78, .2);
+}
+.sync-notification-button:disabled {
+  opacity: .68;
+  cursor: not-allowed;
+}
+.sync-notification-hint {
+  color: #c6b48f;
+  font-size: 9px;
+  line-height: 1.6;
+}
+@media (max-width: 520px) {
+  .sync-notification-button {
+    width: 100%;
+    text-align: center;
+  }
+}
