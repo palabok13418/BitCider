@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import Lightfall from './Lightfall.jsx';
 import LineWaves from './LineWaves.jsx';
 import AcidSquares from './AcidSquares.jsx';
@@ -18,7 +18,6 @@ const GradientASCII = lazy(() => import('./GradientASCII.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
-const LAST_BACKGROUND_KEY = 'bitcider.background.last.v1';
 
 // Add each new background component here. The picker automatically includes it.
 const BACKGROUND_REGISTRY = [
@@ -589,29 +588,37 @@ const BACKGROUND_REGISTRY = [
   }
 ];
 
-function chooseBackground() {
-  let previous = '';
-  try {
-    previous = window.localStorage.getItem(LAST_BACKGROUND_KEY) || '';
-  } catch {
-    // Storage may be unavailable in private or restricted browser contexts.
+function secureRandomIndex(length) {
+  if (!Number.isSafeInteger(length) || length <= 0) return 0;
+
+  const cryptoProvider = typeof window !== 'undefined' ? window.crypto : null;
+  if (!cryptoProvider || typeof cryptoProvider.getRandomValues !== 'function') {
+    console.error('[BitCider] Secure browser randomness is unavailable. Using the first registered background as a safe fallback.');
+    return 0;
   }
 
-  const available = BACKGROUND_REGISTRY.filter(item => item.id !== previous);
-  const choices = available.length ? available : BACKGROUND_REGISTRY;
-  return choices[Math.floor(Math.random() * choices.length)]?.id || BACKGROUND_REGISTRY[0].id;
+  // Rejection sampling avoids modulo bias, so every registered background
+  // has the same probability of being selected.
+  const range = 0x1_0000_0000;
+  const limit = range - (range % length);
+  const sample = new Uint32Array(1);
+  let value;
+
+  do {
+    cryptoProvider.getRandomValues(sample);
+    value = sample[0];
+  } while (value >= limit);
+
+  return value % length;
+}
+
+function chooseBackground() {
+  if (BACKGROUND_REGISTRY.length === 0) return 'lightfall';
+  return BACKGROUND_REGISTRY[secureRandomIndex(BACKGROUND_REGISTRY.length)]?.id || 'lightfall';
 }
 
 export default function BackgroundSwitcher({ warping = false }) {
   const [backgroundId, setBackgroundId] = useState(() => chooseBackground());
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LAST_BACKGROUND_KEY, backgroundId);
-    } catch {
-      // Background selection still works when storage is unavailable.
-    }
-  }, [backgroundId]);
 
   const selected = BACKGROUND_REGISTRY.find(item => item.id === backgroundId) || BACKGROUND_REGISTRY[0];
   const handleBackgroundError = error => {
