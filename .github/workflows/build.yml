@@ -29,6 +29,8 @@ jobs:
         run: node --check server.mjs
       - name: Check desktop relay syntax
         run: node --check bitcider-relay.mjs
+      - name: Check published desktop relay syntax
+        run: node --check public/bitcider-relay.mjs
       - name: Check Netlify gateway syntax
         run: node --check netlify/functions/backend-proxy.mjs
       - name: Check Cloudflare Worker syntax
