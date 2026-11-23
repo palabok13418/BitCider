@@ -1035,7 +1035,7 @@ export default function App() {
         ciderBridgeConfigured: true,
         ciderRelay: { provisioned: true, online: false, lastSeenAt: null }
       }));
-      setNotice('Your relay config was downloaded. It contains only your private relay key, not your Cider app token. The runner retrieves your encrypted Cider token from BitCider over HTTPS at startup and keeps it in memory. Keep the config private and never share it. Download the relay runner too, save both files in the same folder, then run: node bitcider-relay.mjs');
+      setNotice('Your relay config was downloaded. It contains only your private relay key, not your Cider app token. The runner retrieves your Cider token from your encrypted BitCider account over HTTPS at startup and keeps it in memory. Keep the config private and never share it. Download the relay runner too, save both files in the same folder, then run: node bitcider-relay.mjs');
       setNoticeType('success');
     } catch (error) {
       setNotice(error?.message || 'Could not download the local Cider relay config.');
