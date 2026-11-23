@@ -239,6 +239,40 @@ h1 .bitchord-word {
 }
 .connect-phase-denied .connect-button-icon { transform: scale(.65); }
 
+/* After the denied hold, widen back to the full button while the normal
+   label glides from center back to its resting left alignment. */
+.connect-phase-denied-return {
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0 11px 0 18px;
+  justify-content: space-between;
+  color: #0b101c;
+  border-color: rgba(205,218,255,.46);
+  background: linear-gradient(100deg, #d9e3ff, #aabcf1 65%, #a0d4dc);
+  box-shadow: 0 8px 26px rgba(125,151,221,.14);
+  animation: connect-denied-expand .54s cubic-bezier(.2,.78,.22,1) both;
+}
+.connect-phase-denied-return .connect-button-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  color: #0b101c;
+  transform: translate(-50%, -50%) scale(.94);
+  animation: connect-denied-return-label .46s cubic-bezier(.2,.78,.22,1) .04s both;
+}
+.connect-phase-denied-return .connect-button-dots {
+  opacity: 0;
+}
+.connect-phase-denied-return .connect-button-icon {
+  opacity: 0;
+  transform: scale(.7);
+  animation: connect-denied-return-icon .26s ease-out .25s both;
+}
+
 @keyframes connect-dots-enter {
   from { opacity: 0; transform: translate(-50%, -50%) scale(.42); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -273,6 +307,43 @@ h1 .bitchord-word {
   from { opacity: 0; transform: translate(-50%, -50%) scale(.82); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
+@keyframes connect-denied-expand {
+  from {
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 0;
+    padding-right: 0;
+    color: #fff5f7;
+    border-color: rgba(255,43,94,.98);
+    background: linear-gradient(110deg, #ff315f, #c91949);
+    box-shadow: 0 8px 27px rgba(255,43,94,.25), inset 0 1px rgba(255,255,255,.15);
+  }
+  to {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 18px;
+    padding-right: 11px;
+    color: #0b101c;
+    border-color: rgba(205,218,255,.46);
+    background: linear-gradient(100deg, #d9e3ff, #aabcf1 65%, #a0d4dc);
+    box-shadow: 0 8px 26px rgba(125,151,221,.14);
+  }
+}
+@keyframes connect-denied-return-label {
+  0% { left: 50%; opacity: 0; transform: translate(-50%, -50%) scale(.94); }
+  38% { opacity: 1; }
+  100% { left: 18px; opacity: 1; transform: translate(0, -50%) scale(1); }
+}
+@keyframes connect-denied-return-icon {
+  from { opacity: 0; transform: scale(.7); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 /* Success reveal is staged and uses one shared button slot, so no grid reflow
    can interrupt the exit of Copy Addon URL or the entrance of Disconnect. */
@@ -280,7 +351,7 @@ h1 .bitchord-word {
   animation: connected-heading-rise .48s cubic-bezier(.18,.82,.24,1) both;
 }
 .addon-url-panel.is-entering {
-  animation: addon-url-rise .7s cubic-bezier(.18,.82,.24,1) .08s both;
+  animation: addon-url-rise .68s cubic-bezier(.18,.82,.24,1) .24s both;
   transform-origin: center bottom;
 }
 .connected-actions.is-promoting {
@@ -305,7 +376,7 @@ h1 .bitchord-word {
   transform-origin: center;
 }
 .connected-actions.is-promoting .copy-addon-cta {
-  animation: copy-addon-cta-exit .52s cubic-bezier(.45,0,.7,.35) .04s both;
+  animation: copy-addon-cta-exit .42s cubic-bezier(.45,0,.7,.35) 1.02s both;
   pointer-events: none;
 }
 .disconnect-button.disconnect-primary {
@@ -334,7 +405,7 @@ h1 .bitchord-word {
   box-shadow: 0 10px 30px rgba(255,43,94,.13);
 }
 .disconnect-button.disconnect-primary.is-promoting {
-  animation: disconnect-rise-grow .6s cubic-bezier(.18,.82,.24,1) .12s both;
+  animation: disconnect-rise-grow .6s cubic-bezier(.18,.82,.24,1) 1.54s both;
 }
 @keyframes connected-heading-rise {
   from { opacity: 0; transform: translateY(10px); }
