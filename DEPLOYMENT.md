@@ -32,6 +32,16 @@ The Deplexo website can call its own `/api/*` routes directly. The backend accep
 
 If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest `main` commit first. If it still happens, check that `BITCIDER_PUBLIC_URL` is the exact HTTPS origin of the Deplexo app, without a path or trailing slash. For a separate custom frontend domain, add its exact HTTPS origin to `BITCIDER_ALLOWED_ORIGINS` (comma-separated, no paths).
 
+## Verify that the current backend is deployed
+
+The current Cider API-linking frontend expects the Deplexo API version `2026-11-23-cider-auth-v2`.
+
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-23-cider-auth-v2"`.
+- `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
+- If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
+
+Opening `/api/connect` directly in the address bar does not test linking. The address bar sends `GET`, while linking requires a `POST` containing the token returned by Cider's `POST /api/v2/auth/request` response.
+
 ## 2. Deploy the website on Netlify
 
 Create a Netlify site from the same repository and use:
