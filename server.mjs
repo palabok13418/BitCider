@@ -756,6 +756,10 @@ async function requestThroughUserRelay(accountId, apiPath, { method = 'GET', bod
   const timeoutMs = Number.isFinite(configuredTimeout)
     ? Math.max(1000, Math.min(Math.floor(configuredTimeout), 30000))
     : 20000;
+  const pendingForAccount = [...relayJobs.values()].filter(job => job.accountId === accountId).length;
+  if (pendingForAccount >= 12) {
+    throw ciderBridgeError('CIDER_BRIDGE_BUSY', 'Your local Cider relay has too many pending requests. Wait a moment and retry.', 429);
+  }
   const id = crypto.randomBytes(18).toString('base64url');
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
