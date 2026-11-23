@@ -35,7 +35,7 @@ Generate `BITCIDER_ENCRYPTION_KEY` once using:
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Copy the output directly into Deplexo's secret environment settings. Do not set this encryption key on Netlify or Cloudflare, and do not commit it. Keep a secure offline backup. It must remain unchanged: losing or rotating it makes records encrypted with that key unreadable. On the first backend startup after adding it, BitCider automatically re-encrypts existing volume-key Cider tokens with the dedicated key. The legacy `encryption.key` file remains for session-bound CSRF signing and legacy-token migration.
+Copy the output directly into Deplexo's secret environment settings. Do not set this encryption key on Netlify or Cloudflare, and do not commit it. BitCider blocks account registration, sign-in, and account recovery until this secret is configured. Keep a secure offline backup. It must remain unchanged: losing or rotating it makes records encrypted with that key unreadable. On the first backend startup after adding it, BitCider automatically re-encrypts existing volume-key Cider tokens with the dedicated key. The legacy `encryption.key` file remains for session-bound CSRF signing and legacy-token migration.
 
 The Deplexo website can call its own `/api/*` routes directly. The backend accepts same-origin HTTPS requests when Deplexo forwards the public app hostname to Node. For installations where the reverse proxy rewrites the Host header, set `BITCIDER_PUBLIC_URL` to the exact HTTPS origin shown in the Deplexo dashboard.
 
@@ -43,9 +43,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-22-secure-accounts-v2`.
+The current BitCider frontend expects the Deplexo API version `2026-11-22-secure-accounts-v3`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-secure-accounts-v2"`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-secure-accounts-v3"`.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -86,7 +86,7 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitCider accounts, recovery, and stored data
 
-The current frontend/backend API version is `2026-11-22-secure-accounts-v2`. Deplexo must run the matching `main` revision before the account panel can be used.
+The current frontend/backend API version is `2026-11-22-secure-accounts-v3`. Deplexo must run the matching `main` revision before the account panel can be used.
 
 BitCider accounts use a separate username and passphrase. They do not ask for the Cider `account` permission and do not try to identify a user by reading Apple Music user tokens. Users must sign in to the same BitCider account on each device.
 
