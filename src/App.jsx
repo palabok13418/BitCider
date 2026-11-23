@@ -465,7 +465,7 @@ export default function App() {
         {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
           <div className="account-security-warning">
             <strong>Extra storage protection is not configured yet.</strong>
-            Add a stable 32-byte base64url <code>BITCIDER_ENCRYPTION_KEY</code> secret to Deplexo. Existing Cider tokens will be upgraded automatically on the next backend start.
+            Add a stable 32-byte base64url <code>BITCIDER_ENCRYPTION_KEY</code> secret to Deplexo. Existing Cider tokens will be upgraded automatically on the next backend start. Account creation, sign-in, and recovery stay locked until this is configured.
           </div>
         )}
         {status.account?.authenticated ? (
@@ -495,9 +495,9 @@ export default function App() {
               </div>
             </div>
             <div className="account-tabs" role="tablist" aria-label="Account actions">
-              <button type="button" className={accountMode === 'login' ? 'is-active' : ''} onClick={() => setAccountMode('login')} disabled={accountBusy}>SIGN IN</button>
-              <button type="button" className={accountMode === 'register' ? 'is-active' : ''} onClick={() => setAccountMode('register')} disabled={accountBusy}>CREATE ACCOUNT</button>
-              <button type="button" className={accountMode === 'recover' ? 'is-active' : ''} onClick={() => setAccountMode('recover')} disabled={accountBusy}>RECOVER</button>
+              <button type="button" className={accountMode === 'login' ? 'is-active' : ''} onClick={() => setAccountMode('login')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>SIGN IN</button>
+              <button type="button" className={accountMode === 'register' ? 'is-active' : ''} onClick={() => setAccountMode('register')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>CREATE ACCOUNT</button>
+              <button type="button" className={accountMode === 'recover' ? 'is-active' : ''} onClick={() => setAccountMode('recover')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>RECOVER</button>
             </div>
             <form className="account-form" onSubmit={submitAccount}>
               <label>
@@ -552,7 +552,7 @@ export default function App() {
                   />
                 </label>
               )}
-              <button className="account-submit-button" type="submit" disabled={accountBusy || !csrfToken || status.backendCompatible !== true}>
+              <button className="account-submit-button" type="submit" disabled={accountBusy || !csrfToken || status.backendCompatible !== true || !status.tokenEncryptionConfigured}>
                 {accountBusy ? 'SECURING YOUR ACCOUNT…' : accountMode === 'register' ? 'CREATE SECURE ACCOUNT' : accountMode === 'recover' ? 'RESET PASSPHRASE' : 'SIGN IN'}
               </button>
             </form>
