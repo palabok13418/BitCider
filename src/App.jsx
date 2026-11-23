@@ -485,7 +485,6 @@ export default function App() {
     }
   });
   const [relayConfigBusy, setRelayConfigBusy] = useState(false);
-  const [relayAgentUrl, setRelayAgentUrl] = useState('');
   const [syncNotificationPermission, setSyncNotificationPermission] = useState(() => {
     try {
       return typeof window !== 'undefined' && 'Notification' in window
@@ -1031,7 +1030,6 @@ export default function App() {
       anchor.click();
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-      setRelayAgentUrl(result.agentUrl || '');
       setStatus(current => ({
         ...current,
         ciderBridgeConfigured: true,
@@ -1205,8 +1203,8 @@ export default function App() {
                     <span>{relayConfigBusy ? 'PREPARING CONFIG…' : status.ciderRelay?.provisioned ? 'REISSUE RELAY CONFIG' : 'DOWNLOAD RELAY CONFIG'}</span>
                     <span className="button-icon"><Icon name="arrow" /></span>
                   </button>
-                  {relayAgentUrl && (
-                    <a className="relay-agent-link" href={relayAgentUrl} download="bitcider-relay.mjs">
+                  {(
+                    <a className="relay-agent-link" href="/bitcider-relay.mjs" download="bitcider-relay.mjs">
                       Download the desktop relay runner
                     </a>
                   )}
