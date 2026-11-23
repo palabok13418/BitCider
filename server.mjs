@@ -1031,6 +1031,7 @@ app.get('/api/status', localOnly, async (req, res) => {
     apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
+    ciderConnectionUpdatedAt: user?.connectedAt || null,
     ciderBridgeConfigured: ciderRelay.online,
     ciderBridgeConfigurationError: null,
     ciderRelay,
