@@ -147,6 +147,8 @@ A hosted Deplexo container cannot reach Cider at `127.0.0.1:10767` on a user's c
 
 Chrome may gate HTTPS-to-loopback requests behind its **Loopback network** permission. The BitCider Cider authorization flow already uses this local connection. If Chrome blocks it, allow Loopback network access for the BitCider site in Chrome Site settings, reload the page, and reconnect Cider if required.
 
+When the browser bridge reports `LOCAL_CIDER_CORS_BLOCKED`, it now runs two checks to pinpoint the Cider-side restriction. First it makes a simple request without an app token, which tests whether Cider allows the exact BitCider website origin at all. Then it retries with the documented `apptoken` header. If only the second request is blocked, Cider accepted the origin but rejected the authenticated-header CORS preflight. Reconnecting cannot override that server response; update Cider to a build that supports browser access from approved origins. A real `401` or `403 UNAUTHORIZED_APP_TOKEN` is handled separately as an invalid/revoked token and does require reconnecting.
+
 ### Allowed Cider operations
 
 The browser client uses a strict allowlist:
