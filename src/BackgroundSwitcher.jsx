@@ -4,6 +4,7 @@ import LineWaves from './LineWaves.jsx';
 import AcidSquares from './AcidSquares.jsx';
 
 const Balatro = lazy(() => import('./Balatro.jsx'));
+const GradientWaves = lazy(() => import('./GradientWaves.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -170,6 +171,45 @@ const BACKGROUND_REGISTRY = [
           lightMode={false}
           opacity={0.86}
           maxDevicePixelRatio={1.5}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'gradient-waves',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <GradientWaves
+          className="site-waves"
+          horizonColor="#fd3f57"
+          waveColor="#ff2b5e"
+          crestColor="#ffdce2"
+          backgroundColor="transparent"
+          lightMode={false}
+          speed={0.3}
+          amplitude={2.7}
+          waveScale={0.65}
+          waveRatio={0.92}
+          swell={35}
+          turbulence={20}
+          tilt={64}
+          zoom={1}
+          height={5.5}
+          fogDepth={15}
+          relief={1}
+          lightAngle={120}
+          sheen={0.28}
+          brightness={0.95}
+          opacity={0.88}
+          grain={0.08}
+          quality="medium"
+          intro
+          mouseInteraction
+          parallaxStrength={0.46}
+          mouseStrength={0.62}
+          swellOnClick
+          dpr={1.35}
           onError={onError}
         />
       </Suspense>
