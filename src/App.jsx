@@ -23,6 +23,7 @@ function getErrorMessage(payload, fallback) {
 export default function App() {
   const [status, setStatus] = useState({ loading: true, connected: false });
   const [busy, setBusy] = useState(false);
+  const [connectPhase, setConnectPhase] = useState('idle');
   const [notice, setNotice] = useState('');
   const [noticeType, setNoticeType] = useState('info');
   const [copied, setCopied] = useState(false);
@@ -123,7 +124,9 @@ export default function App() {
       if (response.status === 404 || response.status === 405) {
         throw new Error('This Cider version does not support the authorization API. Update Cider and try again.');
       }
-      throw new Error(knownErrors[errorCode] || apiMessage || 'Cider could not authorize BitCider (HTTP ' + response.status + '). Check Cider and try again.');
+      const authorizationError = new Error(knownErrors[errorCode] || apiMessage || 'Cider could not authorize BitCider (HTTP ' + response.status + '). Check Cider and try again.');
+      authorizationError.code = errorCode;
+      throw authorizationError;
     }
 
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
@@ -149,15 +152,35 @@ export default function App() {
       return;
     }
     setBusy(true);
+    setConnectPhase('connecting');
     setNotice('Requesting access from Cider. Approve the BitCider dialog in the Cider app.');
     setNoticeType('info');
     try {
       const authorization = await requestCiderToken();
       setNotice('Cider approved BitCider. Saving your encrypted connection…');
       await saveToken(authorization.token, authorization.scopes);
+      setConnectPhase('promoting');
+      window.setTimeout(() => {
+        setConnectPhase(current => current === 'promoting' ? 'complete' : current);
+      }, 900);
     } catch (error) {
       setNotice(error.message || 'Could not complete Cider authorization.');
       setNoticeType('warning');
+      if (error?.code === 'AUTH_REQUEST_DENIED') {
+        setConnectPhase('denied');
+        try {
+          if (window.matchMedia?.('(pointer: coarse)').matches && typeof navigator.vibrate === 'function') {
+            navigator.vibrate([85, 45, 85]);
+          }
+        } catch {
+          // The visual shake remains available when device vibration is unsupported.
+        }
+        window.setTimeout(() => {
+          setConnectPhase(current => current === 'denied' ? 'idle' : current);
+        }, 1020);
+      } else {
+        setConnectPhase('idle');
+      }
     } finally {
       setBusy(false);
     }
@@ -183,6 +206,7 @@ export default function App() {
       if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not disconnect.'));
       setNotice('Cider has been disconnected from this BitCider instance.');
       setNoticeType('info');
+      setConnectPhase('idle');
       await refreshStatus();
     } catch (error) {
       setNotice(error.message);
@@ -254,9 +278,15 @@ export default function App() {
                   <p>Approve BitCider directly in Cider. Your token is returned automatically.</p>
                 </div>
               </div>
-              <button className="primary-button" onClick={connectCider} disabled={busy || status.loading || status.backendCompatible !== true}>
-                <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
-                <span className="button-icon"><Icon name="arrow" /></span>
+              <button
+                className={`primary-button connect-button connect-phase-${connectPhase}`}
+                onClick={connectCider}
+                disabled={busy || connectPhase !== 'idle' || status.loading || status.backendCompatible !== true}
+                aria-busy={connectPhase === 'connecting'}
+              >
+                <span className="connect-button-label">{connectPhase === 'denied' ? 'DENIED' : 'CONNECT TO CIDER'}</span>
+                <span className="connect-button-dots" aria-hidden="true"><i /><i /><i /></span>
+                <span className="button-icon connect-button-icon"><Icon name="arrow" /></span>
               </button>
               <p className="auth-help">Keep this page open while Cider displays its consent prompt. Approve the requested scopes in Cider, and allow Chrome’s Loopback network permission so BitCider can reach Cider on this device.</p>
             </>
@@ -269,7 +299,7 @@ export default function App() {
                   <p>Your personal source is ready to add.</p>
                 </div>
               </div>
-              <div className="addon-url-panel">
+              <div className={`addon-url-panel ${connectPhase === 'promoting' ? 'is-entering' : ''}`}>
                 <div className="scope-title">YOUR BITCHORD ADDON URL</div>
                 <div className="url-row">
                   <code>{status.addonUrl}</code>
@@ -282,12 +312,18 @@ export default function App() {
                   {status.publicUrlConfigured ? 'Public endpoint configured' : 'Local network endpoint'}
                 </div>
               </div>
-              <div className="connected-actions">
-                <button className="primary-button" onClick={copyAddonUrl}>
-                  <span>{copied ? 'COPIED' : 'COPY ADDON URL'}</span>
-                  <span className="button-icon"><Icon name={copied ? 'check' : 'copy'} /></span>
-                </button>
-                <button className="disconnect-button" onClick={disconnect} disabled={busy}>
+              <div className={`connected-actions ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}>
+                {connectPhase === 'promoting' && (
+                  <button className="primary-button copy-addon-cta" type="button" disabled aria-hidden="true" tabIndex={-1}>
+                    <span>COPY ADDON URL</span>
+                    <span className="button-icon"><Icon name="copy" /></span>
+                  </button>
+                )}
+                <button
+                  className={`disconnect-button disconnect-primary ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}
+                  onClick={disconnect}
+                  disabled={busy || connectPhase === 'promoting'}
+                >
                   <Icon name="unplug" size={15} /> Disconnect Cider
                 </button>
               </div>
