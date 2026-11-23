@@ -342,6 +342,33 @@ test('authenticated addon search and stream resolve through the local Cider API 
   }
 });
 
+test('replaced browser bridge polls complete as a normal tab handoff', async t => {
+  const backend = await startBackend();
+  t.after(() => backend.stop());
+  const bridge = await createAuthenticatedBrowserBridge(backend);
+
+  const stalePollPromise = fetch(backend.origin + '/api/bridge/poll', {
+    method: 'POST',
+    headers: browserBridgeHeaders(bridge),
+    body: JSON.stringify({ waitMs: 5000 })
+  });
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  const replacement = await jsonRequest(backend.origin, '/api/bridge/register', {
+    method: 'POST',
+    cookie: bridge.cookie,
+    csrf: bridge.csrfToken,
+    body: {}
+  });
+  assert.equal(replacement.response.status, 200, JSON.stringify(replacement.payload));
+
+  const stalePoll = await stalePollPromise;
+  const payload = await stalePoll.json();
+  assert.equal(stalePoll.status, 200);
+  assert.equal(payload.replaced, true);
+  assert.equal(payload.error, 'BROWSER_BRIDGE_REPLACED');
+});
+
 test('browser bridge credentials are rejected after BitCider sign-out', async t => {
   const backend = await startBackend();
   t.after(() => backend.stop());
@@ -455,7 +482,9 @@ test('Cider auth probe authenticates with apptoken and offers reauthorization af
   assert.match(probe, /apptoken:\s*token/);
   assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
   assert.match(source, /LOCAL_CIDER_CORS_BLOCKED/);
-  assert.match(appSource, /browserBridge\.state === 'cider-auth-required' \|\| browserBridge\.state === 'cider-unavailable'/);
+  assert.match(appSource, /browserBridge\.state === 'cider-auth-required' && \(/);
+  assert.match(appSource, /browserBridge\.state === 'cider-access-blocked'/);
+  assert.match(appSource, /CIDER ACCESS BLOCKED/);
   assert.match(appSource, /RECONNECT CIDER ON THIS DEVICE/);
 });
 
