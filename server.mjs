@@ -454,7 +454,7 @@ app.get('/api/status', localOnly, (req, res) => {
 app.post('/api/connect', localOnly, async (req, res) => {
   const { store, sessionId, user: previous } = getUserSession(req, res);
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-  if (token.length < 12 || token.length > 8192 || /[\\r\\n]/.test(token)) {
+  if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))){
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Cider returned an invalid app token. Please authorize BitCider again.' });
   }
 
