@@ -42,7 +42,7 @@ export default function App() {
     const response = await fetch('/api/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ token, scopes: SCOPES, authMethod: 'cider-api-auth-request' })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not save the Cider connection.'));
