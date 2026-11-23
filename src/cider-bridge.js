@@ -1,120 +1,7 @@
-const VAULT_NAME = 'bitcider-device-relay-v1';
-const VAULT_VERSION = 1;
 const LOCAL_CIDER_ORIGIN = 'http://127.0.0.1:10767';
 const LOCAL_CIDER_TIMEOUT_MS = 12000;
-const POLL_RETRY_MS = 1200;
-
-let vaultPromise;
-
-function openVault() {
-  if (vaultPromise) return vaultPromise;
-  vaultPromise = new Promise((resolve, reject) => {
-    if (!globalThis.indexedDB || !globalThis.crypto?.subtle) {
-      reject(new Error('This browser does not support the encrypted local Cider relay vault.'));
-      return;
-    }
-    const request = indexedDB.open(VAULT_NAME, VAULT_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('keys')) db.createObjectStore('keys');
-      if (!db.objectStoreNames.contains('tokens')) db.createObjectStore('tokens');
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Could not open the local Cider relay vault.'));
-    request.onblocked = () => reject(new Error('The local Cider relay vault is blocked by another open BitCider tab. Close the other tab and retry.'));
-  }).catch(error => {
-    vaultPromise = null;
-    throw error;
-  });
-  return vaultPromise;
-}
-
-function requestResult(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('The local encrypted storage request failed.'));
-  });
-}
-
-function transactionDone(transaction) {
-  return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error || new Error('The local encrypted storage transaction failed.'));
-    transaction.onabort = () => reject(transaction.error || new Error('The local encrypted storage transaction was aborted.'));
-  });
-}
-
-async function localVaultKey(db) {
-  const read = db.transaction('keys', 'readonly');
-  const existing = await requestResult(read.objectStore('keys').get('cider-token-key'));
-  await transactionDone(read);
-  if (existing) return existing;
-
-  const generated = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-  const write = db.transaction('keys', 'readwrite');
-  write.objectStore('keys').put(generated, 'cider-token-key');
-  await transactionDone(write);
-  const verify = db.transaction('keys', 'readonly');
-  const saved = await requestResult(verify.objectStore('keys').get('cider-token-key'));
-  await transactionDone(verify);
-  if (!saved) throw new Error('The browser could not persist the local Cider encryption key.');
-  return saved;
-}
-
-function addonPath(addonUrl) {
-  const parsed = new URL(addonUrl, globalThis.location?.origin || 'https://bitcider.invalid');
-  if (!parsed.pathname.endsWith('/manifest.json')) throw new Error('BitCider returned an invalid personal addon URL.');
-  return parsed.pathname;
-}
-
-export async function saveCiderBridgeToken(token, addonUrl) {
-  if (typeof token !== 'string' || token.length < 12 || token.length > 8192) {
-    throw new Error('Cider returned an invalid local relay credential.');
-  }
-  const db = await openVault();
-  const key = await localVaultKey(db);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(token);
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
-  const tx = db.transaction('tokens', 'readwrite');
-  tx.objectStore('tokens').put({
-    addonPath: addonPath(addonUrl),
-    iv: iv.buffer,
-    ciphertext
-  }, 'active-cider-token');
-  await transactionDone(tx);
-}
-
-export async function loadCiderBridgeToken(addonUrl) {
-  const db = await openVault();
-  const tx = db.transaction('tokens', 'readonly');
-  const record = await requestResult(tx.objectStore('tokens').get('active-cider-token'));
-  await transactionDone(tx);
-  if (!record || record.addonPath !== addonPath(addonUrl)) return null;
-  const key = await localVaultKey(db);
-  try {
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(record.iv) },
-      key,
-      record.ciphertext
-    );
-    return new TextDecoder().decode(plaintext);
-  } catch {
-    throw new Error('The locally saved Cider relay credential could not be unlocked. Activate this device again.');
-  }
-}
-
-export async function clearCiderBridgeToken() {
-  const db = await openVault();
-  const tx = db.transaction(['tokens', 'keys'], 'readwrite');
-  tx.objectStore('tokens').clear();
-  tx.objectStore('keys').clear();
-  await transactionDone(tx);
-}
+const BRIDGE_POLL_WAIT_MS = 20000;
+const BRIDGE_RETRY_MS = 1200;
 
 function bridgeHeaders(registration) {
   return {
@@ -126,6 +13,16 @@ function bridgeHeaders(registration) {
 
 async function responsePayload(response) {
   return response.json().catch(() => ({}));
+}
+
+function validateBridgeRegistration(payload) {
+  if (!payload?.bridgeId || !payload?.bridgeSecret || typeof payload?.ciderToken !== 'string') {
+    throw new Error('BitCider returned an incomplete browser relay registration.');
+  }
+  if (payload.ciderToken.length < 12 || payload.ciderToken.length > 8192) {
+    throw new Error('BitCider returned an invalid Cider connection token. Reconnect Cider and refresh this page.');
+  }
+  return payload;
 }
 
 async function registerBridge(csrfToken, signal) {
@@ -142,37 +39,63 @@ async function registerBridge(csrfToken, signal) {
   });
   const payload = await responsePayload(response);
   if (!response.ok) {
-    const error = new Error(payload.message || 'BitCider could not register this device relay (HTTP ' + response.status + ').');
+    const error = new Error(payload.message || 'BitCider could not start its in-browser Cider bridge (HTTP ' + response.status + ').');
     error.status = response.status;
     throw error;
   }
-  if (!payload.bridgeId || !payload.bridgeSecret) {
-    throw new Error('BitCider returned an incomplete device relay registration.');
-  }
-  return payload;
+  return validateBridgeRegistration(payload);
 }
 
-function allowedLocalPath(pathname) {
-  const url = new URL(pathname, LOCAL_CIDER_ORIGIN);
-  if (url.origin !== LOCAL_CIDER_ORIGIN || !url.pathname.startsWith('/api/v2/')) return false;
-  if (url.pathname === '/api/v2/library/songs') return true;
-  if (url.pathname === '/api/v2/queue') return true;
-  if (url.pathname === '/api/v2/playback/play-item') return true;
-  if (url.pathname === '/api/v2/playback/pause') return true;
-  return false;
+export function allowedLocalCiderJob(job) {
+  if (!job || typeof job !== 'object') return null;
+  const method = String(job.method || 'GET').toUpperCase();
+  let target;
+  try { target = new URL(String(job.path || ''), LOCAL_CIDER_ORIGIN + '/'); }
+  catch { return null; }
+  if (target.origin !== LOCAL_CIDER_ORIGIN || !target.pathname.startsWith('/api/v2/')) return null;
+
+  if (method === 'GET' && target.pathname === '/api/v2/amapi/search') {
+    const keys = [...target.searchParams.keys()];
+    const allowedKeys = new Set(['term', 'types', 'limit', 'offset']);
+    if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !allowedKeys.has(key))) return null;
+    const term = String(target.searchParams.get('term') || '').trim();
+    const types = String(target.searchParams.get('types') || '');
+    const limit = Number(target.searchParams.get('limit'));
+    const offset = Number(target.searchParams.get('offset'));
+    if (!term || term.length > 160 || types !== 'songs'
+      || limit !== 25 || offset !== 0) return null;
+    return { method, target };
+  }
+
+  if (method === 'POST' && target.pathname === '/api/v2/playback/play-item' && !target.search) {
+    const id = String(job.body?.id || '');
+    if (!/^[A-Za-z0-9._:-]{1,180}$/.test(id) || job.body?.type !== 'songs') return null;
+    return { method, target, body: { id, type: 'songs' } };
+  }
+
+  if (method === 'GET' && target.pathname === '/api/v2/queue' && !target.search) {
+    return { method, target };
+  }
+
+  if (method === 'POST' && target.pathname === '/api/v2/playback/pause' && !target.search) {
+    return { method, target };
+  }
+
+  return null;
 }
 
 async function executeLocalCiderJob(job, token) {
-  if (!job || typeof job.path !== 'string' || !allowedLocalPath(job.path)) {
+  const allowed = allowedLocalCiderJob(job);
+  if (!allowed) {
     return {
-      status: 400,
+      status: 403,
       body: { error: { code: 'CIDER_BRIDGE_REQUEST_REJECTED', message: 'BitCider refused an unsupported local Cider API request.' } }
     };
   }
-  const method = job.method === 'POST' ? 'POST' : 'GET';
+
   try {
-    const response = await fetch(new URL(job.path, LOCAL_CIDER_ORIGIN), {
-      method,
+    const response = await fetch(allowed.target, {
+      method: allowed.method,
       mode: 'cors',
       credentials: 'omit',
       cache: 'no-store',
@@ -180,16 +103,22 @@ async function executeLocalCiderJob(job, token) {
       headers: {
         Accept: 'application/json',
         apptoken: token,
-        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {})
+        ...(allowed.body ? { 'Content-Type': 'application/json' } : {})
       },
-      ...(method === 'POST' ? { body: JSON.stringify(job.body ?? {}) } : {}),
+      ...(allowed.body ? { body: JSON.stringify(allowed.body) } : {}),
       targetAddressSpace: 'loopback',
       signal: AbortSignal.timeout(LOCAL_CIDER_TIMEOUT_MS)
     });
     const raw = await response.text();
+    if (raw.length > 220 * 1024) {
+      return {
+        status: 502,
+        body: { error: { code: 'CIDER_RESPONSE_TOO_LARGE', message: 'Cider returned a response that exceeds BitCider’s relay limit.' } }
+      };
+    }
     let body = {};
     try { body = raw ? JSON.parse(raw) : {}; }
-    catch { body = { raw: raw.slice(0, 1200) }; }
+    catch { body = { error: { code: 'CIDER_INVALID_RESPONSE', message: 'Cider returned a non-JSON response.' } }; }
     return { status: response.status, body };
   } catch (error) {
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
@@ -200,7 +129,7 @@ async function executeLocalCiderJob(job, token) {
           code: timedOut ? 'LOCAL_CIDER_TIMEOUT' : 'LOCAL_CIDER_UNREACHABLE',
           message: timedOut
             ? 'Cider did not answer the local API request within 12 seconds.'
-            : 'The BitCider page cannot reach Cider at 127.0.0.1:10767. Open Cider and allow Loopback network access for this BitCider site.'
+            : 'The BitCider tab cannot reach Cider at 127.0.0.1:10767. Open Cider and allow the browser’s local-network permission for this BitCider site.'
         }
       }
     };
@@ -218,7 +147,7 @@ async function deliverJobResult(registration, requestId, result, signal) {
   });
   const payload = await responsePayload(response);
   if (!response.ok) {
-    const error = new Error(payload.message || 'BitCider could not deliver a Cider relay result (HTTP ' + response.status + ').');
+    const error = new Error(payload.message || 'BitCider could not return the local Cider response (HTTP ' + response.status + ').');
     error.status = response.status;
     throw error;
   }
@@ -237,23 +166,21 @@ function delay(ms, signal) {
   });
 }
 
-export async function runCiderBrowserRelay({ addonUrl, csrfToken, token, signal, onState }) {
-  if (!addonUrl || !csrfToken || !token || !signal) throw new Error('The local Cider relay is missing required setup data.');
+export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onState }) {
+  if (!addonUrl || !csrfToken || !signal) throw new Error('The in-browser Cider bridge is missing required setup data.');
   let registration = null;
-  let retry = POLL_RETRY_MS;
-  let lastMessage = '';
-  const setState = (state, message = '') => {
-    if (message !== lastMessage || state !== 'connected') lastMessage = message;
-    onState?.(state, message);
-  };
+  let retry = BRIDGE_RETRY_MS;
+  let ciderToken = '';
+  const setState = (state, message = '') => onState?.(state, message);
 
-  setState('connecting', 'Starting the secure connection to this device.');
+  setState('connecting', 'Connecting this browser to the local Cider app.');
   while (!signal.aborted) {
     try {
       if (!registration) {
         registration = await registerBridge(csrfToken, signal);
-        retry = POLL_RETRY_MS;
-        setState('connected', 'This device is connected to the BitCider relay.');
+        ciderToken = registration.ciderToken;
+        setState('connected', 'This BitCider tab is connected to Cider on this computer.');
+        retry = BRIDGE_RETRY_MS;
       }
 
       const pollResponse = await fetch('/api/bridge/poll', {
@@ -261,12 +188,12 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, token, signal,
         credentials: 'same-origin',
         cache: 'no-store',
         headers: bridgeHeaders(registration),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ waitMs: BRIDGE_POLL_WAIT_MS }),
         signal
       });
       const pollPayload = await responsePayload(pollResponse);
       if (!pollResponse.ok) {
-        const error = new Error(pollPayload.message || 'The BitCider relay disconnected (HTTP ' + pollResponse.status + ').');
+        const error = new Error(pollPayload.message || 'The in-browser Cider bridge disconnected (HTTP ' + pollResponse.status + ').');
         error.status = pollResponse.status;
         throw error;
       }
@@ -274,22 +201,18 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, token, signal,
       const job = pollPayload.job;
       if (!job) continue;
 
-      const result = await executeLocalCiderJob(job, token);
+      const result = await executeLocalCiderJob(job, ciderToken);
       if (result.status >= 500) {
-        const code = result.body?.error?.code;
-        setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this device.');
-        if (code === 'LOCAL_CIDER_UNREACHABLE' || code === 'LOCAL_CIDER_TIMEOUT') {
-          // Keep the relay alive; the user can reopen Cider and retry without
-          // exposing or re-authorizing the saved app token.
-        }
+        setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this computer.');
       } else {
-        setState('connected', 'This device is connected to the BitCider relay.');
+        setState('connected', 'This BitCider tab is connected to Cider on this computer.');
       }
       await deliverJobResult(registration, job.requestId, result, signal);
     } catch (error) {
       if (signal.aborted) break;
       registration = null;
-      setState('reconnecting', error?.message || 'Reconnecting the local Cider relay.');
+      ciderToken = '';
+      setState('reconnecting', error?.message || 'Reconnecting to Cider on this computer.');
       await delay(retry, signal);
       retry = Math.min(retry * 1.7, 10000);
     }
@@ -306,8 +229,8 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, token, signal,
         body: JSON.stringify({})
       });
     } catch {
-      // The server also expires relay registrations after a missed heartbeat.
+      // The backend expires inactive browser relays automatically.
     }
   }
-  setState('offline', 'The local Cider relay is stopped.');
+  setState('offline', 'The BitCider browser tab is no longer relaying Cider requests.');
 }
