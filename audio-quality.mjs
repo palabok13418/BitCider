@@ -5,7 +5,7 @@ export const BITCIDER_QUALITY_OPTIONS = Object.freeze([
 ]);
 
 export function normalizeQuality(value = 'high') {
-  const quality = String(value || 'high').trim().toLowerCase().replace(/[\\s-]+/g, '_');
+  const quality = String(value || 'high').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['low', 'aac_64', '64', '64kbps'].includes(quality)) return 'low';
   if (['atmos', 'dolby_atmos', 'spatial'].includes(quality)) return 'atmos';
   return 'high';
@@ -74,11 +74,11 @@ export function streamMetadata(url, queueItem, requestedQuality = 'high') {
   if (isDolbyAtmosStream(queueItem)) {
     return {
       url,
-      format: hls ? 'm3u8' : 'dash',
+      format: hls ? 'm3u8' : (dash ? 'dash' : 'eac3-joc'),
       quality: 'Dolby Atmos',
       codec: 'eac3-joc',
-      ...(safeContainer ? { container: safeContainer } : { container: 'mp4' }),
-      manifest: hls ? 'hls' : (dash ? 'dash' : 'dash'),
+      ...(safeContainer ? { container: safeContainer } : {}),
+      manifest: hls ? 'hls' : (dash ? 'dash' : 'none'),
       encrypted,
       audioMode: 'DOLBY_ATMOS',
       ...(sampleRate > 0 ? { sampleRate } : {})
