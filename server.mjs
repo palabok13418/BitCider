@@ -291,7 +291,7 @@ function validAddonKey(req, res, next) {
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider' }));
 
-app.get('/api/status', (_req, res) => {
+app.get('/api/status', localOnly, (_req, res) => {
   const { store, token } = connectedToken();
   const base = addonBaseUrl();
   const addonUrl = token && store.addonKey ? base + '/' + store.addonKey + '/manifest.json' : null;
@@ -306,11 +306,32 @@ app.get('/api/status', (_req, res) => {
   });
 });
 
-app.post('/api/connect', localOnly, (req, res) => {
+app.post('/api/connect', localOnly, async (req, res) => {
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-  if (token.length < 12 || token.length > 4096 || /[\r\n]/.test(token)) {
+  if (token.length < 12 || token.length > 4096 || /[\\r\\n]/.test(token)) {
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Paste the Cider app token exactly as Cider provided it.' });
   }
+
+  // Verify the token against Cider before persisting it. client/info is
+  // unscoped, so no Account permission is needed to validate a new token.
+  try {
+    const check = await fetch(CIDER_API + '/api/v2/client/info', {
+      headers: { Accept: 'application/json', apptoken: token },
+      cache: 'no-store',
+      redirect: 'error'
+    });
+    const payload = await check.json().catch(() => ({}));
+    if (!check.ok) {
+      const message = payload?.error?.message || payload?.error || 'Cider rejected this app token.';
+      return res.status(401).json({ error: 'CIDER_TOKEN_REJECTED', message: String(message) });
+    }
+  } catch {
+    return res.status(502).json({
+      error: 'CIDER_UNREACHABLE',
+      message: 'Could not verify this token with Cider on this computer. Check that Cider is running, then try again.'
+    });
+  }
+
   const previous = readStore();
   const store = {
     addonKey: previous.addonKey || crypto.randomBytes(18).toString('base64url'),
