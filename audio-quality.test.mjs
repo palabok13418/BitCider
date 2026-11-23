@@ -13,6 +13,7 @@ test('quality selector only maps to AAC 256, AAC 64, or Atmos', () => {
   assert.equal(normalizeQuality('high'), 'high');
   assert.equal(normalizeQuality('low'), 'low');
   assert.equal(normalizeQuality('dolby_atmos'), 'atmos');
+  assert.equal(normalizeQuality('Dolby Atmos'), 'atmos');
   assert.equal(normalizeQuality('aac_64'), 'low');
   assert.equal(normalizeQuality('LOSSLESS'), 'high');
 });
