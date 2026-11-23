@@ -8,7 +8,7 @@ The intended deployment is:
 - **Netlify:** the static React frontend and a Functions gateway to Deplexo.
 - **Cloudflare:** the static React frontend and a Worker gateway to Deplexo.
 
-Both static frontends use the same Deplexo backend and persistent store. Each browser session receives its own HttpOnly session cookie, encrypted Cider token record, and random personal addon key.
+Both static frontends use the same Deplexo backend and persistent store. Each BitCider account or anonymous browser session has its own HttpOnly session cookie, encrypted Cider token record, and random personal addon key. Signing in on another device restores the account-owned link.
 
 ## 1. Deploy the backend on Deplexo
 
@@ -93,15 +93,15 @@ Security controls:
 
 When an anonymous browser already has a Cider connection, creating an account moves that encrypted Cider connection and its current addon key into the account. After sign-in on a different device, `GET /api/status` returns the already-saved addon URL for that account. Signing out revokes that browser session but does not delete the saved Cider connection. Disconnecting Cider deletes the account's saved token and addon key.
 
-## 4. BitChord addon URL
+## 5. BitChord addon URL
 
-The personal addon URL is generated on the Deplexo backend after the browser receives Cider's approved token and saves it to the user's session. The same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:
+The personal addon URL is generated on the Deplexo backend after the browser receives Cider's approved token and saves it to the user's anonymous session or signed-in BitCider account. The same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:
 
 ```
 https://YOUR-DEPLEXO-APP/<personal-key>/manifest.json
 ```
 
-Do not manually invent or publish a user's personal key. The backend generates one per browser session after the Cider consent flow returns a token and BitCider stores it.
+Do not manually invent or publish a user's personal key. The backend generates a random 256-bit key for new connections and retains existing keys when a user saves an anonymous connection into an account, so their current addon URL does not change.
 
 ## Cider account linking
 
