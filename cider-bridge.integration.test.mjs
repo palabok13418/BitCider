@@ -737,8 +737,9 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
   });
 
   const monochrome = http.createServer((request, response) => {
+    response.statusCode = 503;
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
-    response.end(JSON.stringify({ tracks: [], topResults: [] }));
+    response.end(JSON.stringify({ error: 'Monochrome temporarily unavailable' }));
   });
   const monoPort = await listen(monochrome);
   t.after(() => {
