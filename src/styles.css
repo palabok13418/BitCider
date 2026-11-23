@@ -61,6 +61,10 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 1px solid rgba(255,255,255,.08);
 }
 .brand { display: inline-flex; align-items: center; gap: 11px; }
+.brand, .brand * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .brand-logo {
   display: block;
   width: 40px;
@@ -87,6 +91,10 @@ a { color: inherit; text-decoration: none; }
   align-items: center; gap: clamp(50px, 8vw, 130px); padding: 78px 0 90px;
 }
 .hero-copy { max-width: 610px; padding-bottom: 15px; }
+.hero-copy, .hero-copy * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .eyebrow { color: #e8a6b1; font-size: 10px; display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
 .eyebrow-line { width: 25px; height: 1px; background: #e58d9c; box-shadow: 0 0 12px #e58d9c; }
 h1 { margin: 0; color: #fcf4f5; font-size: clamp(56px, 7vw, 92px); line-height: .99; font-weight: 700; letter-spacing: -.075em; }
@@ -102,10 +110,6 @@ h1 .bitchord-word {
   text-shadow: 0 0 40px rgba(253,63,87,.16);
 }
 .hero-description { max-width: 490px; margin: 29px 0 28px; color: #c3aaae; font-size: 15px; line-height: 1.9; }
-.hero-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; color: #c8aeb2; font-size: 11px; }
-.hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
-.hero-meta svg { color: #dd9aa5; }
-.meta-separator { width: 3px; height: 3px; border-radius: 50%; background: #78595e; }
 
 .connection-card {
   width: 100%; max-width: 500px; justify-self: end; padding: 26px;
