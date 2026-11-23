@@ -2194,10 +2194,6 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
     });
   }
 
-  if (!allSuccesses.length) {
-    throw new Error('All Monochrome search endpoints failed: ' + allFailures.join(' | '));
-  }
-
   const tracks = [...tracksById.values()].slice(0, 60);
   bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'search.merged' : 'search.upstream_empty', {
     requestId,
@@ -2229,6 +2225,9 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
   if (fallbackTracks.length) {
     bitMonoLog('info', 'search.fallback_selected', { requestId, provider: 'deezer', resultCount: fallbackTracks.length });
     return fallbackTracks;
+  }
+  if (!allSuccesses.length) {
+    throw new Error('Monochrome and Deezer search endpoints failed: ' + allFailures.join(' | '));
   }
   bitMonoLog('warn', 'search.all_providers_empty', { requestId, providers: ['monochrome', 'deezer'] });
   return [];
