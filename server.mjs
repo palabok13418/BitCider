@@ -908,6 +908,7 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
   try { passwordRecord = await createPasswordRecord(password); }
   catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a password.' }); }
   const recovery = createRecoveryCodes();
+  const accountKey = createAccountKey();
   const sessionId = req.bitciderSessionId;
 
   try {
@@ -921,7 +922,6 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
       if (!connection) return { status: 409, error: 'CIDER_CONNECTION_REQUIRED', message: 'Approve the Cider connection before creating your BitCider account.', write: false };
 
       const accountId = crypto.randomBytes(24).toString('base64url');
-      const accountKey = createAccountKey();
       store.accounts[accountId] = {
         accountKeyHash: hashAccountKey(accountKey),
         password: passwordRecord,
