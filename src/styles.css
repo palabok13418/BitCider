@@ -1361,3 +1361,9 @@ h1 .bitchord-word {
   .cider-relay-panel { padding: 14px; }
   .cider-relay-panel-head { flex-direction: column; }
 }
+
+.relay-download-links {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
