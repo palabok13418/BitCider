@@ -23,9 +23,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
 | `BITCIDER_ALLOWED_ORIGINS` | Optional comma-separated HTTPS origins if a custom Deplexo domain is used |
-| `CIDER_API_URL` | Keep empty for normal hosted use. Signed-in accounts use their own authenticated desktop relay; this shared legacy setting is only for local/anonymous development and must never point at a user's desktop loopback address |
-| `BITCIDER_CIDER_REQUEST_TIMEOUT_MS` | Optional Cider request deadline, 1,000 to 30,000 ms; per-account relay defaults to 20,000 ms |
-| `BITCIDER_ALLOW_LOOPBACK_CIDER_API` | Keep unset/false on Deplexo. Only set to `true` for a deliberately local development server connecting to loopback Cider |
+| `BITCIDER_CIDER_REQUEST_TIMEOUT_MS` | Optional browser-bridge Cider request deadline, 1,000 to 30,000 ms; defaults to 20,000 ms |
 
 Deplexo mounts the app's durable data volume at `/data`. BitCider stores `connection.json` and a legacy CSRF-signing key under `/data/bitcider`; the dedicated Cider-token encryption key is configured separately as the `BITCIDER_ENCRYPTION_KEY` Deplexo secret. Back up the volume and keep a separate secure backup of the environment key before deleting or recreating the Deplexo app.
 
@@ -45,9 +43,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v10`.
+The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v11`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-23-account-key-v10"` and `"perUserCiderRelaySupported":true`. The signed-in account's `/api/status` response reports `ciderRelay.provisioned` and `ciderRelay.online`; the global `/health` field `ciderBridgeConfigured` describes only the legacy shared bridge, not a specific user's relay.
+- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-23-account-key-v11"` and `"browserCiderBridgeSupported":true`. The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -88,7 +86,7 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitCider accounts, recovery, and stored data
 
-The current frontend/backend API version is `2026-11-23-account-key-v10`. Deplexo must run the matching `main` revision before the account panel can be used.
+The current frontend/backend API version is `2026-11-23-account-key-v11`. Deplexo must run the matching `main` revision before the account panel can be used.
 
 BitCider accounts do not collect a username or email. Each account has a random 256-bit Account Key; sign in with that key plus the password, or use a discoverable passkey. Recovery requires one unused recovery code and rotates the Account Key. Cider app tokens are stored connection data and are not the cross-device account identifier. The integration does not request Cider's `account` scope. Each account supports up to five passkeys and five active device sessions.
 
@@ -134,45 +132,40 @@ This request is sent directly to Cider on the same device as the browser. After 
 
 Cider must be running on the same computer as the browser. On current Chrome releases, the first request from this HTTPS site to `127.0.0.1` is gated by Chrome's **Loopback network** permission; the user must choose Allow when prompted. If previously denied, open the BitCider site's Chrome permissions, set **Loopback network** to Allow, reload, and retry. The app explicitly targets the `loopback` address space and checks the permission state before requesting authorization. A Cider `403 AUTH_REQUEST_DENIED` means the user denied the Cider consent dialog; repeated denials can trigger Cider's temporary authorization rate limit. No Cider token or local API port is exposed in the frontend configuration.
 
-## Per-user Cider desktop relay
+## In-browser Cider bridge
 
-A hosted Deplexo container cannot reach Cider at `127.0.0.1:10767` on a user's computer. BitCider now includes a per-account outbound relay. The BitCider addon sends a scoped request to the signed-in account's relay queue; the local runner fetches that job over HTTPS, calls the user's local Cider API, and returns the JSON result. Each account has a separate random relay key, stored server-side only as a SHA-256 hash. The desktop relay key is never used as the Cider app token.
+A hosted Deplexo container cannot reach Cider at `127.0.0.1:10767` on a user's computer. BitCider now uses the open BitCider website tab as the bridge. The browser registers with Deplexo using the signed-in or anonymous BitCider session, polls for scoped jobs, calls the local Cider API from that same browser, and returns results to Deplexo over the same-origin HTTPS connection.
 
-### Set it up
+### How it works
 
-1. Open BitCider on the computer where Cider is installed. Link Cider and sign in to your BitCider account. The relay setup is available only for a signed-in account.
-2. In the **Desktop Cider Relay** panel, choose **Download Relay Config**. This downloads `bitcider-relay.json`.
-3. Download `bitcider-relay.mjs` and the **Windows one-click launcher** from the links in the panel. Keep all three files in the same private folder. The JSON contains the account's private relay key and endpoint settings, but not your Cider app token. Treat it like a password: do not share it, upload it publicly, or commit it to Git. If Chrome adds a duplicate suffix such as `(1)` after a re-download, the runner automatically selects the newest matching config in the folder.
-4. Keep Cider open. Install Node.js 20 or newer if it is not already installed. The Windows launcher checks for it and prints an installation reminder if it is missing.
-5. On Windows, double-click `start-bitcider-relay.bat`. It checks that Node.js is installed and starts the runner. On macOS/Linux, open a terminal in the folder and run:
+1. The user opens BitCider on the same computer where Cider is running and links Cider through its native approval dialog.
+2. BitCider automatically registers the browser tab as a local bridge. No extra setup button, account upgrade, download, installer, script, browser extension, or configuration file is required.
+3. When BitChord requests a search or stream, Deplexo queues the relevant Cider API request for that browser tab.
+4. The browser calls Cider at `http://127.0.0.1:10767` and returns the response to Deplexo. Deplexo completes the addon request to BitChord.
 
-   ```sh
-   node bitcider-relay.mjs
-   ```
+**Keep the BitCider page open** in a browser tab on the computer where Cider is running while BitChord uses the addon. Closing the tab stops the bridge; reopening BitCider automatically registers it again. The server expires inactive registrations. One active browser bridge is used per BitCider account; a newer BitCider tab takes over from the previous one.
 
-6. Leave that terminal running while using the BitCider source in BitChord. The Desktop Cider Relay indicator should change from **OFFLINE** to **ONLINE**. Retry the song search in BitChord after it is online.
+Chrome may gate HTTPS-to-loopback requests behind its **Loopback network** permission. The BitCider Cider authorization flow already uses this local connection. If Chrome blocks it, allow Loopback network access for the BitCider site in Chrome Site settings, reload the page, and reconnect Cider if required.
 
-The agent reconnects automatically after temporary network failures. Start it again whenever the computer reboots or the terminal is closed. It makes outbound HTTPS requests only; it does not open a public port, create a tunnel into the computer, or accept inbound connections from the internet.
+### Allowed Cider operations
 
-### What is forwarded
-
-The local runner has a strict allowlist for the BitCider operations currently required:
-- `GET /api/v2/amapi/search` with `term`, `types=songs`, `limit` (maximum 25), and `offset` only.
+The browser client uses a strict allowlist:
+- `GET /api/v2/amapi/search` with `term`, `types=songs`, `limit=25`, and `offset=0` only.
 - `POST /api/v2/playback/play-item` for a song ID.
 - `GET /api/v2/queue`.
 - `POST /api/v2/playback/pause`.
 
-Other Cider API paths, arbitrary hosts, redirects, and non-loopback local API URLs are rejected. At startup, the runner retrieves the Cider app token directly from BitCider over HTTPS, adds it to local Cider requests, and keeps it in memory only. It never writes the token to disk or logs it. Relay responses are account-bound, size-limited, and returned over HTTPS. Search uses Cider's Apple Music catalog proxy, with Cider signing the catalog request using the user's own storefront. It can return songs that have not yet been added to the user's library.
+Other Cider API routes, arbitrary hosts, redirects, and non-loopback URLs are rejected. Catalog search goes through Cider's Apple Music proxy, so Cider applies the user's storefront and signs the request. It can return songs that are not yet in the user's library.
 
-### Credentials and revocation
+### Security and lifecycle
 
-- The relay key is random per BitCider account and stored on Deplexo only as a SHA-256 hash. The backend authenticates it with constant-time comparison and binds every queued job, credential response, and request response to the same account.
-- The downloaded config contains only the relay key and endpoint settings. At startup, the runner requests the Cider app token from `/api/relay/credentials` over HTTPS using that key. Deplexo decrypts the account's AES-256-GCM stored token for this authenticated response; the runner keeps the token in memory for local Cider requests and does not write or log it. The token remains encrypted at rest in the BitCider account store.
-- Downloading a replacement config rotates the relay key and invalidates the old runner's key. Start the runner using the newest config. Disconnecting Cider revokes the relay key.
-- The relay broker and pending request queue are held in the Deplexo Node process memory. Keep the hosted backend as one active Node instance; a restart clears pending jobs, and the desktop agent reconnects automatically. Do not horizontally scale this backend without moving the relay broker to shared durable messaging.
-- Do not set Deplexo's `CIDER_API_URL` to `http://127.0.0.1:10767`, and do not expose Cider's port 10767 directly to the public internet.
+- Bridge registration requires the browser's existing BitCider session and session-bound CSRF token. Polling and responses require a per-tab random secret. Deplexo stores only a SHA-256 hash of that secret and compares it in constant time.
+- The Cider app token remains AES-256-GCM encrypted at rest in the BitCider account store. The browser receives it only over the authenticated same-origin HTTPS registration response and keeps it in memory while the tab is active. It is not written to localStorage, IndexedDB, a config file, or logs.
+- Every request and response is bound to the current bridge registration and owner. Replacing the active tab invalidates queued jobs and pollers from the previous tab. Signing out or disconnecting Cider stops the relevant bridge.
+- The browser bridge and pending request queue live in Deplexo Node process memory. Keep the backend on one active Node instance; a restart temporarily stops in-flight requests, and the open BitCider tab reconnects automatically. Do not horizontally scale the backend without moving bridge coordination to shared messaging.
+- Do not expose Cider's local port 10767 to the public internet. The browser makes outbound requests to the user's own local Cider service; no inbound desktop connection is created.
 
-The earlier `BitCider search failed: fetch failed` messages occurred because the hosted server tried to contact its own container loopback address. Account-owned addon requests now route through this local relay instead. A missing or offline runner returns the actionable codes `CIDER_BRIDGE_NOT_CONFIGURED` or `CIDER_BRIDGE_OFFLINE`; a slow local Cider request returns `CIDER_BRIDGE_TIMEOUT`.
+When the BitCider tab is closed or its local Cider connection is unavailable, the addon returns `CIDER_BRIDGE_OFFLINE` or a local Cider error instead of attempting to fetch from the Deplexo container's localhost.
 
 ## Deployment scope
 
