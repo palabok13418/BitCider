@@ -1801,8 +1801,8 @@ function bitMonoLog(level, event, fields = {}) {
 
 function bitMonoLogText(value, maxLength = 120) {
   return String(value || '')
-    .replace(/[\\u0000-\\u001f\\u007f]/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLength);
 }
