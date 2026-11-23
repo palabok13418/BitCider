@@ -53,17 +53,12 @@ function loadConfig() {
   if (!/^[A-Za-z0-9_-]{43}$/.test(String(config.relayKey || ''))) {
     throw new Error('The relay key in the config file is invalid. Download a fresh config from BitCider.');
   }
-  if (String(config.ciderToken || '').length < 12 || String(config.ciderToken).length > 8192) {
-    throw new Error('The Cider app token is missing or invalid. Download a fresh config from BitCider.');
-  }
   return {
     relayUrl: relay.origin,
     relayKey: config.relayKey,
     ciderApiUrl: local.origin,
-    ciderToken: config.ciderToken,
-    requestTimeoutMs: Math.max(3000, Math.min(Number(config.requestTimeoutMs) || 18000, 25000))
-  };
-}
+    requestTimeoutMs: Math.max(3000, Math.min(Number(config.requestTimeoutMs) || 15000, 25000))
+  };}
 
 export function allowedCiderRequest(job) {
   if (!job || typeof job !== 'object') return null;
@@ -189,7 +184,14 @@ async function main() {
   process.stdout.write('Config: ' + CONFIG_PATH + '\\n');
   process.stdout.write('Account relay: ' + config.relayUrl + '\\n');
   process.stdout.write('Cider API: local loopback only\\n');
-  process.stdout.write('The Cider token stays in this local config and is never logged.\\n');
+  process.stdout.write('Retrieving the encrypted account Cider token over HTTPS; it will remain in memory only.\\n');
+
+  const credentials = await postRelay(config, '/api/relay/credentials', {});
+  const ciderToken = String(credentials.ciderToken || '');
+  if (ciderToken.length < 12 || ciderToken.length > 8192) {
+    throw new Error('BitCider did not return a valid Cider app token. Reconnect Cider and issue a new relay config.');
+  }
+  config.ciderToken = ciderToken;
 
   try {
     const probe = await fetch(config.ciderApiUrl + '/api/v2/client/info', {
