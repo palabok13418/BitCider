@@ -445,18 +445,17 @@ test('main App owns the browser bridge state used by its relay effect and panel'
 });
 
 
-test('loopback client-info probe avoids apptoken preflight and exposes reauthorization on token rejection', async () => {
+test('Cider auth probe authenticates with apptoken and offers reauthorization after CORS failure', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src/cider-bridge.js'), 'utf8');
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
   const probeStart = source.indexOf('async function probeLocalCider(');
   const probeEnd = source.indexOf('async function executeLocalCiderJob(', probeStart);
   const probe = source.slice(probeStart, probeEnd);
-  assert.match(probe, /async function probeLocalCider\(signal\)/);
-  assert.match(probe, /headers: \{ Accept: 'application\/json' \}/);
-  assert.doesNotMatch(probe, /apptoken\s*:/);
-  assert.match(source, /await probeLocalCider\(signal\)/);
-  assert.match(source, /error\?\.ciderCode === 'UNAUTHORIZED_APP_TOKEN'/);
-  assert.match(appSource, /browserBridge\.state === 'cider-auth-required'/);
+  assert.match(probe, /async function probeLocalCider\(signal, token\)/);
+  assert.match(probe, /apptoken:\s*token/);
+  assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
+  assert.match(source, /LOCAL_CIDER_CORS_BLOCKED/);
+  assert.match(appSource, /browserBridge\.state === 'cider-auth-required' \|\| browserBridge\.state === 'cider-unavailable'/);
   assert.match(appSource, /RECONNECT CIDER ON THIS DEVICE/);
 });
 
