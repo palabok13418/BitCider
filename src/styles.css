@@ -1372,3 +1372,5 @@ h1 .bitchord-word {
   gap: 8px;
   justify-items: start;
 }
+
+.site-waves .prismatic-burst-canvas { mix-blend-mode: screen; }
