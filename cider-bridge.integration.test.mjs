@@ -648,6 +648,11 @@ test('BitMono uses unified top results and does not cache empty upstream searche
   });
   t.after(() => backend.stop());
 
+  const overlongQuery = await fetch(backend.origin + '/bitmono/search?q=' + 'x'.repeat(321));
+  const overlongPayload = await overlongQuery.json();
+  assert.equal(overlongQuery.status, 400);
+  assert.equal(overlongPayload.error, 'Search query is too long.');
+
   const hintedSearch = await fetch(
     backend.origin + '/bitmono/search?title=Fallback%20Track&artist=Fallback%20Artist'
   );
