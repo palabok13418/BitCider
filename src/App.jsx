@@ -1089,6 +1089,12 @@ export default function App() {
             <div className="card-label">YOUR CONNECTION</div>
           </div>
 
+          {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
+            <div className="notice notice-warning">
+              Secure account storage is not configured. Add the stable 32-byte base64url BITCIDER_ENCRYPTION_KEY secret in Deplexo before linking Cider.
+            </div>
+          )}
+
           {!connected ? (
             <>
               <div className="card-heading">
