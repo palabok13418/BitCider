@@ -669,13 +669,19 @@ function browserBridgeFromRequest(req) {
   return registration;
 }
 
-function browserBridgeStatus(ownerKey, connected) {
+function browserBridgeStatus(ownerKey, connected, sessionId) {
   const bridgeId = browserBridgeByOwner.get(ownerKey);
   const registration = bridgeId ? browserBridges.get(bridgeId) : null;
-  const lastSeen = registration?.lastSeenAt || 0;
-  const online = Boolean(connected && registration && Date.now() - lastSeen < BROWSER_BRIDGE_ONLINE_WINDOW_MS);
+  const belongsToThisSession = Boolean(
+    registration && registration.sessionHash === hashSessionId(sessionId)
+  );
+  const lastSeen = belongsToThisSession ? (registration.lastSeenAt || 0) : 0;
+  const online = Boolean(
+    connected && belongsToThisSession
+      && Date.now() - lastSeen < BROWSER_BRIDGE_ONLINE_WINDOW_MS
+  );
   return {
-    provisioned: Boolean(connected && registration),
+    provisioned: Boolean(connected && belongsToThisSession),
     online,
     lastSeenAt: lastSeen ? new Date(lastSeen).toISOString() : null,
     mode: 'browser'
@@ -1055,7 +1061,7 @@ app.get('/api/status', localOnly, async (req, res) => {
   const base = addonBaseUrl();
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
   const ownerKey = browserBridgeOwnerKey(accountId, sessionId);
-  const ciderRelay = browserBridgeStatus(ownerKey, Boolean(token && user?.addonKey));
+  const ciderRelay = browserBridgeStatus(ownerKey, Boolean(token && user?.addonKey), sessionId);
   const devices = authenticated ? activeAccountDevices(store, accountId, sessionId) : [];
   const passkeys = authenticated ? publicPasskeys(user) : [];
   res.set('Cache-Control', 'no-store');
@@ -1097,6 +1103,12 @@ app.post('/api/bridge/register', localOnly, requireCsrf, requireDedicatedTokenEn
   }
 
   const ownerKey = browserBridgeOwnerKey(accountId, sessionId);
+  const sessionHash = hashSessionId(sessionId);
+  for (const current of [...browserBridges.values()]) {
+    if (current.sessionHash === sessionHash) {
+      invalidateBrowserBridge(current.ownerKey, 'A newer BitCider browser bridge registration replaced this one.');
+    }
+  }
   invalidateBrowserBridge(ownerKey, 'A newer BitCider browser tab took over the local Cider bridge.');
   const bridgeId = crypto.randomBytes(18).toString('base64url');
   const bridgeSecret = crypto.randomBytes(32).toString('base64url');
@@ -1105,7 +1117,7 @@ app.post('/api/bridge/register', localOnly, requireCsrf, requireDedicatedTokenEn
     ownerKey,
     accountId: accountId || null,
     sessionId,
-    sessionHash: hashSessionId(sessionId),
+    sessionHash,
     secretHash: hashBrowserBridgeSecret(bridgeSecret),
     createdAt: Date.now(),
     lastSeenAt: Date.now()
