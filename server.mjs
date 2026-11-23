@@ -1133,90 +1133,84 @@ app.get('/api/status', localOnly, async (req, res) => {
   });
 });
 
-app.post('/api/relay/config', localOnly, requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
-  const { user, accountId, authenticated } = getUserSession(req, res);
-  if (!authenticated || !accountId) {
-    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Create or sign in to a BitCider account before setting up the desktop relay.' });
-  }
+app.post('/api/bridge/register', localOnly, requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { sessionId, user, accountId } = getUserSession(req, res);
   const token = tokenForUser(user);
   if (!token || !user?.addonKey) {
-    return res.status(409).json({ error: 'CIDER_CONNECTION_REQUIRED', message: 'Link Cider before creating the desktop relay.' });
-  }
-  let relayOrigin;
-  try {
-    relayOrigin = new URL(PUBLIC_URL);
-    const allowLocalTestOrigin = process.env.BITCIDER_ALLOW_LOOPBACK_ADMIN === 'true'
-      && relayOrigin.protocol === 'http:' && isLoopback(relayOrigin.hostname);
-    if ((relayOrigin.protocol !== 'https:' && !allowLocalTestOrigin)
-      || relayOrigin.pathname !== '/' || relayOrigin.search || relayOrigin.hash) {
-      throw new Error('invalid public origin');
-    }
-  } catch {
-    return res.status(503).json({ error: 'PUBLIC_URL_REQUIRED', message: 'Set BITCIDER_PUBLIC_URL to the Deplexo HTTPS origin before downloading the local relay config.' });
+    return res.status(409).json({
+      error: 'CIDER_CONNECTION_REQUIRED',
+      message: 'Link Cider in this BitCider tab before starting the browser bridge.'
+    });
   }
 
-  const relayKey = crypto.randomBytes(32).toString('base64url');
-  const updated = await updateStore(store => {
-    const account = store.accounts[accountId];
-    if (!account || !account.ciderToken) return { status: 409 };
-    account.ciderRelayKeyHash = hashRelayKey(relayKey);
-    account.ciderRelayKeyCreatedAt = new Date().toISOString();
-    return { ok: true };
-  });
-  if (updated.status) return res.status(409).json({ error: 'ACCOUNT_NOT_FOUND', message: 'Sign in again before creating the relay.' });
-  invalidateRelaySession(accountId);
-  res.set('Cache-Control', 'no-store');
-  return res.json({
-    ok: true,
-    config: {
-      relayUrl: relayOrigin.origin,
-      relayKey,
-      ciderApiUrl: 'http://127.0.0.1:10767',
-      requestTimeoutMs: 15000
-    },
-    agentUrl: relayOrigin.origin + '/bitcider-relay.mjs'
-  });
-});
+  const ownerKey = browserBridgeOwnerKey(accountId, sessionId);
+  invalidateBrowserBridge(ownerKey, 'A newer BitCider browser tab took over the local Cider bridge.');
+  const bridgeId = crypto.randomBytes(18).toString('base64url');
+  const bridgeSecret = crypto.randomBytes(32).toString('base64url');
+  const registration = {
+    bridgeId,
+    ownerKey,
+    secretHash: hashBrowserBridgeSecret(bridgeSecret),
+    createdAt: Date.now(),
+    lastSeenAt: Date.now()
+  };
+  browserBridges.set(bridgeId, registration);
+  browserBridgeByOwner.set(ownerKey, bridgeId);
 
-app.post('/api/relay/credentials', async (req, res) => {
-  const match = findRelayAccount(relayBearer(req));
-  if (!match) return res.status(401).json({ error: 'RELAY_UNAUTHORIZED' });
-  const token = tokenForUser(match.account);
-  if (!token) return res.status(409).json({ error: 'CIDER_CONNECTION_REQUIRED' });
   res.set('Cache-Control', 'no-store');
   res.set('Pragma', 'no-cache');
-  return res.json({ ciderToken: token });
+  return res.json({ ok: true, bridgeId, bridgeSecret, ciderToken: token });
 });
 
-app.post('/api/relay/next', async (req, res) => {
-  const match = findRelayAccount(relayBearer(req));
-  if (!match) return res.status(401).json({ error: 'RELAY_UNAUTHORIZED' });
-  relayLastSeen.set(match.accountId, Date.now());
+app.post('/api/bridge/poll', async (req, res) => {
+  const registration = browserBridgeFromRequest(req);
+  if (!registration) {
+    return res.status(401).json({ error: 'BROWSER_BRIDGE_UNAUTHORIZED', message: 'This browser bridge has expired. Refresh BitCider to reconnect.' });
+  }
+  registration.lastSeenAt = Date.now();
   const requestedWait = Number(req.body?.waitMs || 20000);
-  const waitMs = Number.isFinite(requestedWait) ? Math.max(500, Math.min(Math.floor(requestedWait), 20000)) : 20000;
-  const job = await takeRelayJob(match.accountId, waitMs);
-  if (job) relayLastSeen.set(match.accountId, Date.now());
+  const waitMs = Number.isFinite(requestedWait)
+    ? Math.max(500, Math.min(Math.floor(requestedWait), 20000))
+    : 20000;
+  const job = await takeBrowserBridgeJob(registration.bridgeId, waitMs);
+  const current = browserBridges.get(registration.bridgeId);
+  if (!current || browserBridgeByOwner.get(registration.ownerKey) !== registration.bridgeId) {
+    return res.status(409).json({ error: 'BROWSER_BRIDGE_REPLACED', message: 'Another BitCider tab has taken over the browser bridge.' });
+  }
+  current.lastSeenAt = Date.now();
   res.set('Cache-Control', 'no-store');
   return res.json({ job });
 });
 
-app.post('/api/relay/respond', async (req, res) => {
-  const match = findRelayAccount(relayBearer(req));
-  if (!match) return res.status(401).json({ error: 'RELAY_UNAUTHORIZED' });
-  const id = String(req.body?.jobId || '');
-  const job = relayJobs.get(id);
-  if (!job || job.accountId !== match.accountId) {
-    return res.status(404).json({ error: 'RELAY_JOB_NOT_FOUND' });
+app.post('/api/bridge/result', async (req, res) => {
+  const registration = browserBridgeFromRequest(req);
+  if (!registration) {
+    return res.status(401).json({ error: 'BROWSER_BRIDGE_UNAUTHORIZED', message: 'This browser bridge has expired. Refresh BitCider to reconnect.' });
+  }
+  const requestId = String(req.body?.requestId || '');
+  const job = browserBridgeJobs.get(requestId);
+  if (!job || job.bridgeId !== registration.bridgeId) {
+    return res.status(404).json({ error: 'BROWSER_BRIDGE_JOB_NOT_FOUND' });
   }
   const status = Number(req.body?.status);
   if (!Number.isInteger(status) || status < 100 || status > 599) {
-    return res.status(400).json({ error: 'INVALID_RELAY_RESPONSE' });
+    return res.status(400).json({ error: 'INVALID_BROWSER_BRIDGE_RESPONSE' });
   }
-  const payload = req.body?.payload && typeof req.body.payload === 'object' ? req.body.payload : {};
+  const body = req.body?.body && typeof req.body.body === 'object' ? req.body.body : {};
+  if (Buffer.byteLength(JSON.stringify(body), 'utf8') > 220 * 1024) {
+    return res.status(413).json({ error: 'BROWSER_BRIDGE_RESPONSE_TOO_LARGE' });
+  }
   clearTimeout(job.timer);
-  relayJobs.delete(id);
-  relayLastSeen.set(match.accountId, Date.now());
-  job.resolve({ status, payload });
+  browserBridgeJobs.delete(requestId);
+  registration.lastSeenAt = Date.now();
+  job.resolve({ status, body });
+  return res.json({ ok: true });
+});
+
+app.post('/api/bridge/stop', async (req, res) => {
+  const registration = browserBridgeFromRequest(req);
+  if (!registration) return res.json({ ok: true });
+  invalidateBrowserBridge(registration.ownerKey, 'The BitCider browser tab stopped relaying Cider requests.');
   return res.json({ ok: true });
 });
 
