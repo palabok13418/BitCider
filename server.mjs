@@ -645,7 +645,7 @@ function ciderBridgeError(code, message, status = 503) {
 
 function hashRelayKey(value) {
   return crypto.createHash('sha256')
-    .update('BitCider per-user Cider relay v1\\0', 'utf8')
+    .update('BitCider per-user Cider relay v1\0', 'utf8')
     .update(String(value || ''), 'utf8')
     .digest('hex');
 }
@@ -672,6 +672,23 @@ function relayStatus(accountId, account) {
     online,
     lastSeenAt: timestamp ? new Date(timestamp).toISOString() : null
   };
+}
+
+function invalidateRelaySession(accountId) {
+  relayLastSeen.delete(accountId);
+  relayJobQueues.delete(accountId);
+  const waiters = relayPollWaiters.get(accountId) || [];
+  relayPollWaiters.delete(accountId);
+  for (const waiter of waiters) {
+    clearTimeout(waiter.timer);
+    waiter.resolve(null);
+  }
+  for (const [id, job] of relayJobs) {
+    if (job.accountId !== accountId) continue;
+    clearTimeout(job.timer);
+    relayJobs.delete(id);
+    job.reject(ciderBridgeError('CIDER_BRIDGE_OFFLINE', 'The desktop relay key was rotated or revoked. Reconnect the local relay.', 503));
+  }
 }
 
 function takeRelayJob(accountId, waitMs) {
@@ -757,7 +774,7 @@ async function requestThroughUserRelay(accountId, apiPath, { method = 'GET', bod
 
 function relayBearer(req) {
   const header = String(req.get('authorization') || '');
-  const match = /^Bearer\\s+([A-Za-z0-9_-]{32,160})$/i.exec(header);
+  const match = /^Bearer\s+([A-Za-z0-9_-]{32,160})$/i.exec(header);
   return match?.[1] || '';
 }
 
@@ -1129,7 +1146,10 @@ app.post('/api/relay/config', localOnly, requireCsrf, requireDedicatedTokenEncry
   let relayOrigin;
   try {
     relayOrigin = new URL(PUBLIC_URL);
-    if (relayOrigin.protocol !== 'https:' || relayOrigin.pathname !== '/' || relayOrigin.search || relayOrigin.hash) {
+    const allowLocalTestOrigin = process.env.BITCIDER_ALLOW_LOOPBACK_ADMIN === 'true'
+      && relayOrigin.protocol === 'http:' && isLoopback(relayOrigin.hostname);
+    if ((relayOrigin.protocol !== 'https:' && !allowLocalTestOrigin)
+      || relayOrigin.pathname !== '/' || relayOrigin.search || relayOrigin.hash) {
       throw new Error('invalid public origin');
     }
   } catch {
@@ -1145,7 +1165,7 @@ app.post('/api/relay/config', localOnly, requireCsrf, requireDedicatedTokenEncry
     return { ok: true };
   });
   if (updated.status) return res.status(409).json({ error: 'ACCOUNT_NOT_FOUND', message: 'Sign in again before creating the relay.' });
-  relayLastSeen.delete(accountId);
+  invalidateRelaySession(accountId);
   res.set('Cache-Control', 'no-store');
   return res.json({
     ok: true,
@@ -1700,7 +1720,7 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
     if (tokenForUser(target) !== token) {
       delete target.ciderRelayKeyHash;
       delete target.ciderRelayKeyCreatedAt;
-      if (authenticated) relayLastSeen.delete(accountId);
+      if (authenticated) invalidateRelaySession(accountId);
     }
     target.ciderToken = encryptToken(token);
     target.authMethod = 'cider-api-auth-request';
@@ -1751,7 +1771,7 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
         delete account.connectedAt;
         delete account.ciderRelayKeyHash;
         delete account.ciderRelayKeyCreatedAt;
-        relayLastSeen.delete(accountId);
+        invalidateRelaySession(accountId);
       }
     } else {
       delete store.sessions[sessionId];
