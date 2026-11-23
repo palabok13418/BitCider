@@ -2234,7 +2234,7 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
   return [];
 }
 
-const BITMONO_DEEZER_API_BASE = String(process.env.BITMONO_DEEZER_API_BASE || 'https://dzr.tabs-vs-spaces.wtf').replace(/\\/+$/, '');
+const BITMONO_DEEZER_API_BASE = String(process.env.BITMONO_DEEZER_API_BASE || 'https://dzr.tabs-vs-spaces.wtf');
 
 async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {}) {
   const url = new URL('/search', BITMONO_DEEZER_API_BASE);
