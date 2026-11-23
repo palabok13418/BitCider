@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import Lightfall from './Lightfall.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-23-account-key-v8';
+const API_VERSION = '2026-11-23-account-key-v9';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
