@@ -48,6 +48,7 @@ const browserBridgeQueues = new Map();
 const browserBridgePollWaiters = new Map();
 const browserBridgeJobs = new Map();
 const BROWSER_BRIDGE_ONLINE_WINDOW_MS = 65000;
+const BROWSER_BRIDGE_EXPIRY_MS = 120000;
 const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
   crypto.randomBytes(32).toString('base64url') + '-dummy-account-passphrase'
 );
@@ -623,6 +624,34 @@ function hashBrowserBridgeSecret(value) {
     .digest('hex');
 }
 
+function sweepExpiredBrowserBridges() {
+  const now = Date.now();
+  for (const registration of browserBridges.values()) {
+    if (now - registration.lastSeenAt >= BROWSER_BRIDGE_EXPIRY_MS) {
+      invalidateBrowserBridge(registration.ownerKey, 'The BitCider browser tab has been inactive. Reopen BitCider to reconnect.');
+    }
+  }
+}
+
+setInterval(sweepExpiredBrowserBridges, 30000).unref?.();
+
+function browserBridgeSessionIsActive(registration) {
+  const store = readStore();
+  if (registration.accountId) {
+    const session = store.authSessions[registration.sessionHash];
+    const account = store.accounts[registration.accountId];
+    return Boolean(
+      session
+      && session.accountId === registration.accountId
+      && Date.parse(session.expiresAt || 0) > Date.now()
+      && account?.ciderToken
+      && account?.addonKey
+    );
+  }
+  const session = store.sessions[registration.sessionId];
+  return Boolean(session?.ciderToken && session?.addonKey);
+}
+
 function browserBridgeFromRequest(req) {
   const bridgeId = String(req.get('x-bitcider-bridge-id') || '');
   const secret = String(req.get('x-bitcider-bridge-secret') || '');
@@ -633,6 +662,10 @@ function browserBridgeFromRequest(req) {
   const candidate = Buffer.from(hashBrowserBridgeSecret(secret), 'hex');
   const stored = Buffer.from(registration.secretHash, 'hex');
   if (candidate.length !== stored.length || !crypto.timingSafeEqual(candidate, stored)) return null;
+  if (!browserBridgeSessionIsActive(registration)) {
+    invalidateBrowserBridge(registration.ownerKey, 'The BitCider session expired or was signed out. Reload BitCider and sign in again.');
+    return null;
+  }
   return registration;
 }
 
@@ -1071,8 +1104,10 @@ app.post('/api/bridge/register', localOnly, requireCsrf, requireDedicatedTokenEn
   const registration = {
     bridgeId,
     ownerKey,
-    secretHash: hashBrowserBridgeSecret(bridgeSecret),
+    accountId: accountId || null,
+    sessionId,
     sessionHash: hashSessionId(sessionId),
+    secretHash: hashBrowserBridgeSecret(bridgeSecret),
     createdAt: Date.now(),
     lastSeenAt: Date.now()
   };
