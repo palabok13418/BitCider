@@ -7,6 +7,7 @@ const Balatro = lazy(() => import('./Balatro.jsx'));
 const GradientWaves = lazy(() => import('./GradientWaves.jsx'));
 const LaserFlow = lazy(() => import('./LaserFlow.jsx'));
 const LightTunnel = lazy(() => import('./LightTunnel.jsx'));
+const PrismaticBurst = lazy(() => import('./PrismaticBurst.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -287,6 +288,40 @@ const BACKGROUND_REGISTRY = [
           variation={7}
           lightMode={false}
           dpr={1.3}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'prismatic-burst',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <PrismaticBurst
+          className="site-waves"
+          colors={['#fd3f57', '#ff2b5e', '#ff9bac', '#ffdce2']}
+          intensity={1.9}
+          speed={0.36}
+          animationType="rotate3d"
+          distort={2.2}
+          rayCount={0}
+          rayWidth={1.05}
+          zoom={1}
+          twist={0.16}
+          flow={0.18}
+          centerFade={1.14}
+          grain={0.42}
+          glow={0.78}
+          mouseInteraction
+          mouseStrength={0.42}
+          hoverDampness={0.3}
+          clickBurst
+          intro
+          fade={0.08}
+          quality="high"
+          lightMode={false}
+          paused={false}
+          dpr={1.2}
           onError={onError}
         />
       </Suspense>
