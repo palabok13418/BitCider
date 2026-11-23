@@ -4,6 +4,9 @@ import { promisify } from 'node:util';
 const scrypt = promisify(crypto.scrypt);
 export const PASSWORD_SCRYPT = Object.freeze({ N: 32768, r: 8, p: 1, keylen: 64, maxmem: 64 * 1024 * 1024 });
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const MAX_ACCOUNT_DEVICES = 5;
+export const MAX_PASSKEYS_PER_ACCOUNT = 5;
+export const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const RECOVERY_CODE_COUNT = 10;
 
 export function normalizeUsername(value) {
