@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import Lightfall from './Lightfall.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-22-cider-token-account-v6';
+const API_VERSION = '2026-11-23-account-key-v7';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -46,10 +46,13 @@ function AccountSetupWindow({
   inline = false,
   initialFlow = null,
   initialHasPasskeys = false,
+  initialCiderLinked = false,
   onComplete,
   onClose
 }) {
   const [stage, setStage] = useState(initialFlow === 'existing' ? 'login' : initialFlow === 'new' ? 'create' : 'waiting');
+  const [accountKey, setAccountKey] = useState('');
+  const [ciderLinked, setCiderLinked] = useState(initialCiderLinked || initialFlow === 'existing');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -91,6 +94,7 @@ function AccountSetupWindow({
 
   function finish() {
     setEnrollmentPassword('');
+    setAccountKey('');
     setPassword('');
     setPasswordConfirm('');
     if (inline) {
@@ -116,6 +120,7 @@ function AccountSetupWindow({
       if (event.data?.type !== 'BITCIDER_ACCOUNT_FLOW') return;
       const nextFlow = event.data.flow === 'existing' ? 'existing' : 'new';
       setHasPasskeys(event.data.hasPasskeys === true);
+      setCiderLinked(nextFlow === 'existing' || event.data.ciderLinked === true);
       setStage(nextFlow === 'existing' ? 'login' : 'create');
       setError('');
       setInfo('');
@@ -136,10 +141,16 @@ function AccountSetupWindow({
       const optionsJSON = await post('/api/account/passkeys/auth/options');
       const authentication = await startAuthentication({ optionsJSON });
       const result = await post('/api/account/passkeys/auth/verify', authentication);
-      setInfo(result.evictedDevice
-        ? 'Passkey verified. ' + result.evictedDevice + ' was signed out to stay within the five-device limit.'
-        : 'Passkey verified. Your saved Cider connection is restored.');
-      finish();
+      if (result.accountKey) {
+        setAccountKey(result.accountKey);
+        setStage('account-key');
+        setInfo('A new Account Key was created for this older account. Save it before continuing.');
+      } else {
+        setInfo(result.evictedDevice
+          ? 'Passkey verified. ' + result.evictedDevice + ' was signed out to stay within the five-device limit.'
+          : 'Passkey verified. Your BitCider account is restored.');
+        finish();
+      }
     } catch (err) {
       setError(err.message || 'Passkey sign-in was cancelled or could not be completed.');
     } finally {
@@ -152,8 +163,14 @@ function AccountSetupWindow({
     setBusy(true);
     setError('');
     try {
-      await post('/api/account/login-with-cider', { password });
-      finish();
+      const result = await post('/api/account/login', { accountKey: accountKey.trim(), password });
+      if (result.accountKey) {
+        setAccountKey(result.accountKey);
+        setStage('account-key');
+        setInfo('A new Account Key was created for this older account. Save it before continuing.');
+      } else {
+        finish();
+      }
     } catch (err) {
       setError(err.message || 'The password could not be verified for this Cider connection.');
     } finally {
@@ -172,6 +189,7 @@ function AccountSetupWindow({
     try {
       const result = await post('/api/account/register', { password });
       setEnrollmentPassword(password);
+      setAccountKey(result.accountKey || '');
       setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
       setPassword('');
       setPasswordConfirm('');
@@ -194,7 +212,8 @@ function AccountSetupWindow({
     setBusy(true);
     setError('');
     try {
-      const result = await post('/api/account/recover-with-cider', { recoveryCode, newPassword: password });
+      const result = await post('/api/account/recover', { recoveryCode, newPassword: password });
+      setAccountKey(result.accountKey || '');
       setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
       setPassword('');
       setPasswordConfirm('');
@@ -206,6 +225,16 @@ function AccountSetupWindow({
       setError(err.message || 'The recovery code could not be verified for this Cider connection.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function copyAccountKey() {
+    if (!accountKey) return;
+    try {
+      await navigator.clipboard.writeText(accountKey);
+      setInfo('Account Key copied. Keep it private.');
+    } catch {
+      setError('Clipboard access was blocked. Select and copy the Account Key manually.');
     }
   }
 
@@ -242,7 +271,7 @@ function AccountSetupWindow({
   }
 
   const canSubmitCreate = Boolean(password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
-  const canSubmitLogin = Boolean(password.length > 0 && csrfToken && !busy);
+  const canSubmitLogin = Boolean(password.length > 0 && (accountKey.trim().length > 0 || ciderLinked) && csrfToken && !busy);
   const canSubmitRecovery = Boolean(recoveryCode.trim() && password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
   const strengthClass = strength.level ? 'password-strength level-' + strength.level : 'password-strength';
 
@@ -291,18 +320,20 @@ function AccountSetupWindow({
                 <p className="account-popup-footnote">There is no password character-count rule. The strength indicator is only a live estimate and will never block a password by itself.</p>
                 <button className="account-submit-button" type="submit" disabled={!canSubmitCreate || !tokenEncryptionConfigured}>{busy ? 'CREATING ACCOUNT…' : 'CREATE ACCOUNT'}</button>
               </form>
+              <button className="account-recovery-link" type="button" onClick={() => { setCiderLinked(false); setAccountKey(''); setPassword(''); setPasswordConfirm(''); setError(''); setStage('login'); }}>ALREADY HAVE AN ACCOUNT? SIGN IN</button>
             </div>
           )}
 
           {stage === 'recovery' && (
             <div className="account-popup-state">
               <div className="card-label">ACCOUNT SECURITY</div>
-              <h1>Save your recovery codes.</h1>
-              <p>These codes are shown once. Each code can recover your account one time, so save them somewhere private.</p>
+              <h1>Save your Account Key and recovery codes.</h1>
+              <p>Your Account Key identifies your BitCider account on new devices. It is shown once. Keep it private and store the recovery codes separately.</p>
+              <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
-                <button className="account-submit-button" type="button" onClick={() => { setRecoverySaved(true); setStage('passkeys'); }} disabled={!recoveryCodes.length}>I SAVED MY CODES</button>
+                <button className="account-submit-button" type="button" onClick={() => { setRecoverySaved(true); setStage('passkeys'); }} disabled={!recoveryCodes.length || !accountKey}>I SAVED MY KEY AND CODES</button>
               </div>
             </div>
           )}
@@ -327,18 +358,20 @@ function AccountSetupWindow({
 
           {stage === 'login' && (
             <div className="account-popup-state">
-              <div className="card-label">CIDER LINK ALREADY SAVED</div>
+              <div className="card-label">BITCIDER ACCOUNT</div>
               <h1>Welcome back.</h1>
-              <p>This approved Cider app token is already linked to a BitCider account. Use a passkey or enter your account password.</p>
-              {hasPasskeys && (
-                <div className="account-passkey-prompt">
-                  <div className="passkey-prompt-indicator">PASSKEY SIGN-IN</div>
-                  <p>Choose a passkey to sign in without typing your password.</p>
-                  <button className="account-passkey-button" type="button" onClick={signInWithPasskey} disabled={busy || !csrfToken}>{busy ? 'WAITING FOR PASSKEY…' : 'CONTINUE WITH PASSKEY'}</button>
-                </div>
-              )}
+              <p>Use a passkey, or enter your Account Key and password. On a device already linked to Cider, the Account Key can be left blank.</p>
+              <div className="account-passkey-prompt">
+                <div className="passkey-prompt-indicator">PASSKEY SIGN-IN</div>
+                <p>Use a discoverable passkey saved in this browser, device, or synced password manager.</p>
+                <button className="account-passkey-button" type="button" onClick={signInWithPasskey} disabled={busy || !csrfToken}>{busy ? 'WAITING FOR PASSKEY…' : 'CONTINUE WITH PASSKEY'}</button>
+              </div>
               <div className="account-popup-divider"><span>OR USE YOUR PASSWORD</span></div>
               <form className="account-popup-form" onSubmit={signInWithPassword}>
+                <label>
+                  <span>ACCOUNT KEY</span>
+                  <input autoComplete="off" spellCheck={false} value={accountKey} onChange={event => setAccountKey(event.target.value)} placeholder={ciderLinked ? 'Optional on this already-linked device' : 'Paste your saved Account Key'} required={!ciderLinked} />
+                </label>
                 <label>
                   <span>PASSWORD</span>
                   <input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Your BitCider password" required />
@@ -353,7 +386,7 @@ function AccountSetupWindow({
             <div className="account-popup-state">
               <div className="card-label">ACCOUNT RECOVERY</div>
               <h1>Reset your password.</h1>
-              <p>Reconnect the same Cider app token, then enter one unused recovery code and choose a new password.</p>
+              <p>Enter one unused recovery code from this account and choose a new password. You do not need the original device or Cider connection.</p>
               <form className="account-popup-form" onSubmit={recoverAccount}>
                 <label>
                   <span>ONE-TIME RECOVERY CODE</span>
@@ -378,11 +411,22 @@ function AccountSetupWindow({
             </div>
           )}
 
+          {stage === 'account-key' && (
+            <div className="account-popup-state">
+              <div className="card-label">ACCOUNT KEY CREATED</div>
+              <h1>Save your Account Key.</h1>
+              <p>This older account did not have an Account Key yet. It is shown once. Store it privately so you can sign in from other devices.</p>
+              <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
+              <button className="account-submit-button" type="button" onClick={finish} disabled={!accountKey}>I SAVED MY ACCOUNT KEY</button>
+            </div>
+          )}
+
           {stage === 'recovery-reset' && (
             <div className="account-popup-state">
               <div className="card-label">PASSWORD RECOVERED</div>
               <h1>Save your new recovery codes.</h1>
-              <p>This device is now signed in. Other active devices were signed out. Save these replacement codes before continuing.</p>
+              <p>Your password and Account Key have been reset. Other active devices were signed out. Save the new key and replacement recovery codes before continuing.</p>
+              <div className="account-key-display"><span>NEW ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
@@ -746,6 +790,7 @@ export default function App() {
     const message = {
       type: 'BITCIDER_ACCOUNT_FLOW',
       flow: flow.flow,
+      ciderLinked: flow.ciderLinked === true,
       hasPasskeys: flow.hasPasskeys === true
     };
     if (popup && !popup.closed) {
@@ -893,6 +938,7 @@ export default function App() {
           setNoticeType('info');
           sendAccountFlow(popup, {
             flow: 'existing',
+            ciderLinked: true,
             hasPasskeys: result.hasPasskeys
           });
         }
@@ -1147,6 +1193,7 @@ export default function App() {
           inline
           initialFlow={inlineAccountFlow.flow}
           initialHasPasskeys={inlineAccountFlow.hasPasskeys}
+          initialCiderLinked={inlineAccountFlow.ciderLinked}
           onClose={() => setInlineAccountFlow(null)}
           onComplete={() => {
             setInlineAccountFlow(null);
