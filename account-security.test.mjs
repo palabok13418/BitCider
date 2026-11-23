@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   createPasswordRecord,
   verifyPassword,
-  validateUsername,
   validatePassword,
   createRecoveryCodes,
   consumeRecoveryCode,
@@ -14,13 +13,6 @@ import {
   MAX_PASSKEYS_PER_ACCOUNT,
   WEBAUTHN_CHALLENGE_TTL_MS
 } from './account-security.mjs';
-
-test('username validation normalizes case and enforces a safe identifier format', () => {
-  assert.equal(validateUsername('  Ryker_01  '), 'ryker_01');
-  assert.equal(validateUsername('ab'), null);
-  assert.equal(validateUsername('bad name'), null);
-  assert.equal(validateUsername('not/an/account'), null);
-});
 
 test('passphrases have no character-count limit and must only be non-empty', () => {
   assert.equal(validatePassword('x'), true);

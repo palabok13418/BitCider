@@ -98,10 +98,18 @@ async function jsonRequest(origin, route, { method = 'GET', cookie, csrf, body }
   return { response, payload };
 }
 
+async function connectExistingCiderToken(origin, cookie, csrf, token) {
+  return jsonRequest(origin, '/api/connect', {
+    method: 'POST',
+    cookie,
+    csrf,
+    body: { token, scopes: ['playback', 'queue', 'library', 'audio'] }
+  });
+}
+
 test('BitCider accounts restore cloud links across sessions and survive encryption-key migration', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-flow-'));
   const port = await freePort();
-  const username = 'cloudlink_test';
   const initialPassword = 'secure-first-passphrase-2026';
   const changedPassword = 'secure-second-passphrase-2026';
   const fakeCiderToken = 'bitcider-integration-test-token-never-store-plaintext';
@@ -127,7 +135,7 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
     method: 'POST',
     cookie: anonymousCookie,
     csrf: anonymous.payload.csrfToken,
-    body: { username, password: initialPassword }
+    body: { password: initialPassword }
   });
   assert.equal(blockedRegistration.response.status, 503);
   assert.equal(blockedRegistration.payload.error, 'SECURE_STORAGE_NOT_CONFIGURED');
@@ -170,15 +178,27 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
     method: 'POST',
     cookie: anonymousCookie,
     csrf: restoredAnonymous.payload.csrfToken,
-    body: { username, password: initialPassword }
+    body: { password: initialPassword }
   });
   assert.equal(registration.response.status, 201);
   assert.equal(registration.payload.recoveryCodes.length, 10);
   const originalRecoveryCode = registration.payload.recoveryCodes[0];
   const firstDeviceCookie = cookieFrom(registration.response);
 
-  const firstDeviceStatus = await jsonRequest(secondOrigin, '/api/status', { cookie: firstDeviceCookie });
+  const oldAccountStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
+  const oldAccount = Object.values(oldAccountStore.accounts)[0];
+  oldAccount.username = 'legacy-account-name';
+  await fs.writeFile(path.join(dataDir, 'connection.json'), JSON.stringify(oldAccountStore, null, 2));
+  await server.stop();
+  server = null;
+  server = await startServer({ port, dataDir, encryptionKey: dedicatedKey });
+
+  const firstDeviceStatus = await jsonRequest(server.origin, '/api/status', { cookie: firstDeviceCookie });
+  const migratedAccountStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
+  const migratedAccount = Object.values(migratedAccountStore.accounts)[0];
+  assert.equal(Object.hasOwn(migratedAccount, 'username'), false);
   assert.equal(firstDeviceStatus.payload.account.authenticated, true);
+  assert.equal(Object.hasOwn(firstDeviceStatus.payload.account, 'username'), false);
   assert.equal(firstDeviceStatus.payload.connected, true);
   assert.equal(firstDeviceStatus.payload.addonUrl, savedAddonUrl);
 
@@ -199,18 +219,27 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   });
   assert.equal(duplicateLink.response.status, 200);
   assert.equal(duplicateLink.payload.accountLinked, true);
-  assert.equal(duplicateLink.payload.username, username);
+  assert.equal(Object.hasOwn(duplicateLink.payload, 'username'), false);
   assert.equal(duplicateLink.payload.hasPasskeys, false);
   const duplicateBrowserStatus = await jsonRequest(secondOrigin, '/api/status', { cookie: secondAnonymousCookie });
   assert.equal(duplicateBrowserStatus.payload.connected, false);
   assert.equal(duplicateBrowserStatus.payload.pendingAccountSetup, false);
 
   // A clean second browser can sign in and recover the account-owned addon URL.
-  const secondLogin = await jsonRequest(secondOrigin, '/api/account/login', {
+  const unlinkedPasswordLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
     method: 'POST',
     cookie: secondAnonymousCookie,
     csrf: secondAnonymous.payload.csrfToken,
-    body: { username, password: initialPassword }
+    body: { password: initialPassword }
+  });
+  assert.equal(unlinkedPasswordLogin.response.status, 401);
+  const secondLoginLink = await connectExistingCiderToken(secondOrigin, secondAnonymousCookie, secondAnonymous.payload.csrfToken, fakeCiderToken);
+  assert.equal(secondLoginLink.response.status, 200);
+  const secondLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
+    method: 'POST',
+    cookie: secondAnonymousCookie,
+    csrf: secondAnonymous.payload.csrfToken,
+    body: { password: initialPassword }
   });
   assert.equal(secondLogin.response.status, 200);
   const secondDeviceCookie = cookieFrom(secondLogin.response);
@@ -224,11 +253,13 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   for (let index = 0; index < 3; index += 1) {
     const anonymousDevice = await jsonRequest(secondOrigin, '/api/status');
     const anonymousDeviceCookie = cookieFrom(anonymousDevice.response);
-    const signIn = await jsonRequest(secondOrigin, '/api/account/login', {
+    const deviceLink = await connectExistingCiderToken(secondOrigin, anonymousDeviceCookie, anonymousDevice.payload.csrfToken, fakeCiderToken);
+    assert.equal(deviceLink.response.status, 200);
+    const signIn = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
       method: 'POST',
       cookie: anonymousDeviceCookie,
       csrf: anonymousDevice.payload.csrfToken,
-      body: { username, password: initialPassword }
+      body: { password: initialPassword }
     });
     assert.equal(signIn.response.status, 200);
   }
@@ -239,11 +270,13 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
 
   const sixthAnonymous = await jsonRequest(secondOrigin, '/api/status');
   const sixthAnonymousCookie = cookieFrom(sixthAnonymous.response);
-  const sixthLogin = await jsonRequest(secondOrigin, '/api/account/login', {
+  const sixthLink = await connectExistingCiderToken(secondOrigin, sixthAnonymousCookie, sixthAnonymous.payload.csrfToken, fakeCiderToken);
+  assert.equal(sixthLink.response.status, 200);
+  const sixthLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
     method: 'POST',
     cookie: sixthAnonymousCookie,
     csrf: sixthAnonymous.payload.csrfToken,
-    body: { username, password: initialPassword }
+    body: { password: initialPassword }
   });
   assert.equal(sixthLogin.response.status, 200);
   assert.ok(sixthLogin.payload.evictedDevice);
@@ -258,6 +291,15 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   // responses, so a captured assertion cannot be replayed.
   const passkeyAnonymous = await jsonRequest(secondOrigin, '/api/status');
   const passkeyAnonymousCookie = cookieFrom(passkeyAnonymous.response);
+  const unlinkedPasskeyOptions = await jsonRequest(secondOrigin, '/api/account/passkeys/auth/options', {
+    method: 'POST',
+    cookie: passkeyAnonymousCookie,
+    csrf: passkeyAnonymous.payload.csrfToken,
+    body: {}
+  });
+  assert.equal(unlinkedPasskeyOptions.response.status, 401);
+  const passkeyLink = await connectExistingCiderToken(secondOrigin, passkeyAnonymousCookie, passkeyAnonymous.payload.csrfToken, fakeCiderToken);
+  assert.equal(passkeyLink.response.status, 200);
   const passkeyOptions = await jsonRequest(secondOrigin, '/api/account/passkeys/auth/options', {
     method: 'POST',
     cookie: passkeyAnonymousCookie,
@@ -283,11 +325,15 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
 
   // Recovery consumes a code once, rotates the entire recovery set, and
   // invalidates both signed-in devices.
-  const recovery = await jsonRequest(secondOrigin, '/api/account/recover', {
+  const recoveryBrowser = await jsonRequest(secondOrigin, '/api/status');
+  const recoveryCookie = cookieFrom(recoveryBrowser.response);
+  const recoveryLink = await connectExistingCiderToken(secondOrigin, recoveryCookie, recoveryBrowser.payload.csrfToken, fakeCiderToken);
+  assert.equal(recoveryLink.response.status, 200);
+  const recovery = await jsonRequest(secondOrigin, '/api/account/recover-with-cider', {
     method: 'POST',
-    cookie: secondDeviceCookie,
-    csrf: secondDeviceStatus.payload.csrfToken,
-    body: { username, recoveryCode: originalRecoveryCode, newPassword: changedPassword }
+    cookie: recoveryCookie,
+    csrf: recoveryBrowser.payload.csrfToken,
+    body: { recoveryCode: originalRecoveryCode, newPassword: changedPassword }
   });
   assert.equal(recovery.response.status, 200);
   assert.equal(recovery.payload.recoveryCodes.length, 10);
@@ -299,19 +345,21 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
 
   const postRecoveryAnonymous = await jsonRequest(secondOrigin, '/api/status');
   const postRecoveryCookie = cookieFrom(postRecoveryAnonymous.response);
-  const reusedCode = await jsonRequest(secondOrigin, '/api/account/recover', {
+  const postRecoveryLink = await connectExistingCiderToken(secondOrigin, postRecoveryCookie, postRecoveryAnonymous.payload.csrfToken, fakeCiderToken);
+  assert.equal(postRecoveryLink.response.status, 200);
+  const reusedCode = await jsonRequest(secondOrigin, '/api/account/recover-with-cider', {
     method: 'POST',
     cookie: postRecoveryCookie,
     csrf: postRecoveryAnonymous.payload.csrfToken,
-    body: { username, recoveryCode: originalRecoveryCode, newPassword: 'another-new-passphrase-2026' }
+    body: { recoveryCode: originalRecoveryCode, newPassword: 'another-new-passphrase-2026' }
   });
   assert.equal(reusedCode.response.status, 400);
 
-  const newLogin = await jsonRequest(secondOrigin, '/api/account/login', {
+  const newLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
     method: 'POST',
     cookie: postRecoveryCookie,
     csrf: postRecoveryAnonymous.payload.csrfToken,
-    body: { username, password: changedPassword }
+    body: { password: changedPassword }
   });
   assert.equal(newLogin.response.status, 200);
   const newDeviceCookie = cookieFrom(newLogin.response);

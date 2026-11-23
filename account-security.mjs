@@ -9,15 +9,6 @@ export const MAX_PASSKEYS_PER_ACCOUNT = 5;
 export const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const RECOVERY_CODE_COUNT = 10;
 
-export function normalizeUsername(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-export function validateUsername(value) {
-  const username = normalizeUsername(value);
-  return /^[a-z0-9][a-z0-9._-]{2,23}$/.test(username) ? username : null;
-}
-
 export function validatePassword(value) {
   // Password length is deliberately unrestricted by character count. The API
   // request body still has a finite transport limit to protect the service.

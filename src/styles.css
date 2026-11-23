@@ -1132,3 +1132,16 @@ h1 .bitchord-word {
   .account-popup-card { border-radius: 15px; }
   .popup-recovery-codes { grid-template-columns: 1fr 1fr; }
 }
+
+.account-recovery-link {
+  display: block;
+  margin: 13px auto 0;
+  padding: 5px 8px;
+  border: 0;
+  color: #91a0ba;
+  background: transparent;
+  font: 9px var(--mono);
+  letter-spacing: .08em;
+  transition: color .18s ease;
+}
+.account-recovery-link:hover { color: #f1c7d1; }

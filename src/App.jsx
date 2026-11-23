@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-22-cider-link-onboarding-v5';
+const API_VERSION = '2026-11-22-cider-token-account-v6';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -45,22 +45,19 @@ function passwordStrength(value) {
 function AccountSetupWindow({
   inline = false,
   initialFlow = null,
-  initialUsername = '',
   initialHasPasskeys = false,
   onComplete,
   onClose
 }) {
-  const [flow, setFlow] = useState(initialFlow);
   const [stage, setStage] = useState(initialFlow === 'existing' ? 'login' : initialFlow === 'new' ? 'create' : 'waiting');
-  const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [csrfToken, setCsrfToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [hasPasskeys, setHasPasskeys] = useState(initialHasPasskeys);
-  const [passkeyState, setPasskeyState] = useState('idle');
   const [passkeyCount, setPasskeyCount] = useState(0);
   const [passkeyLimit, setPasskeyLimit] = useState(5);
   const [tokenEncryptionConfigured, setTokenEncryptionConfigured] = useState(false);
@@ -89,7 +86,6 @@ function AccountSetupWindow({
     setPasskeyCount(Number(result.passkeyCount || 0));
     setPasskeyLimit(Number(result.passkeyLimit || 5));
     setTokenEncryptionConfigured(result.tokenEncryptionConfigured === true);
-    if (result.account?.username && !username) setUsername(result.account.username);
     return result;
   }
 
@@ -119,8 +115,6 @@ function AccountSetupWindow({
       if (event.origin !== window.location.origin || event.source !== window.opener) return;
       if (event.data?.type !== 'BITCIDER_ACCOUNT_FLOW') return;
       const nextFlow = event.data.flow === 'existing' ? 'existing' : 'new';
-      setFlow(nextFlow);
-      setUsername(event.data.username || '');
       setHasPasskeys(event.data.hasPasskeys === true);
       setStage(nextFlow === 'existing' ? 'login' : 'create');
       setError('');
@@ -134,28 +128,6 @@ function AccountSetupWindow({
     } catch {}
     return () => window.removeEventListener('message', onParentMessage);
   }, [inline]);
-
-  useEffect(() => {
-    if (inline || flow !== 'existing' || !hasPasskeys || !csrfToken || stage !== 'login') return undefined;
-    let cancelled = false;
-    setPasskeyState('looking');
-    (async () => {
-      try {
-        const optionsJSON = await post('/api/account/passkeys/auth/options');
-        const authentication = await startAuthentication({ optionsJSON, useBrowserAutofill: true });
-        const result = await post('/api/account/passkeys/auth/verify', authentication);
-        if (!cancelled) {
-          setInfo(result.evictedDevice
-            ? 'Passkey verified. ' + result.evictedDevice + ' was signed out to stay within the five-device limit.'
-            : 'Passkey verified. Your saved Cider connection is restored.');
-          finish();
-        }
-      } catch (err) {
-        if (!cancelled) setPasskeyState('fallback');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [inline, flow, hasPasskeys, csrfToken, stage]);
 
   async function signInWithPasskey() {
     setBusy(true);
@@ -180,10 +152,10 @@ function AccountSetupWindow({
     setBusy(true);
     setError('');
     try {
-      await post('/api/account/login', { username, password });
+      await post('/api/account/login-with-cider', { password });
       finish();
     } catch (err) {
-      setError(err.message || 'Username or passphrase is incorrect.');
+      setError(err.message || 'The password could not be verified for this Cider connection.');
     } finally {
       setBusy(false);
     }
@@ -198,7 +170,7 @@ function AccountSetupWindow({
     setBusy(true);
     setError('');
     try {
-      const result = await post('/api/account/register', { username, password });
+      const result = await post('/api/account/register', { password });
       setEnrollmentPassword(password);
       setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
       setPassword('');
@@ -208,6 +180,30 @@ function AccountSetupWindow({
       await loadStatus();
     } catch (err) {
       setError(err.message || 'Could not create your BitCider account.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recoverAccount(event) {
+    event.preventDefault();
+    if (password !== passwordConfirm) {
+      setError('The new passwords do not match.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await post('/api/account/recover-with-cider', { recoveryCode, newPassword: password });
+      setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+      setPassword('');
+      setPasswordConfirm('');
+      setRecoveryCode('');
+      setStage('recovery-reset');
+      setInfo('Your password has been reset. Save your replacement recovery codes.');
+      await loadStatus();
+    } catch (err) {
+      setError(err.message || 'The recovery code could not be verified for this Cider connection.');
     } finally {
       setBusy(false);
     }
@@ -246,8 +242,9 @@ function AccountSetupWindow({
     }
   }
 
-  const canSubmitCreate = Boolean(username.trim() && password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
-  const canSubmitLogin = Boolean(username.trim() && password.length > 0 && csrfToken && !busy);
+  const canSubmitCreate = Boolean(password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
+  const canSubmitLogin = Boolean(password.length > 0 && csrfToken && !busy);
+  const canSubmitRecovery = Boolean(recoveryCode.trim() && password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
   const strengthClass = strength.level ? 'password-strength level-' + strength.level : 'password-strength';
 
   return (
@@ -279,10 +276,6 @@ function AccountSetupWindow({
                 <div className="account-popup-warning">Secure cloud storage is not configured on the BitCider backend yet. Account setup is unavailable until Deplexo has the encryption secret.</div>
               )}
               <form className="account-popup-form" onSubmit={createAccount}>
-                <label>
-                  <span>BITCIDER USERNAME</span>
-                  <input autoComplete="username" minLength={3} maxLength={24} value={username} onChange={event => setUsername(event.target.value)} placeholder="your-username" required />
-                </label>
                 <label>
                   <span>CREATE A PASSWORD</span>
                   <input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose any password" required />
@@ -337,26 +330,65 @@ function AccountSetupWindow({
             <div className="account-popup-state">
               <div className="card-label">CIDER LINK ALREADY SAVED</div>
               <h1>Welcome back.</h1>
-              <p>This Cider token is already linked to <strong>@{username}</strong>. Use a passkey first, or enter your password as a fallback.</p>
+              <p>This approved Cider app token is already linked to a BitCider account. Use a passkey or enter your account password.</p>
               {hasPasskeys && (
                 <div className="account-passkey-prompt">
-                  <div className="passkey-prompt-indicator">{passkeyState === 'looking' ? 'PASSKEY READY' : 'PASSKEY SIGN-IN'}</div>
-                  <p>{passkeyState === 'looking' ? 'Choose your BitCider passkey from the browser’s credential suggestions.' : 'Choose a passkey to sign in without typing your password.'}</p>
+                  <div className="passkey-prompt-indicator">PASSKEY SIGN-IN</div>
+                  <p>Choose a passkey to sign in without typing your password.</p>
                   <button className="account-passkey-button" type="button" onClick={signInWithPasskey} disabled={busy || !csrfToken}>{busy ? 'WAITING FOR PASSKEY…' : 'CONTINUE WITH PASSKEY'}</button>
                 </div>
               )}
               <div className="account-popup-divider"><span>OR USE YOUR PASSWORD</span></div>
               <form className="account-popup-form" onSubmit={signInWithPassword}>
                 <label>
-                  <span>BITCIDER USERNAME</span>
-                  <input autoComplete={hasPasskeys ? 'username webauthn' : 'username'} value={username} onChange={event => setUsername(event.target.value)} required />
-                </label>
-                <label>
                   <span>PASSWORD</span>
                   <input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Your BitCider password" required />
                 </label>
                 <button className="account-submit-button" type="submit" disabled={!canSubmitLogin}>{busy ? 'SIGNING IN…' : 'SIGN IN'}</button>
               </form>
+              <button className="account-recovery-link" type="button" onClick={() => { setPassword(''); setPasswordConfirm(''); setError(''); setStage('recover'); }}>USE A RECOVERY CODE INSTEAD</button>
+            </div>
+          )}
+
+          {stage === 'recover' && (
+            <div className="account-popup-state">
+              <div className="card-label">ACCOUNT RECOVERY</div>
+              <h1>Reset your password.</h1>
+              <p>Reconnect the same Cider app token, then enter one unused recovery code and choose a new password.</p>
+              <form className="account-popup-form" onSubmit={recoverAccount}>
+                <label>
+                  <span>ONE-TIME RECOVERY CODE</span>
+                  <input autoComplete="off" value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required />
+                </label>
+                <label>
+                  <span>NEW PASSWORD</span>
+                  <input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose a new password" required />
+                </label>
+                <div className={strengthClass} aria-live="polite">
+                  <div className="password-strength-bars"><i /><i /><i /></div>
+                  <strong>{strength.label}</strong>
+                  <span>{strength.note}</span>
+                </div>
+                <label>
+                  <span>CONFIRM NEW PASSWORD</span>
+                  <input type="password" autoComplete="new-password" value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} placeholder="Type it again" required />
+                </label>
+                <button className="account-submit-button" type="submit" disabled={!canSubmitRecovery}>{busy ? 'RECOVERING ACCOUNT…' : 'RESET PASSWORD'}</button>
+              </form>
+              <button className="account-recovery-link" type="button" onClick={() => { setPassword(''); setPasswordConfirm(''); setRecoveryCode(''); setError(''); setStage('login'); }}>BACK TO SIGN IN</button>
+            </div>
+          )}
+
+          {stage === 'recovery-reset' && (
+            <div className="account-popup-state">
+              <div className="card-label">PASSWORD RECOVERED</div>
+              <h1>Save your new recovery codes.</h1>
+              <p>This device is now signed in. Other active devices were signed out. Save these replacement codes before continuing.</p>
+              <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
+              <div className="account-popup-actions">
+                <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
+                <button className="account-submit-button" type="button" onClick={finish} disabled={!recoveryCodes.length}>FINISH</button>
+              </div>
             </div>
           )}
 
@@ -378,11 +410,6 @@ export default function App() {
   const [noticeType, setNoticeType] = useState('info');
   const [copied, setCopied] = useState(false);
   const [csrfToken, setCsrfToken] = useState('');
-  const [accountMode, setAccountMode] = useState('login');
-  const [accountUsername, setAccountUsername] = useState('');
-  const [accountPassword, setAccountPassword] = useState('');
-  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('');
-  const [recoveryCode, setRecoveryCode] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [passkeyName, setPasskeyName] = useState('');
@@ -570,99 +597,6 @@ export default function App() {
     };
   }, [syncNotificationWatch, status.backendCompatible]);
 
-  async function accountRequest(path, payload) {
-    setAccountBusy(true);
-    setNotice('');
-    try {
-      const response = await fetch(path, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-BitCider-CSRF': csrfToken
-        },
-        cache: 'no-store',
-        body: JSON.stringify(payload)
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(getErrorMessage(result, 'The account request could not be completed.'));
-      if (Array.isArray(result.recoveryCodes)) setRecoveryCodes(result.recoveryCodes);
-      if (path.endsWith('/register')) {
-        setNotice('Your BitCider account is ready. Save your recovery codes somewhere safe.');
-        setNoticeType('success');
-      } else if (path.endsWith('/recover')) {
-        setNotice('Your passphrase has been reset. Save your new recovery codes, then sign in.');
-        setNoticeType('success');
-        setAccountMode('login');
-        setAccountPassword('');
-        setAccountPasswordConfirm('');
-        setRecoveryCode('');
-      } else {
-        setNotice(result.evictedDevice
-          ? 'Signed in. ' + result.evictedDevice + ' was signed out to keep your account within the five-device limit.'
-          : 'You are signed in. Your saved Cider connection has been restored.');
-        setNoticeType('success');
-      }
-      setAccountPassword('');
-      setAccountPasswordConfirm('');
-      await refreshStatus();
-      return true;
-    } catch (error) {
-      setNotice(error.message || 'The account request could not be completed.');
-      setNoticeType('warning');
-      return false;
-    } finally {
-      setAccountBusy(false);
-    }
-  }
-
-  async function submitAccount(event) {
-    event.preventDefault();
-    if (accountMode === 'register' && accountPassword !== accountPasswordConfirm) {
-      setNotice('The passphrases do not match.');
-      setNoticeType('warning');
-      return;
-    }
-    if (accountMode === 'recover' && accountPassword !== accountPasswordConfirm) {
-      setNotice('The new passphrases do not match.');
-      setNoticeType('warning');
-      return;
-    }
-    if (accountMode === 'register') {
-      await accountRequest('/api/account/register', { username: accountUsername, password: accountPassword });
-    } else if (accountMode === 'recover') {
-      await accountRequest('/api/account/recover', {
-        username: accountUsername,
-        recoveryCode,
-        newPassword: accountPassword
-      });
-    } else {
-      await accountRequest('/api/account/login', { username: accountUsername, password: accountPassword });
-    }
-  }
-
-  async function logoutAccount() {
-    setAccountBusy(true);
-    try {
-      const response = await fetch('/api/account/logout', {
-        method: 'POST',
-        headers: { 'X-BitCider-CSRF': csrfToken },
-        cache: 'no-store'
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(getErrorMessage(result, 'Could not sign out.'));
-      setRecoveryCodes([]);
-      setNotice('You have been signed out. Your cloud-saved Cider connection remains on your account.');
-      setNoticeType('info');
-      await refreshStatus();
-    } catch (error) {
-      setNotice(error.message || 'Could not sign out.');
-      setNoticeType('warning');
-    } finally {
-      setAccountBusy(false);
-    }
-  }
-
-
   async function postAccountAction(path, payload = {}) {
     const response = await fetch(path, {
       method: 'POST',
@@ -812,7 +746,6 @@ export default function App() {
     const message = {
       type: 'BITCIDER_ACCOUNT_FLOW',
       flow: flow.flow,
-      username: flow.username || '',
       hasPasskeys: flow.hasPasskeys === true
     };
     if (popup && !popup.closed) {
@@ -954,7 +887,6 @@ export default function App() {
           setNoticeType('info');
           sendAccountFlow(popup, {
             flow: 'existing',
-            username: result.username,
             hasPasskeys: result.hasPasskeys
           });
         }
@@ -1204,7 +1136,6 @@ export default function App() {
         <AccountSetupWindow
           inline
           initialFlow={inlineAccountFlow.flow}
-          initialUsername={inlineAccountFlow.username}
           initialHasPasskeys={inlineAccountFlow.hasPasskeys}
           onClose={() => setInlineAccountFlow(null)}
           onComplete={() => {

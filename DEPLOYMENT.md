@@ -43,9 +43,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-22-passkeys-devices-v4`.
+The current BitCider frontend expects the Deplexo API version `2026-11-22-cider-token-account-v6`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-passkeys-devices-v4"`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-cider-token-account-v6"`.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -86,9 +86,9 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitCider accounts, recovery, and stored data
 
-The current frontend/backend API version is `2026-11-22-passkeys-devices-v4`. Deplexo must run the matching `main` revision before the account panel can be used.
+The current frontend/backend API version is `2026-11-22-cider-token-account-v6`. Deplexo must run the matching `main` revision before the account panel can be used.
 
-BitCider accounts use a separate username and passphrase. They do not ask for the Cider `account` permission and do not try to identify a user by reading Apple Music user tokens. Users can use that passphrase or a registered passkey to sign in on their devices. Each account supports up to five passkeys and five active device sessions.
+BitCider accounts do not collect a username or email. On each new device, the user approves the same Cider app token; the backend matches that token against its encrypted account records and then offers passkey or password authentication. Recovery requires that Cider-token match plus one unused recovery code. The integration does not request Cider's `account` scope. Each account supports up to five passkeys and five active device sessions.
 
 Security controls:
 - Passwords are hashed with Node.js scrypt (N=32768, r=8, p=1, 64-byte output) using a fresh 16-byte random salt per account. Plaintext passwords are never persisted.
@@ -96,7 +96,7 @@ Security controls:
 - Passkeys use WebAuthn through SimpleWebAuthn, require user verification, and store only public credential material. Each account may register up to five passkeys. Adding/removing passkeys or revoking a device requires the current BitCider passphrase.
 - Passkeys are tied to the website domain (relying-party ID) where they are created. Deplexo, Netlify, and Cloudflare hostnames are separate relying parties, so create a passkey on the hostname you normally use. Synced passkeys can be available on more than one physical device; the five-device limit counts active BitCider sessions.
 - State-changing account, connect, and disconnect requests require the session-bound `X-BitCider-CSRF` HMAC token returned by `GET /api/status`.
-- Login, registration, and recovery are rate-limited. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
+- Password sign-in, registration, and recovery are rate-limited. Sign-in and recovery require a fresh, short-lived account match established by approving the linked Cider app token. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
 - Cider app tokens are encrypted with AES-256-GCM using the dedicated Deplexo `BITCIDER_ENCRYPTION_KEY`, separate from the persistent data volume. The key must be backed up securely and never committed. The `connection.json` store and legacy `encryption.key` remain under `/data/bitcider` with restrictive file permissions. Protect and back up the full volume as well; runtime/server compromise can still expose decrypted credentials.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
 - Registration creates 10 one-time recovery codes. They are shown once, while only their hashes are saved. Keep them in a password manager or offline safe location. Using a recovery code resets the passphrase, generates a fresh set of codes, and invalidates all active device sessions.

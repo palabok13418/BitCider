@@ -25,9 +25,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 ## BitCider accounts and cloud-saved links
 
-Users can create a BitCider account with a unique username and a passphrase, then sign in on another device to restore the same saved Cider connection and personal BitChord addon URL.
-
-- Usernames are 3–24 characters and case-insensitive.
+Users create a BitCider account with a password after approving Cider. No username or email is collected. On another device, the user approves the same Cider app token; BitCider matches that token against its encrypted account records, then verifies a passkey or password for the matching account.
 - Passwords have no character-count rule; the live strength meter is advisory and does not block entry. API requests retain a finite transport-size limit for service protection. Passwords are stored as scrypt hashes (N=32768, r=8, p=1, 64-byte output); plaintext passwords are never stored.
 - Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to five active device sessions; a sixth sign-in revokes the least-recently-active session.
 - Passkeys use WebAuthn through SimpleWebAuthn, require user verification, and store only credential IDs and public keys. Each BitCider account can register up to five passkeys. Adding or removing passkeys and revoking devices requires the current BitCider passphrase.
@@ -35,10 +33,10 @@ Users can create a BitCider account with a unique username and a passphrase, the
 - Cookie-authenticated state-changing requests require a session-bound HMAC CSRF token in the `X-BitCider-CSRF` header. Account endpoints are rate-limited.
 - Cider app tokens are encrypted with AES-256-GCM. Configure the Deplexo-only `BITCIDER_ENCRYPTION_KEY` secret to keep the data-encryption key separate from the persistent volume. The addon URL is a bearer-style secret; it is not written to localStorage and is returned only to the matching anonymous browser session or signed-in account.
 - Creating an account while a Cider connection is already linked in that browser transfers the encrypted connection and existing addon key into the new account. Signing in on a second device restores the account's existing link instead of creating a new one.
-- Account recovery uses 10 one-time recovery codes. Only their SHA-256 hashes are stored. They are displayed once at registration or password recovery; save them offline. Using one code resets the passphrase, replaces the entire recovery-code set, and revokes all active sessions.
+- Account recovery uses 10 one-time recovery codes. Only their SHA-256 hashes are stored. They are displayed once at registration or password recovery; save them offline. Using one code together with a freshly approved matching Cider app token resets the password, replaces the recovery-code set, revokes all existing sessions, and signs in the recovery device.
 - There is no email-based recovery or email identity matching. If the passphrase and all unused recovery codes are lost, the account cannot be recovered. Keep the recovery codes in a password manager or another private offline location.
 
-BitCider account identity is separate from the Apple Music/Cider login. The integration deliberately does not request Cider's sensitive `account` scope, which can expose Apple Music developer and user tokens. Users sign in to the same BitCider account on each device to recover the Cider link they previously saved.
+BitCider does not use an account name or email. The backend identifies the saved link by matching the exact Cider app token approved by the user; the token is AES-256-GCM encrypted at rest. The integration deliberately does not request Cider's sensitive `account` scope.
 
 ## Cider authorization
 

@@ -9,7 +9,7 @@ import {
 import {
   createPasswordRecord,
   verifyPassword,
-  validateUsername,
+
   validatePassword,
   createRecoveryCodes,
   consumeRecoveryCode,
@@ -39,7 +39,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-22-cider-link-onboarding-v5';
+const API_VERSION = '2026-11-22-cider-token-account-v6';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
@@ -156,6 +156,19 @@ function readStore() {
   } catch {
     return { sessions: {}, accounts: {}, authSessions: {}, webauthnChallenges: {} };
   }
+}
+
+function migrateLegacyAccountUsernames() {
+  const store = readStore();
+  let removed = 0;
+  for (const account of Object.values(store.accounts || {})) {
+    if (Object.prototype.hasOwnProperty.call(account, 'username')) {
+      delete account.username;
+      removed += 1;
+    }
+  }
+  if (removed) writeStore(store);
+  return removed;
 }
 
 function writeStore(store) {
@@ -340,18 +353,16 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
   return (req, res, next) => {
     const now = Date.now();
     const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
-    const username = String(req.body?.username || '').trim().toLowerCase();
-    const usernameKey = username ? crypto.createHash('sha256').update(username).digest('hex').slice(0, 16) : '';
+    const cookieSession = readCookie(req, SESSION_COOKIE);
+    const sessionKey = /^[A-Za-z0-9_-]{40,50}$/.test(cookieSession)
+      ? hashSessionId(cookieSession).slice(0, 16)
+      : '';
     const routeKey = String(req.baseUrl || '') + String(req.path || '');
     const keys = [
-      // Keep aggregate limits consistent across different account actions.
       { key: 'ip:' + ip, limit: 60 },
-      ...(usernameKey ? [
-        // A successful sign-in should not consume the separate recovery
-        // endpoint's lower attempt budget, so per-action limits are isolated.
-        { key: 'user-route:' + ip + ':' + routeKey + ':' + usernameKey, limit: maxAttempts },
-        // Retain an account-wide ceiling across IPs and account endpoints.
-        { key: 'user-global:' + usernameKey, limit: 30 }
+      ...(sessionKey ? [
+        { key: 'session-route:' + sessionKey + ':' + routeKey, limit: maxAttempts },
+        { key: 'session-global:' + sessionKey, limit: 30 }
       ] : [])
     ];
     let retryAfter = 0;
@@ -375,6 +386,13 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
     }
     next();
   };
+}
+
+function accountConnection(user) {function pendingAccountAuthFor(store, sessionId) {
+  const pending = store?.sessions?.[sessionId];
+  const expiresAt = Number(pending?.pendingAccountExpiresAt);
+  if (!pending?.pendingAccountId || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+  return { accountId: pending.pendingAccountId };
 }
 
 function accountConnection(user) {
@@ -845,7 +863,6 @@ app.get('/api/status', localOnly, async (req, res) => {
     passkeys,
     account: authenticated ? {
       authenticated: true,
-      username: user.username,
       createdAt: user.createdAt
     } : { authenticated: false },
     error: null
@@ -853,94 +870,78 @@ app.get('/api/status', localOnly, async (req, res) => {
 });
 
 app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
-  const username = validateUsername(req.body?.username);
   const password = req.body?.password;
-  if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Use 3–24 characters: letters, numbers, dots, underscores, or hyphens.' });
-  if (!validatePassword(password)) return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' });
-
+  if (!validatePassword(password)) return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a password.' });
   let passwordRecord;
   try { passwordRecord = await createPasswordRecord(password); }
-  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' }); }
+  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a password.' }); }
   const recovery = createRecoveryCodes();
   const sessionId = req.bitciderSessionId;
 
   try {
     const result = await updateStore(store => {
-      const activeSession = store.authSessions[hashSessionId(sessionId)];
+      const sessionHash = hashSessionId(sessionId);
+      const activeSession = store.authSessions[sessionHash];
       if (activeSession && Date.parse(activeSession.expiresAt) > Date.now()) {
-        return { status: 409, error: 'ALREADY_SIGNED_IN', message: 'Sign out before creating another account.' , write: false };
+        return { status: 409, error: 'ALREADY_SIGNED_IN', message: 'This device is already signed in.', write: false };
       }
-      const taken = Object.values(store.accounts).some(account => account?.username === username);
-      if (taken) return { status: 409, error: 'USERNAME_TAKEN', message: 'That BitCider username is already taken.', write: false };
+      const connection = accountConnection(store.sessions[sessionId]);
+      if (!connection) return { status: 409, error: 'CIDER_CONNECTION_REQUIRED', message: 'Approve the Cider connection before creating your BitCider account.', write: false };
 
-      const pending = store.sessions[sessionId];
       const accountId = crypto.randomBytes(24).toString('base64url');
-      const account = {
-        username,
+      store.accounts[accountId] = {
         password: passwordRecord,
         recoveryCodeHashes: recovery.hashes,
         webAuthnUserId: crypto.randomBytes(32).toString('base64url'),
         passkeys: [],
         createdAt: new Date().toISOString(),
-        ...accountConnection(pending)
+        ...connection
       };
-      store.accounts[accountId] = account;
       delete store.sessions[sessionId];
-      delete store.authSessions[hashSessionId(sessionId)];
+      delete store.authSessions[sessionHash];
       createAuthenticatedSession(store, accountId, res, req);
       return { ok: true, accountId };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     res.set('Cache-Control', 'no-store');
-    return res.status(201).json({ ok: true, username, recoveryCodes: recovery.codes });
+    return res.status(201).json({ ok: true, recoveryCodes: recovery.codes });
   } catch (error) {
     console.error('BitCider account registration failed:', error.message);
     return res.status(500).json({ error: 'ACCOUNT_CREATE_FAILED', message: 'Could not create your account. Try again.' });
   }
 });
 
-app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
-  const username = validateUsername(req.body?.username);
+app.post('/api/account/login-with-cider', localOnly, authRateLimit(8), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const password = req.body?.password;
-  if (!username || !validatePassword(password)) {
-    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
-  }
-
   const sessionId = req.bitciderSessionId;
-  const initialStore = readStore();
-  const match = Object.entries(initialStore.accounts).find(([, account]) => account?.username === username);
-  const accountId = match?.[0];
-  const accountSnapshot = match?.[1];
-  // Use an equally expensive dummy scrypt verification for unknown usernames
-  // so account existence is not disclosed by a fast response.
+  const sessionHash = hashSessionId(sessionId);
+  const snapshot = readStore();
+  const pendingAuth = pendingAccountAuthFor(snapshot, sessionId);
+  const accountId = pendingAuth?.accountId || null;
+  const accountSnapshot = accountId ? snapshot.accounts[accountId] : null;
   const valid = await verifyPassword(password, accountSnapshot?.password || DUMMY_PASSWORD_RECORD);
-  if (!accountId || !valid) {
-    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
+  if (!pendingAuth || !accountId || !accountSnapshot || !valid || !validatePassword(password)) {
+    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The password could not be verified for this Cider connection.' });
   }
 
   try {
     const result = await updateStore(store => {
+      const currentPending = pendingAccountAuthFor(store, sessionId);
       const account = store.accounts[accountId];
-      if (!account || account.password?.hash !== accountSnapshot.password.hash) {
-        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.', write: false };
+      if (!currentPending || currentPending.accountId !== accountId || !account
+        || account.password?.hash !== accountSnapshot.password.hash) {
+        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The password could not be verified for this Cider connection.', write: false };
       }
-      const pending = store.sessions[sessionId];
-      const pendingConnection = accountConnection(pending);
-      const savedConnection = accountConnection(account);
-      if (pendingConnection && savedConnection && pendingConnection.addonKey !== savedConnection.addonKey) {
-        return { status: 409, error: 'ANOTHER_CONNECTION_SAVED', message: 'This browser already has a different unsaved Cider connection. Disconnect it before signing in.', write: false };
-      }
-      if (pendingConnection && !savedConnection) Object.assign(account, pendingConnection);
       delete store.sessions[sessionId];
-      delete store.authSessions[hashSessionId(sessionId)];
+      delete store.authSessions[sessionHash];
       const sessionInfo = createAuthenticatedSession(store, accountId, res, req);
       return { ok: true, evictedDevice: sessionInfo.evictedDevice };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     res.set('Cache-Control', 'no-store');
-    return res.json({ ok: true, username, evictedDevice: result.evictedDevice || null });
+    return res.json({ ok: true, evictedDevice: result.evictedDevice || null });
   } catch (error) {
-    console.error('BitCider sign-in failed:', error.message);
+    console.error('BitCider password sign-in failed:', error.message);
     return res.status(500).json({ error: 'SIGN_IN_FAILED', message: 'Could not sign in. Try again.' });
   }
 });
@@ -956,42 +957,49 @@ app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
-  const username = validateUsername(req.body?.username);
-  const recoveryCode = req.body?.recoveryCode;
+app.post('/api/account/recover-with-cider', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const sessionId = req.bitciderSessionId;
+  const sessionHash = hashSessionId(sessionId);
   const newPassword = req.body?.newPassword;
-  if (!username || !validatePassword(newPassword)) {
-    return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'Enter a valid username and a passphrase.' });
+  const recoveryCode = req.body?.recoveryCode;
+  const snapshot = readStore();
+  const pendingAuth = pendingAccountAuthFor(snapshot, sessionId);
+  const accountId = pendingAuth?.accountId || null;
+  const accountSnapshot = accountId ? snapshot.accounts[accountId] : null;
+  if (!pendingAuth || !accountSnapshot || !validatePassword(newPassword)) {
+    return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified for this Cider connection.' });
   }
 
   try {
     const passwordRecord = await createPasswordRecord(newPassword);
     const recovery = createRecoveryCodes();
     const result = await updateStore(store => {
-      const entry = Object.entries(store.accounts).find(([, account]) => account?.username === username);
-      if (!entry) return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.' };
-      const [accountId, account] = entry;
-      const consumed = consumeRecoveryCode(recoveryCode, account.recoveryCodeHashes || []);
-      if (!consumed.valid) return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.' };
-      account.password = passwordRecord;
-      // Replace the recovery set after one is used, and revoke every existing
-      // account session so a lost device cannot stay signed in.
-      account.recoveryCodeHashes = recovery.hashes;
-      for (const [sessionHash, session] of Object.entries(store.authSessions)) {
-        if (session?.accountId === accountId) delete store.authSessions[sessionHash];
+      const currentPending = pendingAccountAuthFor(store, sessionId);
+      const account = store.accounts[accountId];
+      if (!currentPending || currentPending.accountId !== accountId || !account
+        || account.password?.hash !== accountSnapshot.password?.hash) {
+        return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.', write: false };
       }
-      return { ok: true };
+      const consumed = consumeRecoveryCode(recoveryCode, account.recoveryCodeHashes || []);
+      if (!consumed.valid) return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.', write: false };
+      account.password = passwordRecord;
+      account.recoveryCodeHashes = recovery.hashes;
+      for (const [activeSessionHash, activeSession] of Object.entries(store.authSessions)) {
+        if (activeSession?.accountId === accountId) delete store.authSessions[activeSessionHash];
+      }
+      delete store.sessions[sessionId];
+      delete store.authSessions[sessionHash];
+      const sessionInfo = createAuthenticatedSession(store, accountId, res, req);
+      return { ok: true, evictedDevice: sessionInfo.evictedDevice };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
-    clearSessionCookie(res);
     res.set('Cache-Control', 'no-store');
-    return res.json({ ok: true, recoveryCodes: recovery.codes });
+    return res.json({ ok: true, recoveryCodes: recovery.codes, evictedDevice: result.evictedDevice || null });
   } catch (error) {
     console.error('BitCider password recovery failed:', error.message);
     return res.status(500).json({ error: 'RECOVERY_FAILED', message: 'Could not recover this account. Try again.' });
   }
 });
-
 
 app.post('/api/account/passkeys/register/options', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
@@ -1017,8 +1025,8 @@ app.post('/api/account/passkeys/register/options', localOnly, authRateLimit(5), 
       rpName: 'BitCider',
       rpID: context.rpID,
       userID: Buffer.from(webAuthnUserId, 'base64url'),
-      userName: user.username,
-      userDisplayName: user.username,
+      userName: 'BitCider account',
+      userDisplayName: 'BitCider account',
       attestationType: 'none',
       authenticatorSelection: {
         residentKey: 'required',
@@ -1124,21 +1132,17 @@ app.post('/api/account/passkeys/register/verify', localOnly, authRateLimit(5), r
 
 app.post('/api/account/passkeys/auth/options', localOnly, authRateLimit(6), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const { sessionId, authenticated } = getUserSession(req, res);
-  if (authenticated) {
-    return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'You are already signed in.' });
-  }
+  if (authenticated) return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'You are already signed in.' });
+  const pendingAuth = pendingAccountAuthFor(readStore(), sessionId);
+  if (!pendingAuth) return res.status(401).json({ error: 'CIDER_LINK_REQUIRED', message: 'Approve the Cider connection before signing in.' });
   let context;
   try { context = webAuthnContext(req); }
   catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
-
   try {
-    const options = await generateAuthenticationOptions({
-      rpID: context.rpID,
-      allowCredentials: [],
-      userVerification: 'required'
-    });
+    const options = await generateAuthenticationOptions({ rpID: context.rpID, allowCredentials: [], userVerification: 'required' });
     await saveWebAuthnChallenge(sessionId, {
       purpose: 'authenticate',
+      accountId: pendingAuth.accountId,
       challenge: options.challenge,
       origin: context.origin,
       rpID: context.rpID
@@ -1182,8 +1186,8 @@ app.post('/api/account/passkeys/auth/verify', localOnly, authRateLimit(6), requi
       break;
     }
   }
-  if (!matchedAccountId || !matchedAccount || !matchedPasskey) {
-    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.' });
+  if (!matchedAccountId || !matchedAccount || !matchedPasskey || challenge.accountId !== matchedAccountId) {
+    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for the approved Cider connection.' });
   }
 
   try {
@@ -1213,23 +1217,20 @@ app.post('/api/account/passkeys/auth/verify', localOnly, authRateLimit(6), requi
       if (!passkey || Number(passkey.counter || 0) !== Number(matchedPasskey.counter || 0)) {
         return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.', write: false };
       }
-      const pending = store.sessions[sessionId];
-      const pendingConnection = accountConnection(pending);
-      const savedConnection = accountConnection(account);
-      if (pendingConnection && savedConnection && pendingConnection.addonKey !== savedConnection.addonKey) {
-        return { status: 409, error: 'ANOTHER_CONNECTION_SAVED', message: 'This browser already has a different unsaved Cider connection. Disconnect it before signing in.', write: false };
+      const pendingAuth = pendingAccountAuthFor(store, sessionId);
+      if (!pendingAuth || pendingAuth.accountId !== matchedAccountId || challenge.accountId !== matchedAccountId) {
+        return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey is not linked to the approved Cider connection.', write: false };
       }
-      if (pendingConnection && !savedConnection) Object.assign(account, pendingConnection);
       passkey.counter = Number(verification.authenticationInfo.newCounter || 0);
       passkey.lastUsedAt = new Date().toISOString();
       delete store.sessions[sessionId];
       delete store.authSessions[hashSessionId(sessionId)];
       const sessionInfo = createAuthenticatedSession(store, matchedAccountId, res, req);
-      return { ok: true, username: account.username, evictedDevice: sessionInfo.evictedDevice };
+      return { ok: true, evictedDevice: sessionInfo.evictedDevice };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     res.set('Cache-Control', 'no-store');
-    return res.json({ ok: true, username: result.username, evictedDevice: result.evictedDevice || null });
+    return res.json({ ok: true, evictedDevice: result.evictedDevice || null });
   } catch (error) {
     console.error('BitCider passkey sign-in verification failed:', error.message);
     return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.' });
@@ -1326,14 +1327,19 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
           write: false
         };
       }
+      const alreadyAuthenticated = authenticated && matchedAccountId === accountId;
+      if (!alreadyAuthenticated) {
+        latestStore.sessions[sessionId] = {
+          pendingAccountId: matchedAccountId,
+          pendingAccountExpiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS
+        };
+      }
       return {
         ok: true,
         accountLinked: true,
-        alreadyAuthenticated: authenticated && matchedAccountId === accountId,
-        username: matchedAccount.username,
+        alreadyAuthenticated,
         hasPasskeys: Array.isArray(matchedAccount.passkeys) && matchedAccount.passkeys.length > 0,
-        addonKey: matchedAccount.addonKey,
-        write: false
+        addonKey: matchedAccount.addonKey
       };
     }
 
@@ -1341,7 +1347,7 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
     // account. Otherwise stage it on this browser session until account setup.
     const target = authenticated
       ? latestStore.accounts[accountId]
-      : (latestStore.sessions[sessionId] ||= {});
+      : (latestStore.sessions[sessionId] = {});
     if (!target) throw new Error('The signed-in account is no longer available.');
     target.addonKey = previous?.addonKey || target.addonKey || crypto.randomBytes(32).toString('base64url');
     target.ciderToken = encryptToken(token);
@@ -1367,7 +1373,6 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
     accountLinked: outcome.accountLinked === true,
     alreadyAuthenticated: outcome.alreadyAuthenticated === true,
     savedToCurrentAccount: outcome.savedToCurrentAccount === true,
-    ...(outcome.username ? { username: outcome.username } : {}),
     hasPasskeys: outcome.hasPasskeys === true,
     ...(outcome.addonKey ? { addonUrl: addonBaseUrl() + '/' + outcome.addonKey + '/manifest.json' } : {})
   });
@@ -1471,6 +1476,8 @@ app.use((req, res) => {
   res.status(404).json({ error: 'NOT_FOUND', path: req.path });
 });
 
+const removedLegacyUsernames = migrateLegacyAccountUsernames();
+if (removedLegacyUsernames) console.log('Removed legacy BitCider account usernames:', removedLegacyUsernames);
 const tokenEncryptionStatus = migrateTokenEncryption();
 if (!tokenEncryptionStatus.configured) {
   console.warn('BITCIDER_ENCRYPTION_KEY is not configured. Saved Cider tokens are encrypted with the persistent volume key; configure the Deplexo-only key for stronger separation.');
