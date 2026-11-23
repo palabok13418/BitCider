@@ -12,7 +12,7 @@ Both static frontends use the same Deplexo backend and persistent store. Each Bi
 
 ## 1. Deploy the backend on Deplexo
 
-Connect the private `palabok13418/BitCider` repository and deploy its `main` branch. The root `deplexo.yaml` configures the Vite build and Node.js server on port 3000. `server.mjs` now defaults to port 3000 as well; a hosting-provided `PORT` value still takes precedence.
+Connect the private `palabok13418/BitCider` repository and deploy its `main` branch. The root `deplexo.yaml` builds the Vite frontend and starts the backend directly with `node server.mjs` on port 3000. Starting Node directly avoids an extra npm/sh child process, so Deplexo's shutdown signal is delivered to the actual server process. `server.mjs` uses the hosting-provided `PORT` when present and drains HTTP connections on `SIGTERM`/`SIGINT`.
 
 In Deplexo's environment settings, configure:
 
@@ -23,7 +23,8 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
 | `BITCIDER_ALLOWED_ORIGINS` | Optional comma-separated HTTPS origins if a custom Deplexo domain is used |
-| `CIDER_API_URL` | Reserved for the per-user Cider bridge; do not point this at a public Cider port |
+| `CIDER_API_URL` | Leave empty until a secure per-user Cider relay is deployed. If configured, it must be an HTTPS relay origin, not the user's desktop loopback address or an exposed Cider port |
+| `BITCIDER_CIDER_REQUEST_TIMEOUT_MS` | Optional relay request deadline, 1,000 to 30,000 ms; defaults to 12,000 ms |
 
 Deplexo mounts the app's durable data volume at `/data`. BitCider stores `connection.json` and a legacy CSRF-signing key under `/data/bitcider`; the dedicated Cider-token encryption key is configured separately as the `BITCIDER_ENCRYPTION_KEY` Deplexo secret. Back up the volume and keep a separate secure backup of the environment key before deleting or recreating the Deplexo app.
 
@@ -45,7 +46,7 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v7`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-23-account-key-v7"`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-23-account-key-v7"` and `ciderBridgeConfigured`. `false` means the BitCider website and account service are running but Cider-backed addon search and streaming are not connected to a relay.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -134,11 +135,11 @@ Cider must be running on the same computer as the browser. On current Chrome rel
 
 ## Critical Cider bridge requirement
 
-Cider's HTTP API normally listens on the computer running Cider (commonly `127.0.0.1:10767`). A hosted Deplexo container cannot use its own `127.0.0.1` to reach a user's computer. The browser site also cannot make that remote API reachable merely by storing a Cider app token.
+Cider's HTTP API normally listens on the computer running Cider (commonly `127.0.0.1:10767`). A hosted Deplexo container cannot use its own `127.0.0.1` to reach a user's computer. The earlier backend defaulted `CIDER_API_URL` to `http://127.0.0.1:10767`, which only pointed back into the Deplexo container. That caused addon search to emit repeated Node `fetch failed` errors. The backend no longer makes that false assumption: an unset bridge now returns HTTP `503` with `code: CIDER_BRIDGE_NOT_CONFIGURED`; an unreachable configured relay returns `CIDER_BRIDGE_UNAVAILABLE` or `CIDER_BRIDGE_TIMEOUT`. `/health` reports `ciderBridgeConfigured` without exposing the configured relay host.
 
-Therefore, **the three hosting targets above are configured, but remote Cider playback is not yet production-complete**. A per-user outbound Cider bridge/relay must connect the user's Cider instance to Deplexo over an authenticated encrypted channel. The bridge must keep the Cider app token on the user's own device and proxy only the required playback/library operations. Do not expose port 10767 directly to the public internet.
+**Remote Cider playback is not yet production-complete.** A per-user outbound Cider bridge/relay still needs to connect the user's Cider instance to Deplexo over an authenticated encrypted channel. The bridge must preserve per-user isolation, keep the Cider app token on the user's own device, and proxy only the required playback/library operations. Do not set `CIDER_API_URL` to `http://127.0.0.1:10767` on Deplexo, and do not expose Cider's port 10767 directly to the public internet.
 
-Until that bridge is implemented and tested, deploying the website does not by itself make BitChord playback work from another device. The current server-side Cider API adapter is retained as the protocol implementation to be moved behind that bridge.
+Until that relay is implemented, connected users can still create BitCider accounts and obtain their personal addon manifest, but addon search and stream resolution will correctly fail with the bridge-required response. Changing `CIDER_API_URL` to an arbitrary public URL does not solve the per-user routing or security requirement. The existing server-side Cider API adapter remains the protocol layer that must be moved behind the relay.
 
 ## Deployment scope
 
