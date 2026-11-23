@@ -202,6 +202,69 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.equal(secondDeviceStatus.payload.account.authenticated, true);
   assert.equal(secondDeviceStatus.payload.addonUrl, savedAddonUrl);
 
+
+  // Enforce a maximum of five active device sessions. A sixth sign-in evicts
+  // the least-recently-active session and keeps the account within the cap.
+  for (let index = 0; index < 3; index += 1) {
+    const anonymousDevice = await jsonRequest(secondOrigin, '/api/status');
+    const anonymousDeviceCookie = cookieFrom(anonymousDevice.response);
+    const signIn = await jsonRequest(secondOrigin, '/api/account/login', {
+      method: 'POST',
+      cookie: anonymousDeviceCookie,
+      csrf: anonymousDevice.payload.csrfToken,
+      body: { username, password: initialPassword }
+    });
+    assert.equal(signIn.response.status, 200);
+  }
+  const atFiveDevices = await jsonRequest(secondOrigin, '/api/status', { cookie: secondDeviceCookie });
+  assert.equal(atFiveDevices.payload.deviceCount, 5);
+  assert.equal(atFiveDevices.payload.devices.length, 5);
+  assert.equal(atFiveDevices.payload.deviceLimit, 5);
+
+  const sixthAnonymous = await jsonRequest(secondOrigin, '/api/status');
+  const sixthAnonymousCookie = cookieFrom(sixthAnonymous.response);
+  const sixthLogin = await jsonRequest(secondOrigin, '/api/account/login', {
+    method: 'POST',
+    cookie: sixthAnonymousCookie,
+    csrf: sixthAnonymous.payload.csrfToken,
+    body: { username, password: initialPassword }
+  });
+  assert.equal(sixthLogin.response.status, 200);
+  assert.ok(sixthLogin.payload.evictedDevice);
+  const sixthDeviceCookie = cookieFrom(sixthLogin.response);
+  const afterSixthDevice = await jsonRequest(secondOrigin, '/api/status', { cookie: sixthDeviceCookie });
+  assert.equal(afterSixthDevice.payload.deviceCount, 5);
+  assert.equal(afterSixthDevice.payload.passkeyLimit, 5);
+  const evictedOldestDevice = await jsonRequest(secondOrigin, '/api/status', { cookie: firstDeviceCookie });
+  assert.equal(evictedOldestDevice.payload.account.authenticated, false);
+
+  // Passkey challenges are short-lived and single-use, including failed
+  // responses, so a captured assertion cannot be replayed.
+  const passkeyAnonymous = await jsonRequest(secondOrigin, '/api/status');
+  const passkeyAnonymousCookie = cookieFrom(passkeyAnonymous.response);
+  const passkeyOptions = await jsonRequest(secondOrigin, '/api/account/passkeys/auth/options', {
+    method: 'POST',
+    cookie: passkeyAnonymousCookie,
+    csrf: passkeyAnonymous.payload.csrfToken,
+    body: {}
+  });
+  assert.equal(passkeyOptions.response.status, 200);
+  assert.equal(typeof passkeyOptions.payload.challenge, 'string');
+  const invalidPasskey = await jsonRequest(secondOrigin, '/api/account/passkeys/auth/verify', {
+    method: 'POST',
+    cookie: passkeyAnonymousCookie,
+    csrf: passkeyAnonymous.payload.csrfToken,
+    body: { id: 'not-a-registered-credential', response: { userHandle: 'not-a-user' } }
+  });
+  assert.equal(invalidPasskey.response.status, 401);
+  const replayedPasskey = await jsonRequest(secondOrigin, '/api/account/passkeys/auth/verify', {
+    method: 'POST',
+    cookie: passkeyAnonymousCookie,
+    csrf: passkeyAnonymous.payload.csrfToken,
+    body: { id: 'not-a-registered-credential', response: { userHandle: 'not-a-user' } }
+  });
+  assert.equal(replayedPasskey.response.status, 400);
+
   // Recovery consumes a code once, rotates the entire recovery set, and
   // invalidates both signed-in devices.
   const recovery = await jsonRequest(secondOrigin, '/api/account/recover', {
