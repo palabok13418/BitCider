@@ -138,11 +138,25 @@ function trustedProxy(request) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
+function trustedFrontend(request) {
+  if (!PUBLIC_URL) return false;
+  const allowedOrigin = new URL(PUBLIC_URL).origin;
+  const origin = request.get('origin');
+  if (origin) return origin === allowedOrigin;
+
+  try {
+    const referer = request.get('referer');
+    return Boolean(referer && new URL(referer).origin === allowedOrigin);
+  } catch {
+    return false;
+  }
+}
+
 function localOnly(req, res, next) {
-  if (!isLoopback(req.socket.remoteAddress || '') && !trustedProxy(req)) {
+  if (!isLoopback(req.socket.remoteAddress || '') && !trustedProxy(req) && !trustedFrontend(req)) {
     return res.status(403).json({
       error: 'LOCAL_ONLY',
-      message: 'This management route must be accessed through the BitCider Netlify or Cloudflare gateway.'
+      message: 'Use the BitCider site on Deplexo, Netlify, or Cloudflare to manage this connection.'
     });
   }
   next();
