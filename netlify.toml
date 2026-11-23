@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+
+# The SPA fallback only handles paths not claimed by the backend proxy function.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
