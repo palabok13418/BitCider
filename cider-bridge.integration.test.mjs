@@ -482,7 +482,7 @@ test('Cider auth probe separates origin CORS from the apptoken preflight and han
   assert.match(probe, /async function probeLocalCider\(signal, token\)/);
   assert.match(probe, /headers:\s*\{\s*Accept:\s*'application\/json'\s*\}/);
   assert.match(probe, /apptoken:\s*token/);
-  assert.match(probe, /error\.corsStage = 'origin'/);
+  assert.match(probe, /error\.corsStage = 'origin-or-loopback'/);
   assert.match(probe, /error\.corsStage = 'apptoken'/);
   assert.match(probe, /Cider allowed a basic request from this BitCider website/);
   assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
