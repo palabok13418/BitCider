@@ -43,9 +43,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-22-secure-accounts-v3`.
+The current BitCider frontend expects the Deplexo API version `2026-11-22-passkeys-devices-v4`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-secure-accounts-v3"`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-passkeys-devices-v4"`.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -86,13 +86,15 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitCider accounts, recovery, and stored data
 
-The current frontend/backend API version is `2026-11-22-secure-accounts-v3`. Deplexo must run the matching `main` revision before the account panel can be used.
+The current frontend/backend API version is `2026-11-22-passkeys-devices-v4`. Deplexo must run the matching `main` revision before the account panel can be used.
 
-BitCider accounts use a separate username and passphrase. They do not ask for the Cider `account` permission and do not try to identify a user by reading Apple Music user tokens. Users must sign in to the same BitCider account on each device.
+BitCider accounts use a separate username and passphrase. They do not ask for the Cider `account` permission and do not try to identify a user by reading Apple Music user tokens. Users can use that passphrase or a registered passkey to sign in on their devices. Each account supports up to five passkeys and five active device sessions.
 
 Security controls:
 - Passwords are hashed with Node.js scrypt (N=32768, r=8, p=1, 64-byte output) using a fresh 16-byte random salt per account. Plaintext passwords are never persisted.
-- Authenticated session values are random 256-bit tokens in Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes are stored in `connection.json`. Sessions expire after 30 days, and an account may have up to 8 active devices.
+- Authenticated session values are random 256-bit tokens in Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes are stored in `connection.json`. Sessions expire after 30 days, and an account may have up to five active device sessions. A sixth sign-in revokes the least-recently-active session.
+- Passkeys use WebAuthn through SimpleWebAuthn, require user verification, and store only public credential material. Each account may register up to five passkeys. Adding/removing passkeys or revoking a device requires the current BitCider passphrase.
+- Passkeys are tied to the website domain (relying-party ID) where they are created. Deplexo, Netlify, and Cloudflare hostnames are separate relying parties, so create a passkey on the hostname you normally use. Synced passkeys can be available on more than one physical device; the five-device limit counts active BitCider sessions.
 - State-changing account, connect, and disconnect requests require the session-bound `X-BitCider-CSRF` HMAC token returned by `GET /api/status`.
 - Login, registration, and recovery are rate-limited. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
 - Cider app tokens are encrypted with AES-256-GCM using the dedicated Deplexo `BITCIDER_ENCRYPTION_KEY`, separate from the persistent data volume. The key must be backed up securely and never committed. The `connection.json` store and legacy `encryption.key` remain under `/data/bitcider` with restrictive file permissions. Protect and back up the full volume as well; runtime/server compromise can still expose decrypted credentials.
