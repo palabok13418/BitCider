@@ -618,21 +618,28 @@ test('BitMono uses unified top results and does not cache empty upstream searche
       return;
     }
 
-    if (url.pathname === '/search') {
-      response.end(JSON.stringify({
-        data: {
-          topResults: [{
-            entityType: 'track',
-            trackId: '155102871061270528',
-            title: 'Fallback Track',
-            artistNames: ['Fallback Artist'],
-            album: { title: 'Fallback Album' },
-            duration: 205500,
-            artwork: 'https://images.example.invalid/fallback.jpg'
-          }],
-          tracks: []
+    if (url.searchParams.get('q') === 'Fallback Track') {
+      response.end(JSON.stringify(url.pathname === '/search'
+        ? {
+          data: {
+            topResults: [{
+              entityType: 'track',
+              trackId: '155102871061270528',
+              title: 'Fallback Track',
+              artistNames: ['Fallback Artist'],
+              album: { title: 'Fallback Album' },
+              duration: 205500,
+              artwork: 'https://images.example.invalid/fallback.jpg'
+            }],
+            tracks: []
+          }
         }
-      }));
+        : { data: { tracks: [] } }));
+      return;
+    }
+
+    if (url.pathname === '/search') {
+      response.end(JSON.stringify({ data: { topResults: [], tracks: [] } }));
       return;
     }
     response.end(JSON.stringify({ tracks: [] }));
@@ -663,6 +670,10 @@ test('BitMono uses unified top results and does not cache empty upstream searche
   assert.equal(hintedPayload.tracks[0].artist, 'Fallback Artist');
   assert.equal(hintedPayload.tracks[0].album, 'Fallback Album');
   assert.equal(hintedPayload.tracks[0].duration, 205.5);
+  assert.ok(upstreamRequests.includes('/search?q=Fallback+Track'));
+  assert.ok(upstreamRequests.includes('/search/tracks?q=Fallback+Track&limit=40'));
+  assert.match(backend.output(), /"event":"search.title_fallback_started"/);
+  assert.match(backend.output(), /"event":"search.title_fallback_complete"/);
 
   const firstMiss = await fetch(backend.origin + '/bitmono/search?q=Temporary%20Miss');
   const firstPayload = await firstMiss.json();
