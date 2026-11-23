@@ -252,6 +252,7 @@ export default function App() {
           )}
 
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
+          {!notice && status.message && <div className="notice notice-warning">{status.message}</div>}
         </section>
       </section>
 
