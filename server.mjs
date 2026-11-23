@@ -20,6 +20,8 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from './account-security.mjs';
 import fs from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1023,11 +1025,12 @@ function validAddonKey(req, res, next) {
 // BitChord can call addons from a different app origin. The random addon
 // key is the endpoint's bearer-like locator, so public addon routes need CORS.
 app.use((req, res, next) => {
-  const isAddonRoute = /^\/[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/)/.test(req.path);
+  const isAddonRoute = /^\/(?:bitmono\/(?:manifest\.json|search|stream\/|audio\/)|[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/))/.test(req.path);
   if (!isAddonRoute) return next();
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Accept, Content-Type');
+  res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Accept, Content-Type, Range, If-Range, If-None-Match');
+  res.set('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Range, Content-Length, ETag, Last-Modified, X-BitMono-Cache');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
@@ -1784,6 +1787,17 @@ const BITMONO_QUALITY_OPTIONS = Object.freeze([
 ]);
 const BITMONO_SEARCH_CACHE_TTL_MS = 15000;
 const BITMONO_UPSTREAM_TIMEOUT_MS = 9000;
+const BITMONO_AUDIO_CACHE_DIR = String(process.env.BITMONO_AUDIO_CACHE_DIR || path.join(DATA_DIR, 'bitmono-audio-cache'));
+const BITMONO_AUDIO_CACHE_TTL_MS = Math.max(60_000, Number(process.env.BITMONO_AUDIO_CACHE_TTL_MS || 7 * 24 * 60 * 60 * 1000));
+const BITMONO_AUDIO_CACHE_MAX_BYTES = Math.max(32 * 1024 * 1024, Number(process.env.BITMONO_AUDIO_CACHE_MAX_BYTES || 1024 * 1024 * 1024));
+const BITMONO_AUDIO_MAX_FILE_BYTES = Math.min(
+  BITMONO_AUDIO_CACHE_MAX_BYTES,
+  Math.max(8 * 1024 * 1024, Number(process.env.BITMONO_AUDIO_MAX_FILE_BYTES || 256 * 1024 * 1024))
+);
+const BITMONO_AUDIO_DOWNLOAD_TIMEOUT_MS = Math.max(15_000, Number(process.env.BITMONO_AUDIO_DOWNLOAD_TIMEOUT_MS || 180_000));
+const bitMonoAudioInFlight = new Map();
+const bitMonoAudioMemoryCache = new Map();
+let bitMonoAudioPruneQueue = Promise.resolve();
 const bitMonoSearchCache = new Map();
 const bitMonoSearchInFlight = new Map();
 const bitMonoTrackMetadata = new Map();
@@ -2294,6 +2308,320 @@ async function resolveBitMonoDeezerStream(trackId, quality, requestId) {
 
 // BitMono is an intentionally free, public BitChord source. It does not
 // depend on a Cider token, user account, or per-user addon key.
+function bitMonoAudioCachePaths(cacheKey) {
+  return {
+    audio: path.join(BITMONO_AUDIO_CACHE_DIR, cacheKey + '.audio'),
+    metadata: path.join(BITMONO_AUDIO_CACHE_DIR, cacheKey + '.json')
+  };
+}
+
+function bitMonoAudioCacheKey(provider, trackId, quality) {
+  return crypto.createHash('sha256')
+    .update('bitmono-audio-v1\0' + provider + '\0' + trackId + '\0' + quality, 'utf8')
+    .digest('hex');
+}
+
+function validateBitMonoMediaUrl(value) {
+  let url;
+  try { url = new URL(String(value || '')); }
+  catch { throw new Error('The audio provider returned an invalid media URL.'); }
+  const localHttp = url.protocol === 'http:' && isLoopback(url.hostname);
+  if ((url.protocol !== 'https:' && !localHttp) || url.username || url.password || url.hash) {
+    throw new Error('The audio provider returned a media URL that BitMono cannot safely download.');
+  }
+  return url;
+}
+
+async function loadBitMonoAudioCacheEntry(cacheKey) {
+  const memory = bitMonoAudioMemoryCache.get(cacheKey);
+  const paths = bitMonoAudioCachePaths(cacheKey);
+  if (memory && memory.expiresAt > Date.now()) {
+    try {
+      const stat = await fs.promises.stat(paths.audio);
+      if (stat.isFile() && stat.size === memory.size) return memory;
+    } catch {}
+    bitMonoAudioMemoryCache.delete(cacheKey);
+  }
+
+  try {
+    const [rawMetadata, stat] = await Promise.all([
+      fs.promises.readFile(paths.metadata, 'utf8'),
+      fs.promises.stat(paths.audio)
+    ]);
+    const metadata = JSON.parse(rawMetadata);
+    if (metadata?.cacheKey !== cacheKey || !stat.isFile() || stat.size <= 0
+      || stat.size !== Number(metadata.size) || Number(metadata.expiresAt) <= Date.now()) {
+      throw new Error('Cached audio entry is invalid or expired.');
+    }
+    bitMonoAudioMemoryCache.set(cacheKey, metadata);
+    return metadata;
+  } catch {
+    await Promise.all([
+      fs.promises.unlink(paths.audio).catch(() => {}),
+      fs.promises.unlink(paths.metadata).catch(() => {})
+    ]);
+    return null;
+  }
+}
+
+async function pruneBitMonoAudioCache(protectedKey = '') {
+  await fs.promises.mkdir(BITMONO_AUDIO_CACHE_DIR, { recursive: true });
+  const names = await fs.promises.readdir(BITMONO_AUDIO_CACHE_DIR);
+  const entries = [];
+  let totalBytes = 0;
+
+  for (const name of names) {
+    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+    const cacheKey = name.slice(0, 64);
+    const paths = bitMonoAudioCachePaths(cacheKey);
+    try {
+      const [raw, stat] = await Promise.all([
+        fs.promises.readFile(paths.metadata, 'utf8'),
+        fs.promises.stat(paths.audio)
+      ]);
+      const metadata = JSON.parse(raw);
+      if (metadata?.cacheKey !== cacheKey || !stat.isFile()
+        || stat.size !== Number(metadata.size) || Number(metadata.expiresAt) <= Date.now()) {
+        throw new Error('Invalid or expired audio cache item.');
+      }
+      entries.push({ cacheKey, paths, size: stat.size, modifiedAt: stat.mtimeMs });
+      totalBytes += stat.size;
+    } catch {
+      await Promise.all([
+        fs.promises.unlink(paths.audio).catch(() => {}),
+        fs.promises.unlink(paths.metadata).catch(() => {})
+      ]);
+      bitMonoAudioMemoryCache.delete(cacheKey);
+    }
+  }
+
+  entries.sort((a, b) => a.modifiedAt - b.modifiedAt);
+  for (const entry of entries) {
+    if (totalBytes <= BITMONO_AUDIO_CACHE_MAX_BYTES) break;
+    if (entry.cacheKey === protectedKey) continue;
+    await Promise.all([
+      fs.promises.unlink(entry.paths.audio).catch(() => {}),
+      fs.promises.unlink(entry.paths.metadata).catch(() => {})
+    ]);
+    bitMonoAudioMemoryCache.delete(entry.cacheKey);
+    totalBytes -= entry.size;
+    bitMonoLog('info', 'audio.cache_evicted', { cacheKey: entry.cacheKey, sizeBytes: entry.size });
+  }
+}
+
+async function downloadBitMonoAudio({ provider, trackId, quality, sourceUrl, format, requestId }) {
+  const cacheKey = bitMonoAudioCacheKey(provider, trackId, quality);
+  const cached = await loadBitMonoAudioCacheEntry(cacheKey);
+  if (cached) {
+    const paths = bitMonoAudioCachePaths(cacheKey);
+    await fs.promises.utimes(paths.audio, new Date(), new Date()).catch(() => {});
+    bitMonoLog('info', 'audio.cache_hit', {
+      requestId, provider, trackId: bitMonoLogText(trackId, 100),
+      sizeBytes: cached.size, cacheKey
+    });
+    return cached;
+  }
+
+  let pending = bitMonoAudioInFlight.get(cacheKey);
+  if (pending) {
+    bitMonoLog('info', 'audio.download_inflight_join', { requestId, provider, trackId: bitMonoLogText(trackId, 100), cacheKey });
+    return pending;
+  }
+
+  pending = (async () => {
+    await fs.promises.mkdir(BITMONO_AUDIO_CACHE_DIR, { recursive: true });
+    const mediaUrl = validateBitMonoMediaUrl(sourceUrl);
+    const paths = bitMonoAudioCachePaths(cacheKey);
+    const tempAudioPath = paths.audio + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+    const tempMetadataPath = paths.metadata + '.' + crypto.randomBytes(8).toString('hex') + '.tmp';
+    const startedAt = Date.now();
+    bitMonoLog('info', 'audio.download_started', {
+      requestId, provider, trackId: bitMonoLogText(trackId, 100), quality, cacheKey
+    });
+
+    try {
+      const response = await fetch(mediaUrl, {
+        headers: { Accept: 'audio/*, application/octet-stream;q=0.9, */*;q=0.5' },
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(BITMONO_AUDIO_DOWNLOAD_TIMEOUT_MS)
+      });
+      if (!response.ok) throw new Error('Audio provider returned HTTP ' + response.status + '.');
+      validateBitMonoMediaUrl(response.url || mediaUrl.toString());
+      if (!response.body) throw new Error('Audio provider returned an empty audio response.');
+
+      const declaredLength = Number(response.headers.get('content-length') || 0);
+      if (declaredLength > BITMONO_AUDIO_MAX_FILE_BYTES) {
+        throw new Error('The audio file is larger than BitMono’s configured complete-download limit.');
+      }
+
+      const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (contentType.startsWith('text/') || contentType.includes('json')
+        || contentType.includes('mpegurl') || contentType.includes('x-mpegurl')) {
+        throw new Error('The provider returned a playlist or an error document instead of a complete audio file.');
+      }
+
+      const hash = crypto.createHash('sha256');
+      let byteCount = 0;
+      const meter = new Transform({
+        transform(chunk, _encoding, callback) {
+          byteCount += chunk.length;
+          if (byteCount > BITMONO_AUDIO_MAX_FILE_BYTES) {
+            callback(new Error('The audio file exceeded BitMono’s configured complete-download limit.'));
+            return;
+          }
+          hash.update(chunk);
+          callback(null, chunk);
+        }
+      });
+
+      await pipeline(response.body, meter, fs.createWriteStream(tempAudioPath, { flags: 'wx' }));
+      if (byteCount <= 0) throw new Error('The audio provider returned a zero-byte audio file.');
+
+      const digest = hash.digest('hex');
+      const createdAt = Date.now();
+      const metadata = {
+        cacheKey,
+        provider,
+        trackId: String(trackId),
+        quality,
+        format: String(format || ''),
+        contentType: contentType || (String(format).toLowerCase() === 'mp3' ? 'audio/mpeg' : 'audio/flac'),
+        size: byteCount,
+        sha256: digest,
+        etag: '"' + digest + '"',
+        createdAt,
+        expiresAt: createdAt + BITMONO_AUDIO_CACHE_TTL_MS
+      };
+
+      await fs.promises.rename(tempAudioPath, paths.audio);
+      await fs.promises.writeFile(tempMetadataPath, JSON.stringify(metadata), { flag: 'wx' });
+      await fs.promises.rename(tempMetadataPath, paths.metadata);
+      bitMonoAudioMemoryCache.set(cacheKey, metadata);
+
+      bitMonoAudioPruneQueue = bitMonoAudioPruneQueue
+        .then(() => pruneBitMonoAudioCache(cacheKey))
+        .catch(error => bitMonoLog('warn', 'audio.cache_prune_failed', {
+          requestId, error: bitMonoLogText(error?.message || error, 180)
+        }));
+      await bitMonoAudioPruneQueue;
+
+      bitMonoLog('info', 'audio.download_complete', {
+        requestId, provider, trackId: bitMonoLogText(trackId, 100),
+        sizeBytes: byteCount, sha256: metadata.sha256,
+        durationMs: Date.now() - startedAt, cacheKey
+      });
+      return metadata;
+    } catch (error) {
+      await Promise.all([
+        fs.promises.unlink(tempAudioPath).catch(() => {}),
+        fs.promises.unlink(tempMetadataPath).catch(() => {}),
+        fs.promises.unlink(paths.audio).catch(() => {}),
+        fs.promises.unlink(paths.metadata).catch(() => {})
+      ]);
+      bitMonoAudioMemoryCache.delete(cacheKey);
+      bitMonoLog('warn', 'audio.download_failed', {
+        requestId, provider, trackId: bitMonoLogText(trackId, 100),
+        durationMs: Date.now() - startedAt,
+        error: bitMonoLogText(error?.message || error, 220)
+      });
+      throw error;
+    }
+  })();
+
+  bitMonoAudioInFlight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    if (bitMonoAudioInFlight.get(cacheKey) === pending) bitMonoAudioInFlight.delete(cacheKey);
+  }
+}
+
+function bitMonoAudioPublicUrl(req, cacheKey) {
+  const origin = PUBLIC_URL || (req.protocol + '://' + req.get('host'));
+  return new URL('/bitmono/audio/' + cacheKey, origin).toString();
+}
+
+function parseBitMonoByteRange(rangeHeader, size) {
+  const value = String(rangeHeader || '').trim();
+  if (!value) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || (!match[1] && !match[2])) return { invalid: true };
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return { invalid: true };
+    start = Math.max(0, size - suffixLength);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+    || start < 0 || end < start || start >= size) return { invalid: true };
+  return { start, end: Math.min(end, size - 1) };
+}
+
+async function serveBitMonoCachedAudio(req, res) {
+  const cacheKey = String(req.params.cacheKey || '');
+  if (!/^[a-f0-9]{64}$/.test(cacheKey)) return res.status(404).end();
+  const metadata = await loadBitMonoAudioCacheEntry(cacheKey);
+  if (!metadata) return res.status(404).json({ error: 'BITMONO_AUDIO_CACHE_MISS', message: 'This complete audio file is not in the BitMono cache. Resolve the track again.' });
+
+  const paths = bitMonoAudioCachePaths(cacheKey);
+  let stat;
+  try { stat = await fs.promises.stat(paths.audio); }
+  catch { return res.status(404).end(); }
+  const size = stat.size;
+  const etag = metadata.etag || '"' + metadata.sha256 + '"';
+  res.set({
+    'Content-Type': metadata.contentType || 'application/octet-stream',
+    'Content-Length': String(size),
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=3600, immutable',
+    ETag: etag,
+    'Last-Modified': new Date(metadata.createdAt).toUTCString(),
+    'X-BitMono-Cache': 'HIT'
+  });
+
+  const ifNoneMatch = req.get('if-none-match');
+  if (ifNoneMatch && (ifNoneMatch === '*' || ifNoneMatch.split(',').map(value => value.trim()).includes(etag))) {
+    return res.status(304).end();
+  }
+
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  const rangeHeader = req.get('range');
+  const ifRange = req.get('if-range');
+  const rangeAllowed = !ifRange || ifRange === etag || ifRange === new Date(metadata.createdAt).toUTCString();
+  if (rangeHeader && rangeAllowed) {
+    const range = parseBitMonoByteRange(rangeHeader, size);
+    if (range?.invalid) {
+      res.set('Content-Range', 'bytes */' + size);
+      return res.status(416).end();
+    }
+    if (range) {
+      start = range.start;
+      end = range.end;
+      status = 206;
+      res.set('Content-Range', 'bytes ' + start + '-' + end + '/' + size);
+      res.set('Content-Length', String(end - start + 1));
+    }
+  }
+
+  if (req.method === 'HEAD') return res.status(status).end();
+  res.status(status);
+  const stream = fs.createReadStream(paths.audio, { start, end });
+  stream.on('error', error => {
+    bitMonoLog('warn', 'audio.cache_read_failed', { cacheKey, error: bitMonoLogText(error?.message || error, 160) });
+    if (!res.headersSent) res.status(500).end();
+    else res.destroy(error);
+  });
+  return stream.pipe(res);
+}
+
 app.get('/bitmono/manifest.json', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
   res.json({
@@ -2429,12 +2757,41 @@ app.get('/bitmono/stream/:trackId', async (req, res) => {
     const deezerId = suppliedId.slice(4);
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(deezerId)) return res.status(400).json({ error: 'INVALID_TRACK_ID' });
     try {
-      const resolved = await resolveBitMonoDeezerStream(suppliedId, String(req.query.quality || 'auto'), requestId);
+      const requestedQuality = String(req.query.quality || 'auto').trim().toLowerCase();
+      const resolvedQuality = requestedQuality === 'low' ? 'low' : 'high';
+      const resolved = await resolveBitMonoDeezerStream(suppliedId, resolvedQuality, requestId);
       if (!resolved?.url) return res.status(404).json({ error: 'DEEZER_STREAM_UNAVAILABLE' });
-      return res.json({ ...resolved, url: resolved.url, format: resolved.format || 'mp3', quality: resolved.quality || resolved.audioQuality || 'HIGH', codec: resolved.codec || resolved.format || 'mp3', manifest: resolved.manifest || 'none', encrypted: resolved.encrypted === true });
+      const format = resolved.format || resolved.codec || 'mp3';
+      const audio = await downloadBitMonoAudio({
+        provider: 'deezer',
+        trackId: deezerId,
+        quality: resolvedQuality,
+        sourceUrl: resolved.url,
+        format,
+        requestId
+      });
+      res.set('Cache-Control', 'no-store');
+      return res.json({
+        ...resolved,
+        url: bitMonoAudioPublicUrl(req, audio.cacheKey),
+        format,
+        quality: resolved.quality || resolved.audioQuality || (resolvedQuality === 'low' ? 'LOW' : 'HIGH'),
+        codec: resolved.codec || format,
+        mimeType: audio.contentType,
+        manifest: 'none',
+        encrypted: resolved.encrypted === true,
+        cacheReady: true,
+        buffered: true,
+        sizeBytes: audio.size,
+        sha256: audio.sha256
+      });
     } catch (error) {
-      bitMonoLog('warn', 'fallback.deezer.stream_failed', { requestId, trackId: bitMonoLogText(suppliedId, 100), error: bitMonoLogText(error?.message || error, 180) });
-      return res.status(502).json({ error: 'DEEZER_STREAM_FAILED', requestId });
+      bitMonoLog('warn', 'fallback.deezer.stream_failed', { requestId, trackId: bitMonoLogText(suppliedId, 100), error: bitMonoLogText(error?.message || error, 220) });
+      return res.status(502).json({
+        error: 'DEEZER_STREAM_FAILED',
+        message: 'BitMono could not download and verify the complete Deezer audio file before playback.',
+        requestId
+      });
     }
   }
   const trackId = suppliedId.startsWith('mono_') ? suppliedId.slice(5) : suppliedId;
@@ -2446,27 +2803,67 @@ app.get('/bitmono/stream/:trackId', async (req, res) => {
   const requestedQuality = String(req.query.quality || 'auto').trim().toLowerCase();
   const supportedQualityPreferences = ['auto', 'lossless'];
   const qualityFallback = !supportedQualityPreferences.includes(requestedQuality);
-  const url = BITMONO_TRACKS_API_BASE + '/track/' + encodeURIComponent(trackId);
-  res.set('Cache-Control', 'public, max-age=60');
-  // The official Monochrome web client resolves its stream with /track/{id}
-  // and identifies it as FLAC/Lossless stereo. Do not fabricate Atmos or
-  // 24-bit metadata based only on a user-selected preference.
-  return res.json({
-    url,
-    format: 'flac',
-    quality: 'LOSSLESS',
-    audioQuality: 'LOSSLESS',
-    codec: 'flac',
-    mimeType: 'audio/flac',
-    manifest: 'none',
-    encrypted: false,
-    audioMode: 'STEREO',
-    audioModes: ['STEREO'],
-    requestedQuality,
-    qualityFallback,
-    ...(metadata?.duration ? { duration: metadata.duration } : {})
-  });
+  const upstreamUrl = BITMONO_TRACKS_API_BASE + '/track/' + encodeURIComponent(trackId);
+  try {
+    const audio = await downloadBitMonoAudio({
+      provider: 'monochrome',
+      trackId,
+      quality: 'lossless',
+      sourceUrl: upstreamUrl,
+      format: 'flac',
+      requestId
+    });
+    res.set('Cache-Control', 'no-store');
+    // Do not release this resolver response until the full upstream file has
+    // been downloaded, hashed, and atomically stored in the Deplexo cache.
+    return res.json({
+      url: bitMonoAudioPublicUrl(req, audio.cacheKey),
+      format: 'flac',
+      quality: 'LOSSLESS',
+      audioQuality: 'LOSSLESS',
+      codec: 'flac',
+      mimeType: audio.contentType || 'audio/flac',
+      manifest: 'none',
+      encrypted: false,
+      audioMode: 'STEREO',
+      audioModes: ['STEREO'],
+      requestedQuality,
+      qualityFallback,
+      cacheReady: true,
+      buffered: true,
+      sizeBytes: audio.size,
+      sha256: audio.sha256,
+      ...(metadata?.duration ? { duration: metadata.duration } : {})
+    });
+  } catch (error) {
+    bitMonoLog('warn', 'audio.monochrome_stream_failed', {
+      requestId,
+      trackId: bitMonoLogText(trackId, 100),
+      error: bitMonoLogText(error?.message || error, 220)
+    });
+    return res.status(502).json({
+      error: 'BITMONO_AUDIO_PRELOAD_FAILED',
+      message: 'BitMono could not download and verify the complete Monochrome audio file before playback.',
+      requestId
+    });
+  }
 });
+
+async function serveBitMonoCachedAudioRoute(req, res) {
+  try {
+    return await serveBitMonoCachedAudio(req, res);
+  } catch (error) {
+    bitMonoLog('warn', 'audio.serve_failed', {
+      cacheKey: bitMonoLogText(req.params.cacheKey, 80),
+      error: bitMonoLogText(error?.message || error, 180)
+    });
+    if (!res.headersSent) return res.status(500).end();
+    return res.destroy(error);
+  }
+}
+
+app.get('/bitmono/audio/:cacheKey', serveBitMonoCachedAudioRoute);
+app.head('/bitmono/audio/:cacheKey', serveBitMonoCachedAudioRoute);
 
 app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   res.set('Cache-Control', 'private, no-store');
