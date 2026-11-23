@@ -64,6 +64,8 @@ Copy `.env.example` to `.env` and set:
 - `BITCIDER_PUBLIC_URL`: public HTTPS origin if BitChord connects from outside the LAN.
 - `CIDER_API_URL`: local Cider API origin, default `http://127.0.0.1:10767`.
 - `PORT`: BitCider server port, default `8787`.
+- `BITCIDER_SEARCH_MAX_LIBRARY_SONGS`: maximum number of saved library songs scanned per search, default `4000` (maximum `10000`).
+- `BITCIDER_PAUSE_CIDER_AFTER_RESOLVE`: set to `false` to leave Cider playing after resolving a stream; defaults to `true` so BitChord is the only audible output.
 
 ## Current boundaries
 
