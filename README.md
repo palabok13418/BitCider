@@ -47,7 +47,7 @@ The connect button opens:
 cider://request-auth?app-name=BitCider&scopes=playback,queue,library,audio
 ```
 
-It also attempts the current Cider browser authorization endpoint at `http://127.0.0.1:10767/api/v2/auth/request`. If the running Cider version does not return the token to the browser, the UI offers a one-time token field as a compatibility fallback.
+The Connect button opens that exact Cider custom-protocol link. After approval, copy the one-time app token from Cider and paste it into the BitCider form. A browser page cannot silently read a token displayed by another desktop app. BitCider verifies the token with Cider's unscoped `GET /api/v2/client/info` endpoint before storing it.
 
 Cider app tokens are sent to the local BitCider service and encrypted at rest with AES-256-GCM. The encryption key is created in `.bitcider/encryption.key`, which is excluded from Git. Back up that key with the connection file if you need to move the same local connection to another machine. Disconnecting deletes the encrypted connection record; revoke the app token from Cider's Connected Apps settings as well.
 
