@@ -206,18 +206,27 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
     const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
     const username = String(req.body?.username || '').trim().toLowerCase();
     const usernameKey = username ? crypto.createHash('sha256').update(username).digest('hex').slice(0, 16) : '';
-    const key = ip + (usernameKey ? ':' + usernameKey : '');
-    let bucket = authRateBuckets.get(key);
-    if (!bucket || now - bucket.startedAt >= windowMs) bucket = { count: 0, startedAt: now };
-    bucket.count += 1;
-    authRateBuckets.set(key, bucket);
+    const keys = [
+      { key: 'ip:' + ip, limit: maxAttempts * 4 },
+      ...(usernameKey ? [{ key: 'user:' + ip + ':' + usernameKey, limit: maxAttempts }] : [])
+    ];
+    let retryAfter = 0;
+    for (const entry of keys) {
+      let bucket = authRateBuckets.get(entry.key);
+      if (!bucket || now - bucket.startedAt >= windowMs) bucket = { count: 0, startedAt: now };
+      bucket.count += 1;
+      authRateBuckets.set(entry.key, bucket);
+      if (bucket.count > entry.limit) {
+        retryAfter = Math.max(retryAfter, Math.ceil((windowMs - (now - bucket.startedAt)) / 1000));
+      }
+    }
     if (authRateBuckets.size > 5000) {
       for (const [entryKey, entry] of authRateBuckets) {
         if (now - entry.startedAt >= windowMs) authRateBuckets.delete(entryKey);
       }
     }
-    if (bucket.count > maxAttempts) {
-      res.set('Retry-After', String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+    if (retryAfter) {
+      res.set('Retry-After', String(retryAfter));
       return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many account attempts. Try again later.' });
     }
     next();
