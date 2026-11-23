@@ -388,7 +388,7 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
   };
 }
 
-function accountConnection(user) {function pendingAccountAuthFor(store, sessionId) {
+function pendingAccountAuthFor(store, sessionId) {
   const pending = store?.sessions?.[sessionId];
   const expiresAt = Number(pending?.pendingAccountExpiresAt);
   if (!pending?.pendingAccountId || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
