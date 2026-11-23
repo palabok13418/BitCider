@@ -29,7 +29,9 @@ Users can create a BitCider account with a unique username and a passphrase, the
 
 - Usernames are 3–24 characters and case-insensitive.
 - Passphrases must be 14–128 characters and are stored as scrypt password hashes (N=32768, r=8, p=1, 64-byte output). Plaintext passphrases are never stored.
-- Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to 8 active devices per account.
+- Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to five active device sessions; a sixth sign-in revokes the least-recently-active session.
+- Passkeys use WebAuthn through SimpleWebAuthn, require user verification, and store only credential IDs and public keys. Each BitCider account can register up to five passkeys. Adding or removing passkeys and revoking devices requires the current BitCider passphrase.
+- Passkey credentials are scoped to the website domain where they were created. Netlify, Cloudflare, and Deplexo hostnames are separate relying parties unless configured under one shared custom domain. Synced passkeys may be usable on multiple physical devices; the five-device cap applies to active BitCider sessions.
 - Cookie-authenticated state-changing requests require a session-bound HMAC CSRF token in the `X-BitCider-CSRF` header. Account endpoints are rate-limited.
 - Cider app tokens are encrypted with AES-256-GCM. Configure the Deplexo-only `BITCIDER_ENCRYPTION_KEY` secret to keep the data-encryption key separate from the persistent volume. The addon URL is a bearer-style secret; it is not written to localStorage and is returned only to the matching anonymous browser session or signed-in account.
 - Creating an account while a Cider connection is already linked in that browser transfers the encrypted connection and existing addon key into the new account. Signing in on a second device restores the account's existing link instead of creating a new one.
