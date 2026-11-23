@@ -310,7 +310,7 @@ function normalizeSong(song, { quality = 'high', preferAtmos = false } = {}) {
     return [{
       ...common,
       id: atmosphereTrackId(id),
-      format: 'dash',
+      format: 'eac3-joc',
       audioQuality: 'Dolby Atmos',
       audioModes: ['DOLBY_ATMOS'],
       atmos: true
@@ -323,7 +323,7 @@ function normalizeSong(song, { quality = 'high', preferAtmos = false } = {}) {
     rows.push({
       ...common,
       id: atmosphereTrackId(id),
-      format: 'dash',
+      format: 'eac3-joc',
       audioQuality: 'Dolby Atmos',
       audioModes: ['DOLBY_ATMOS'],
       atmos: true
