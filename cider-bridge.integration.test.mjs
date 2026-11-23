@@ -501,11 +501,21 @@ test('GradientASCII declares its shader-link readiness helper only once', async 
 });
 
 
-test('BitMono is a free Monochrome-backed addon with accurate stream metadata', async t => {
+test('BitMono preloads the complete Monochrome audio file and serves it from a seekable local cache', async t => {
   const upstreamRequests = [];
+  const completeAudio = Buffer.alloc(256 * 1024, 0x55);
+  Buffer.from('fLaC').copy(completeAudio, 0);
   const upstream = http.createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     upstreamRequests.push(url.pathname + url.search);
+    if (url.pathname.startsWith('/track/')) {
+      response.writeHead(200, {
+        'Content-Type': 'audio/flac',
+        'Content-Length': String(completeAudio.length)
+      });
+      response.end(completeAudio);
+      return;
+    }
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     const mockTrack = {
       trackId: '123456789012345',
@@ -581,7 +591,8 @@ test('BitMono is a free Monochrome-backed addon with accurate stream metadata', 
   const stream = await fetch(backend.origin + '/bitmono/stream/mono_123456789012345?quality=dolby_atmos_hi');
   const streamPayload = await stream.json();
   assert.equal(stream.status, 200, JSON.stringify(streamPayload));
-  assert.equal(streamPayload.url, 'http://127.0.0.1:' + upstreamPort + '/track/123456789012345');
+  assert.ok(streamPayload.url.startsWith(backend.origin + '/bitmono/audio/'));
+  assert.match(new URL(streamPayload.url).pathname, /\/bitmono\/audio\/[a-f0-9]{64}$/);
   assert.equal(streamPayload.format, 'flac');
   assert.equal(streamPayload.codec, 'flac');
   assert.equal(streamPayload.quality, 'LOSSLESS');
@@ -589,17 +600,58 @@ test('BitMono is a free Monochrome-backed addon with accurate stream metadata', 
   assert.equal(streamPayload.audioMode, 'STEREO');
   assert.equal(streamPayload.requestedQuality, 'dolby_atmos_hi');
   assert.equal(streamPayload.qualityFallback, true);
-  assert.deepEqual(upstreamRequests.sort(), [
-    '/search?q=Test+Monochrome+Song',
-    '/search/tracks?q=Test+Monochrome+Song&limit=40'
-  ].sort());
+  assert.equal(streamPayload.cacheReady, true);
+  assert.equal(streamPayload.buffered, true);
+  assert.equal(streamPayload.sizeBytes, completeAudio.length);
+  assert.match(streamPayload.sha256, /^[a-f0-9]{64}$/);
+
+  const audioPath = new URL(streamPayload.url).pathname;
+  const audioPreflight = await fetch(backend.origin + audioPath, { method: 'OPTIONS' });
+  assert.equal(audioPreflight.status, 204);
+  assert.match(audioPreflight.headers.get('access-control-allow-methods') || '', /HEAD/);
+  assert.match(audioPreflight.headers.get('access-control-allow-headers') || '', /Range/);
+
+  const fullAudioResponse = await fetch(streamPayload.url);
+  const fullAudio = Buffer.from(await fullAudioResponse.arrayBuffer());
+  assert.equal(fullAudioResponse.status, 200);
+  assert.equal(fullAudioResponse.headers.get('content-type'), 'audio/flac');
+  assert.equal(fullAudioResponse.headers.get('accept-ranges'), 'bytes');
+  assert.equal(Number(fullAudioResponse.headers.get('content-length')), completeAudio.length);
+  assert.equal(fullAudioResponse.headers.get('x-bitmono-cache'), 'HIT');
+  assert.deepEqual(fullAudio, completeAudio);
+
+  const rangeResponse = await fetch(streamPayload.url, { headers: { Range: 'bytes=100-199' } });
+  const rangeAudio = Buffer.from(await rangeResponse.arrayBuffer());
+  assert.equal(rangeResponse.status, 206);
+  assert.equal(rangeResponse.headers.get('content-range'), 'bytes 100-199/' + completeAudio.length);
+  assert.equal(rangeAudio.length, 100);
+  assert.deepEqual(rangeAudio, completeAudio.subarray(100, 200));
+
+  const headResponse = await fetch(streamPayload.url, { method: 'HEAD' });
+  assert.equal(headResponse.status, 200);
+  assert.equal(Number(headResponse.headers.get('content-length')), completeAudio.length);
+
+  const cachedStream = await fetch(backend.origin + '/bitmono/stream/mono_123456789012345?quality=lossless');
+  const cachedPayload = await cachedStream.json();
+  assert.equal(cachedStream.status, 200);
+  assert.equal(cachedPayload.url, streamPayload.url);
+  assert.equal(upstreamRequests.filter(path => path.startsWith('/track/')).length, 1);
+  assert.deepEqual(
+    upstreamRequests.filter(path => path.startsWith('/search')).sort(),
+    [
+      '/search?q=Test+Monochrome+Song',
+      '/search/tracks?q=Test+Monochrome+Song&limit=40'
+    ].sort()
+  );
+
   assert.equal(search.headers.get('x-bitmono-cache'), 'MISS');
   assert.match(search.headers.get('x-bitmono-request-id') || '', /^[0-9a-f-]{36}$/i);
+  assert.match(backend.output(), /"event":"audio.download_complete"/);
+  assert.match(backend.output(), /"event":"audio.cache_hit"/);
   assert.match(backend.output(), /"event":"upstream.response"/);
   assert.match(backend.output(), /"event":"search.merged"/);
   assert.match(backend.output(), /"duplicates":2?/);
 });
-
 test('BitMono uses unified top results and does not cache empty upstream searches', async t => {
   const upstreamRequests = [];
   let recovered = false;
@@ -700,11 +752,20 @@ test('BitMono uses unified top results and does not cache empty upstream searche
   assert.match(backend.output(), /"event":"search.complete"/);
 });
 
-test('BitMono falls back to Deezer when Monochrome returns no usable tracks', async t => {
+test('BitMono preloads and caches the complete Deezer fallback audio file', async t => {
   const deezerRequests = [];
+  const completeAudio = Buffer.alloc(128 * 1024, 0x33);
   const deezer = http.createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     deezerRequests.push(url.pathname + url.search);
+    if (url.pathname === '/media/dz-track-42') {
+      response.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': String(completeAudio.length)
+      });
+      response.end(completeAudio);
+      return;
+    }
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     if (url.pathname === '/search') {
       response.end(JSON.stringify({
@@ -723,7 +784,7 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
     }
     if (url.pathname === '/stream/dz-track-42') {
       response.end(JSON.stringify({
-        url: 'https://media.example.invalid/deezer-track.mp3',
+        url: 'http://127.0.0.1:' + deezerPort + '/media/dz-track-42',
         format: 'mp3',
         quality: 'HIGH',
         codec: 'mp3',
@@ -741,7 +802,7 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
     return new Promise(resolve => deezer.close(resolve));
   });
 
-  const monochrome = http.createServer((request, response) => {
+  const monochrome = http.createServer((_request, response) => {
     response.statusCode = 503;
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     response.end(JSON.stringify({ error: 'Monochrome temporarily unavailable' }));
@@ -771,14 +832,26 @@ test('BitMono falls back to Deezer when Monochrome returns no usable tracks', as
   const stream = await fetch(backend.origin + '/bitmono/stream/dzr_dz-track-42?quality=auto');
   const streamPayload = await stream.json();
   assert.equal(stream.status, 200, JSON.stringify(streamPayload));
-  assert.equal(streamPayload.url, 'https://media.example.invalid/deezer-track.mp3');
+  assert.ok(streamPayload.url.startsWith(backend.origin + '/bitmono/audio/'));
+  assert.match(new URL(streamPayload.url).pathname, /\/bitmono\/audio\/[a-f0-9]{64}$/);
+  assert.notEqual(streamPayload.url, 'http://127.0.0.1:' + deezerPort + '/media/dz-track-42');
+  assert.equal(streamPayload.format, 'mp3');
   assert.equal(streamPayload.codec, 'mp3');
   assert.equal(streamPayload.encrypted, false);
-  assert.ok(deezerRequests.includes('/stream/dz-track-42?quality=HIGH'));
-  assert.match(backend.output(), /"event":"search.fallback_selected"/);
-  assert.match(backend.output(), /"event":"fallback.deezer.stream_resolved"/);
-});
+  assert.equal(streamPayload.cacheReady, true);
+  assert.equal(streamPayload.buffered, true);
+  assert.equal(streamPayload.sizeBytes, completeAudio.length);
 
+  const audioResponse = await fetch(streamPayload.url);
+  const cachedAudio = Buffer.from(await audioResponse.arrayBuffer());
+  assert.equal(audioResponse.status, 200);
+  assert.equal(audioResponse.headers.get('content-type'), 'audio/mpeg');
+  assert.deepEqual(cachedAudio, completeAudio);
+  assert.ok(deezerRequests.includes('/stream/dz-track-42?quality=HIGH'));
+  assert.equal(deezerRequests.filter(path => path === '/media/dz-track-42').length, 1);
+  assert.match(backend.output(), /"event":"search.fallback_selected"/);
+  assert.match(backend.output(), /"event":"audio.download_complete"/);
+});
 test('BitMono page mode updates branding, tab metadata, and keeps the source URL copyable', async () => {
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
   const styleSource = await fs.readFile(path.join(ROOT, 'src/styles.css'), 'utf8');
