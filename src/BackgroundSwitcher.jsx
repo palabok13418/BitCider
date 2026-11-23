@@ -6,6 +6,7 @@ import AcidSquares from './AcidSquares.jsx';
 const Balatro = lazy(() => import('./Balatro.jsx'));
 const GradientWaves = lazy(() => import('./GradientWaves.jsx'));
 const LaserFlow = lazy(() => import('./LaserFlow.jsx'));
+const LightTunnel = lazy(() => import('./LightTunnel.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -242,6 +243,50 @@ const BACKGROUND_REGISTRY = [
           theme="dark"
           paused={false}
           dpr={1.25}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'light-tunnel',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <LightTunnel
+          className="site-waves"
+          cableColor="#fd3f57"
+          pulseColor="#ff2b5e"
+          tunnelColor="#ff9bac"
+          tunnelOpacity={0.12}
+          speed={0.075}
+          flowDirection="inward"
+          pulseSpeed={1.7}
+          pulseLength={0.32}
+          pulseBlend={0.64}
+          pulseWidth={1.05}
+          pulseDensity={0.62}
+          cableCount={68}
+          thickness={0.42}
+          rimWidth={0.24}
+          waviness={0.42}
+          sway={0.52}
+          bend={0.48}
+          size={1}
+          glow={1.1}
+          fadeNear={0.38}
+          fadeFar={2.2}
+          brightness={0.92}
+          colorVariance
+          grain
+          grainIntensity={0.035}
+          opacity={0.88}
+          mouseInteraction
+          mouseStrength={0.085}
+          clickSurge
+          intro
+          variation={7}
+          lightMode={false}
+          dpr={1.3}
           onError={onError}
         />
       </Suspense>
