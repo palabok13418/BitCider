@@ -84,19 +84,18 @@ export function allowedLocalCiderJob(job) {
   return null;
 }
 
-async function probeLocalCider(signal, token) {
+async function probeLocalCider(signal) {
+  // Keep this a CORS-simple GET. Sending the custom apptoken header here
+  // forces an OPTIONS preflight before Cider can return its auth error. The
+  // documented flat UNAUTHORIZED_APP_TOKEN response is enough to establish
+  // that Cider is running and that the saved token needs reauthorization.
   const response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
     method: 'GET',
     mode: 'cors',
     credentials: 'omit',
     cache: 'no-store',
     redirect: 'error',
-    headers: {
-      Accept: 'application/json',
-      // Cider requires a valid app token even for client-info (the endpoint
-      // is scope-free, not unauthenticated).
-      apptoken: token
-    },
+    headers: { Accept: 'application/json' },
     targetAddressSpace: 'loopback',
     signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
   });
@@ -111,7 +110,7 @@ async function probeLocalCider(signal, token) {
 
   if (!response.ok) {
     const message = ciderCode === 'UNAUTHORIZED_APP_TOKEN'
-      ? 'Cider rejected BitCider’s saved app token. Reconnect Cider on this device and approve the authorization request again.'
+      ? 'Cider is running, but its authorization for BitCider needs to be refreshed. Reconnect Cider on this device and approve the authorization request again.'
       : 'Cider responded with HTTP ' + response.status + (ciderMessage ? ': ' + ciderMessage : '.');
     const error = new Error(message);
     error.status = response.status;
@@ -232,7 +231,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
 
       if (!localCiderAvailable && !localCiderAuthFailed && Date.now() >= nextProbeAt) {
         try {
-          await probeLocalCider(signal, ciderToken);
+          await probeLocalCider(signal);
           localCiderAvailable = true;
           setState('connected', 'This BitCider tab is connected to Cider on this computer.');
         } catch (error) {
