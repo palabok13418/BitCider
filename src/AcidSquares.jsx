@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './AcidSquares.css';
 
 const MAX_RIPPLES = 8;
@@ -453,6 +453,7 @@ const AcidSquares = ({
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const wakeRef = useRef(null);
+  const [generation, setGeneration] = useState(0);
   const settings = {
     color: String(color),
     accentColor: String(accentColor),
@@ -875,6 +876,7 @@ const AcidSquares = ({
       cancelAnimationFrame(raf);
       raf = 0;
     };
+    const onContextRestored = () => setGeneration(value => value + 1);
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
@@ -891,6 +893,7 @@ const AcidSquares = ({
     document.documentElement.addEventListener('pointerleave', onPointerLeave);
     document.addEventListener('visibilitychange', onVisibility);
     canvas.addEventListener('webglcontextlost', onContextLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
     resize();
     wake();
 
@@ -910,6 +913,7 @@ const AcidSquares = ({
       document.documentElement.removeEventListener('pointerleave', onPointerLeave);
       document.removeEventListener('visibilitychange', onVisibility);
       canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
       if (!gl.isContextLost()) {
         gl.deleteBuffer(gridBuffer);
         gl.deleteBuffer(indexBuffer);
@@ -917,7 +921,7 @@ const AcidSquares = ({
         gl.deleteProgram(surface.program);
       }
     };
-  }, []);
+  }, [generation]);
 
   useEffect(() => {
     wakeRef.current?.();
