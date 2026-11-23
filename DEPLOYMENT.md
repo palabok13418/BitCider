@@ -142,7 +142,7 @@ A hosted Deplexo container cannot reach Cider at `127.0.0.1:10767` on a user's c
 
 1. Open BitCider on the computer where Cider is installed. Link Cider and sign in to your BitCider account. The relay setup is available only for a signed-in account.
 2. In the **Desktop Cider Relay** panel, choose **Download Relay Config**. This downloads `bitcider-relay.json`.
-3. Use the link that appears to download `bitcider-relay.mjs`. Keep both files in the same private folder. The JSON contains a local copy of your Cider app token and the account's relay key. Treat it like a password: do not share it, upload it publicly, or commit it to Git.
+3. Use the link that appears to download `bitcider-relay.mjs`. Keep both files in the same private folder. The JSON contains a local copy of your Cider app token and the account's relay key. Treat it like a password: do not share it, upload it publicly, or commit it to Git. If Chrome adds a duplicate suffix such as `(1)` after a re-download, the runner automatically selects the newest matching config in the folder.
 4. Keep Cider open. Install Node.js 20 or newer if it is not already installed.
 5. Open PowerShell or Terminal in the folder containing both files and run:
 
