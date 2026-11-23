@@ -70,3 +70,14 @@ For the Deplexo backend, use `npm start`. Deplexo supplies port 3000 through its
 - The frontend gateway secret must be configured as a secret on Netlify and Cloudflare, not as a public build-time variable.
 - The Deplexo app uses the durable `/data/bitcider` directory.
 - Back up Deplexo's persistent volume before deleting or recreating the application.
+
+
+## BitChord audio qualities
+
+The personal addon exposes exactly three quality choices in BitChord:
+
+- **AAC 256 kbps** (`high`)
+- **AAC 64 kbps** (`low`)
+- **Dolby Atmos** (`atmos`), when Apple's catalogue lists an Atmos variant and Cider resolves an actual Atmos rendition.
+
+The addon disables BitChord's lossless-output gate. Stereo stream responses identify as AAC and do not forward FLAC, ALAC, WAV, Hi-Res, lossless, or bit-depth claims from Cider queue metadata. Dolby Atmos is reported as `eac3-joc` only when the resolved Cider rendition identifies as Atmos; otherwise the stream falls back to AAC stereo.
