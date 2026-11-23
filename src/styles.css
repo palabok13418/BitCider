@@ -493,6 +493,26 @@ h1 .bitchord-word {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
+.account-security-warning {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid rgba(225,177,97,.23);
+  border-radius: 9px;
+  color: #d7c39e;
+  background: rgba(168,133,74,.075);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.account-security-warning strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #edd7ad;
+  font-weight: 700;
+}
+.account-security-warning code {
+  color: #f1dcb8;
+  font: 10px var(--mono);
+}
 .account-card-header {
   display: flex;
   align-items: flex-start;
