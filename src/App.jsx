@@ -1026,8 +1026,8 @@ export default function App() {
     <main className="site-shell">
       <Lightfall
         className="site-waves"
-        colors={['#d7e5ff', '#aab7ff', '#80d9e8']}
-        backgroundColor="#80d9e8"
+        colors={['#fd3f57', '#ff2b5e', '#ff9bac']}
+        backgroundColor="#ff2b5e"
         speed={0.23}
         streakCount={3}
         streakWidth={1}
@@ -1073,10 +1073,6 @@ export default function App() {
         </div>
 
         <section className="connection-card" aria-live="polite">
-          <div className="card-topline">
-            <div className="card-label">YOUR CONNECTION</div>
-          </div>
-
           {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
             <div className="notice notice-warning">
               Secure account storage is not configured. Add the stable 32-byte base64url BITCIDER_ENCRYPTION_KEY secret in Deplexo before linking Cider.
@@ -1086,7 +1082,12 @@ export default function App() {
           {!connected ? (
             <>
               <div className="card-heading">
-                <div className="cider-icon"><Icon name="music" size={25} /></div>
+                <img
+                  className="library-music-icon"
+                  src="/icons/library_music.svg?v=20261123-rose-library-icon01"
+                  alt=""
+                  aria-hidden="true"
+                />
                 <div>
                   <h2>Link Cider</h2>
                   <p>Approve BitCider directly in Cider. Your token is returned automatically.</p>
