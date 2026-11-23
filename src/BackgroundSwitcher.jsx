@@ -12,6 +12,7 @@ const SideRays = lazy(() => import('./SideRays.jsx'));
 const Silk = lazy(() => import('./Silk.jsx'));
 const Topography = lazy(() => import('./Topography.jsx'));
 const WebThreads = lazy(() => import('./WebThreads.jsx'));
+const HoloMosaic = lazy(() => import('./HoloMosaic.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -469,6 +470,50 @@ const BACKGROUND_REGISTRY = [
           pulseOnClick
           paused={false}
           dpr={1.25}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'holo-mosaic',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <HoloMosaic
+          className="site-waves"
+          color="#21080f"
+          metalColor="#ff9bac"
+          spectrum="pearl"
+          tileSize={1.18}
+          gap={0.12}
+          roundness={0.22}
+          bevel={0.62}
+          rotation={-12}
+          scatter={0.34}
+          tilt={0.52}
+          swirl={1.25}
+          ripple={0.82}
+          bands={1.4}
+          softness={0.62}
+          intensity={1.22}
+          saturation={0.82}
+          glitter={0.55}
+          sheen={1.05}
+          grain={0.035}
+          speed={0.28}
+          variation={19}
+          filter="none"
+          filterSize={1}
+          fade={0.1}
+          opacity={0.82}
+          intro
+          mouseInteraction
+          mouseStrength={0.78}
+          mouseRadius={0.3}
+          flipOnClick
+          lightMode={false}
+          paused={false}
+          dpr={1.2}
           onError={onError}
         />
       </Suspense>
