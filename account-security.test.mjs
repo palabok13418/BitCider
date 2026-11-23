@@ -9,7 +9,10 @@ import {
   consumeRecoveryCode,
   hashRecoveryCode,
   hashSessionId,
-  SESSION_TTL_MS
+  SESSION_TTL_MS,
+  MAX_ACCOUNT_DEVICES,
+  MAX_PASSKEYS_PER_ACCOUNT,
+  WEBAUTHN_CHALLENGE_TTL_MS
 } from './account-security.mjs';
 
 test('username validation normalizes case and enforces a safe identifier format', () => {
@@ -56,4 +59,7 @@ test('opaque session identifiers are stored as one-way hashes', () => {
   assert.notEqual(first, second);
   assert.notEqual(first, 'session-token-one');
   assert.equal(SESSION_TTL_MS, 30 * 24 * 60 * 60 * 1000);
+  assert.equal(MAX_ACCOUNT_DEVICES, 5);
+  assert.equal(MAX_PASSKEYS_PER_ACCOUNT, 5);
+  assert.equal(WEBAUTHN_CHALLENGE_TTL_MS, 5 * 60 * 1000);
 });
