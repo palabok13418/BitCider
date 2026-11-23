@@ -25,6 +25,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_ALLOWED_ORIGINS` | Optional comma-separated HTTPS origins if a custom Deplexo domain is used |
 | `CIDER_API_URL` | Leave empty until a secure per-user Cider relay is deployed. If configured, it must be an HTTPS relay origin, not the user's desktop loopback address or an exposed Cider port |
 | `BITCIDER_CIDER_REQUEST_TIMEOUT_MS` | Optional relay request deadline, 1,000 to 30,000 ms; defaults to 12,000 ms |
+| `BITCIDER_ALLOW_LOOPBACK_CIDER_API` | Keep unset/false on Deplexo. Only set to `true` for a deliberately local development server connecting to loopback Cider |
 
 Deplexo mounts the app's durable data volume at `/data`. BitCider stores `connection.json` and a legacy CSRF-signing key under `/data/bitcider`; the dedicated Cider-token encryption key is configured separately as the `BITCIDER_ENCRYPTION_KEY` Deplexo secret. Back up the volume and keep a separate secure backup of the environment key before deleting or recreating the Deplexo app.
 
