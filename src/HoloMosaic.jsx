@@ -667,7 +667,7 @@ const HoloMosaic = ({
       const base = Math.min(s.dpr || window.devicePixelRatio || 1, 1.5);
       const dimensionRatio = MAX_RENDER_DIM / Math.max(width, height);
       const pixelRatio = Math.sqrt(MAX_RENDER_PIXELS / (width * height));
-      const ratio = Math.max(0.35, Math.min(base, dimensionRatio, pixelRatio));
+      const ratio = Math.min(base, dimensionRatio, pixelRatio);
       const pixelWidth = Math.max(1, Math.round(width * ratio));
       const pixelHeight = Math.max(1, Math.round(height * ratio));
       if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -857,10 +857,7 @@ const HoloMosaic = ({
     }
     window.addEventListener('resize', onResize, { passive: true });
     wake();
-    wakeRef.current = () => {
-      if (!raf) render();
-      wake();
-    };
+    wakeRef.current = wake;
 
     return () => {
       alive = false;
