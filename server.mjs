@@ -2105,19 +2105,38 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
   // unified search route. Unified search contains topResults in some responses,
   // which can hold the exact song even when the focused list ranks it lower.
   const endpoints = ['/search', '/search/tracks'];
-  const responses = await Promise.allSettled(
-    endpoints.map(endpoint => fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestContext))
-  );
-  const successes = responses
-    .filter(result => result.status === 'fulfilled')
-    .map(result => result.value);
-  const failures = responses
-    .filter(result => result.status === 'rejected')
-    .map(result => bitMonoLogText(result.reason?.message || result.reason, 180));
+  const titleHint = String(requestContext.title || '').trim();
+  const normalizedQuery = query.normalize('NFKC').toLowerCase();
+  const normalizedTitle = titleHint.normalize('NFKC').toLowerCase();
+  const titleFallbackAvailable = Boolean(titleHint && normalizedTitle !== normalizedQuery);
 
-  if (!successes.length) {
-    throw new Error('All Monochrome search endpoints failed: ' + failures.join(' | '));
+  async function searchVariant(searchQuery, variant) {
+    const responses = await Promise.allSettled(
+      endpoints.map(endpoint => fetchBitMonoSearchEndpoint(endpoint, searchQuery, requestId, requestContext))
+    );
+    const successes = responses
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value);
+    const failures = responses
+      .filter(result => result.status === 'rejected')
+      .map(result => bitMonoLogText(result.reason?.message || result.reason, 180));
+
+    bitMonoLog(successes.length ? 'info' : 'warn', 'search.variant_complete', {
+      requestId,
+      variant,
+      query: bitMonoLogText(searchQuery),
+      endpointsAttempted: endpoints,
+      endpointsSucceeded: successes.map(response => response.endpoint),
+      endpointFailures: failures,
+      rawCandidateCount: successes.reduce((total, response) => total + response.candidates.length, 0)
+    });
+
+    return { successes, failures };
   }
+
+  const primary = await searchVariant(query, 'combined');
+  const allSuccesses = [...primary.successes];
+  const allFailures = [...primary.failures];
 
   const tracksById = new Map();
   const stats = {
@@ -2128,26 +2147,65 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
     missingTitles: 0,
     duplicates: 0
   };
-  for (const response of successes) {
-    stats.rawCandidates += response.candidates.length;
-    for (const candidate of response.candidates) {
-      const track = normalizeBitMonoTrack(candidate.item, stats);
-      if (!track) continue;
-      if (tracksById.has(track.id)) {
-        stats.duplicates += 1;
-        continue;
+
+  function mergeResponses(responses) {
+    for (const response of responses) {
+      stats.rawCandidates += response.candidates.length;
+      for (const candidate of response.candidates) {
+        const track = normalizeBitMonoTrack(candidate.item, stats);
+        if (!track) continue;
+        if (tracksById.has(track.id)) {
+          stats.duplicates += 1;
+          continue;
+        }
+        tracksById.set(track.id, track);
       }
-      tracksById.set(track.id, track);
     }
+  }
+
+  mergeResponses(primary.successes);
+  const primaryResultCount = tracksById.size;
+
+  // BitChord gives us the canonical title separately from its combined query.
+  // A combined "title artist" query can be too restrictive for some catalog
+  // indexes; when it produces fewer than five unique tracks, re-run both
+  // official search routes with the title alone and let BitChord's matcher
+  // score candidates using its original title + artist metadata.
+  if (titleFallbackAvailable && primaryResultCount < 5) {
+    bitMonoLog('info', 'search.title_fallback_started', {
+      requestId,
+      combinedQuery: bitMonoLogText(query),
+      titleQuery: bitMonoLogText(titleHint),
+      primaryResultCount
+    });
+
+    const fallback = await searchVariant(titleHint, 'title_fallback');
+    allSuccesses.push(...fallback.successes);
+    allFailures.push(...fallback.failures);
+    mergeResponses(fallback.successes);
+
+    bitMonoLog('info', 'search.title_fallback_complete', {
+      requestId,
+      titleQuery: bitMonoLogText(titleHint),
+      primaryResultCount,
+      titleFallbackResultCount: Math.max(0, tracksById.size - primaryResultCount),
+      mergedResultCount: tracksById.size,
+      endpointsSucceeded: fallback.successes.map(response => response.endpoint)
+    });
+  }
+
+  if (!allSuccesses.length) {
+    throw new Error('All Monochrome search endpoints failed: ' + allFailures.join(' | '));
   }
 
   const tracks = [...tracksById.values()].slice(0, 60);
   bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'search.merged' : 'search.upstream_empty', {
     requestId,
     query: bitMonoLogText(query),
+    titleFallbackUsed: titleFallbackAvailable && primaryResultCount < 5,
     endpointsAttempted: endpoints,
-    endpointsSucceeded: successes.map(response => response.endpoint),
-    endpointFailures: failures,
+    endpointsSucceeded: [...new Set(allSuccesses.map(response => response.endpoint))],
+    endpointFailures: allFailures,
     rawCandidates: stats.rawCandidates,
     normalizedTracks: stats.normalized,
     invalidObjects: stats.invalidObjects,
