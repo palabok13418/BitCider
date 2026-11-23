@@ -142,7 +142,7 @@ A hosted Deplexo container cannot reach Cider at `127.0.0.1:10767` on a user's c
 
 1. Open BitCider on the computer where Cider is installed. Link Cider and sign in to your BitCider account. The relay setup is available only for a signed-in account.
 2. In the **Desktop Cider Relay** panel, choose **Download Relay Config**. This downloads `bitcider-relay.json`.
-3. Use the link that appears to download `bitcider-relay.mjs`. Keep both files in the same private folder. The JSON contains a local copy of your Cider app token and the account's relay key. Treat it like a password: do not share it, upload it publicly, or commit it to Git. If Chrome adds a duplicate suffix such as `(1)` after a re-download, the runner automatically selects the newest matching config in the folder.
+3. Use the link that appears to download `bitcider-relay.mjs`. Keep both files in the same private folder. The JSON contains the account's private relay key and endpoint settings, but not your Cider app token. Treat it like a password: do not share it, upload it publicly, or commit it to Git. If Chrome adds a duplicate suffix such as `(1)` after a re-download, the runner automatically selects the newest matching config in the folder.
 4. Keep Cider open. Install Node.js 20 or newer if it is not already installed.
 5. Open PowerShell or Terminal in the folder containing both files and run:
 
@@ -162,12 +162,12 @@ The local runner has a strict allowlist for the BitCider operations currently re
 - `GET /api/v2/queue`.
 - `POST /api/v2/playback/pause`.
 
-Other Cider API paths, arbitrary hosts, redirects, and non-loopback local API URLs are rejected. The local Cider app token is added by the runner and is never logged or returned to BitCider. Relay responses are account-bound, size-limited, and returned over HTTPS. Search uses Cider's Apple Music catalog proxy, with Cider signing the catalog request using the user's own storefront. It can return songs that have not yet been added to the user's library.
+Other Cider API paths, arbitrary hosts, redirects, and non-loopback local API URLs are rejected. At startup, the runner retrieves the Cider app token directly from BitCider over HTTPS, adds it to local Cider requests, and keeps it in memory only. It never writes the token to disk or logs it. Relay responses are account-bound, size-limited, and returned over HTTPS. Search uses Cider's Apple Music catalog proxy, with Cider signing the catalog request using the user's own storefront. It can return songs that have not yet been added to the user's library.
 
 ### Credentials and revocation
 
-- The relay key is random per BitCider account and stored on Deplexo only as a hash. The backend authenticates it with constant-time comparison and binds every queued job and response to the same account.
-- The config file includes the user's Cider app token in plaintext because the local runner needs to authenticate to Cider. Keep the file private and store it somewhere protected. The token also remains encrypted at rest in the BitCider account store so the connection can be restored across signed-in devices.
+- The relay key is random per BitCider account and stored on Deplexo only as a SHA-256 hash. The backend authenticates it with constant-time comparison and binds every queued job, credential response, and request response to the same account.
+- The downloaded config contains only the relay key and endpoint settings. At startup, the runner requests the Cider app token from `/api/relay/credentials` over HTTPS using that key. Deplexo decrypts the account's AES-256-GCM stored token for this authenticated response; the runner keeps the token in memory for local Cider requests and does not write or log it. The token remains encrypted at rest in the BitCider account store.
 - Downloading a replacement config rotates the relay key and invalidates the old runner's key. Start the runner using the newest config. Disconnecting Cider revokes the relay key.
 - The relay broker and pending request queue are held in the Deplexo Node process memory. Keep the hosted backend as one active Node instance; a restart clears pending jobs, and the desktop agent reconnects automatically. Do not horizontally scale this backend without moving the relay broker to shared durable messaging.
 - Do not set Deplexo's `CIDER_API_URL` to `http://127.0.0.1:10767`, and do not expose Cider's port 10767 directly to the public internet.
