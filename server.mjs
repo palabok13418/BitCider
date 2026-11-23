@@ -44,11 +44,12 @@ const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/,
 const CIDER_API_CONFIG = normalizeCiderApiUrl(process.env.CIDER_API_URL);
 const CIDER_API = CIDER_API_CONFIG.url;
 const app = express();
-const relayJobQueues = new Map();
-const relayPollWaiters = new Map();
-const relayJobs = new Map();
-const relayLastSeen = new Map();
-const RELAY_ONLINE_WINDOW_MS = 65000;
+const browserBridges = new Map();
+const browserBridgeByOwner = new Map();
+const browserBridgeQueues = new Map();
+const browserBridgePollWaiters = new Map();
+const browserBridgeJobs = new Map();
+const BROWSER_BRIDGE_ONLINE_WINDOW_MS = 65000;
 const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
   crypto.randomBytes(32).toString('base64url') + '-dummy-account-passphrase'
 );
@@ -643,146 +644,149 @@ function ciderBridgeError(code, message, status = 503) {
   return error;
 }
 
-function hashRelayKey(value) {
+function browserBridgeOwnerKey(accountId, sessionId) {
+  return accountId ? 'account:' + accountId : 'session:' + sessionId;
+}
+
+function hashBrowserBridgeSecret(value) {
   return crypto.createHash('sha256')
-    .update('BitCider per-user Cider relay v1\0', 'utf8')
+    .update('BitCider browser bridge v1\\0', 'utf8')
     .update(String(value || ''), 'utf8')
     .digest('hex');
 }
 
-function findRelayAccount(secret) {
-  if (typeof secret !== 'string' || secret.length < 32 || secret.length > 160) return null;
-  const candidate = Buffer.from(hashRelayKey(secret), 'hex');
-  for (const [accountId, account] of Object.entries(readStore().accounts || {})) {
-    const stored = String(account?.ciderRelayKeyHash || '');
-    if (!/^[a-f0-9]{64}$/i.test(stored)) continue;
-    const storedBytes = Buffer.from(stored, 'hex');
-    if (storedBytes.length === candidate.length && crypto.timingSafeEqual(storedBytes, candidate)) {
-      return { accountId, account };
-    }
-  }
-  return null;
+function browserBridgeFromRequest(req) {
+  const bridgeId = String(req.get('x-bitcider-bridge-id') || '');
+  const secret = String(req.get('x-bitcider-bridge-secret') || '');
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(bridgeId) || !/^[A-Za-z0-9_-]{43}$/.test(secret)) return null;
+  const registration = browserBridges.get(bridgeId);
+  if (!registration) return null;
+  if (browserBridgeByOwner.get(registration.ownerKey) !== bridgeId) return null;
+  const candidate = Buffer.from(hashBrowserBridgeSecret(secret), 'hex');
+  const stored = Buffer.from(registration.secretHash, 'hex');
+  if (candidate.length !== stored.length || !crypto.timingSafeEqual(candidate, stored)) return null;
+  return registration;
 }
 
-function relayStatus(accountId, account) {
-  const timestamp = relayLastSeen.get(accountId) || 0;
-  const online = Boolean(timestamp && Date.now() - timestamp < RELAY_ONLINE_WINDOW_MS);
+function browserBridgeStatus(ownerKey, connected) {
+  const bridgeId = browserBridgeByOwner.get(ownerKey);
+  const registration = bridgeId ? browserBridges.get(bridgeId) : null;
+  const lastSeen = registration?.lastSeenAt || 0;
+  const online = Boolean(connected && registration && Date.now() - lastSeen < BROWSER_BRIDGE_ONLINE_WINDOW_MS);
   return {
-    provisioned: Boolean(account?.ciderRelayKeyHash),
+    provisioned: Boolean(connected),
     online,
-    lastSeenAt: timestamp ? new Date(timestamp).toISOString() : null
+    lastSeenAt: lastSeen ? new Date(lastSeen).toISOString() : null,
+    mode: 'browser'
   };
 }
 
-function invalidateRelaySession(accountId) {
-  relayLastSeen.delete(accountId);
-  relayJobQueues.delete(accountId);
-  const waiters = relayPollWaiters.get(accountId) || [];
-  relayPollWaiters.delete(accountId);
+function invalidateBrowserBridge(ownerKey, message = 'The BitCider browser bridge was stopped.') {
+  const bridgeId = browserBridgeByOwner.get(ownerKey);
+  if (!bridgeId) return;
+  browserBridgeByOwner.delete(ownerKey);
+  browserBridges.delete(bridgeId);
+  browserBridgeQueues.delete(bridgeId);
+  const waiters = browserBridgePollWaiters.get(bridgeId) || [];
+  browserBridgePollWaiters.delete(bridgeId);
   for (const waiter of waiters) {
     clearTimeout(waiter.timer);
     waiter.resolve(null);
   }
-  for (const [id, job] of relayJobs) {
-    if (job.accountId !== accountId) continue;
+  for (const [requestId, job] of browserBridgeJobs) {
+    if (job.bridgeId !== bridgeId) continue;
     clearTimeout(job.timer);
-    relayJobs.delete(id);
-    job.reject(ciderBridgeError('CIDER_BRIDGE_OFFLINE', 'The desktop relay key was rotated or revoked. Reconnect the local relay.', 503));
+    browserBridgeJobs.delete(requestId);
+    job.reject(ciderBridgeError('CIDER_BRIDGE_OFFLINE', message, 503));
   }
 }
 
-function takeRelayJob(accountId, waitMs) {
-  const queue = relayJobQueues.get(accountId) || [];
+function takeBrowserBridgeJob(bridgeId, waitMs) {
+  const queue = browserBridgeQueues.get(bridgeId) || [];
   if (queue.length) {
     const job = queue.shift();
-    if (!queue.length) relayJobQueues.delete(accountId);
+    if (!queue.length) browserBridgeQueues.delete(bridgeId);
     return Promise.resolve(job);
   }
   return new Promise(resolve => {
-    const waiters = relayPollWaiters.get(accountId) || [];
+    const waiters = browserBridgePollWaiters.get(bridgeId) || [];
     const waiter = {
       resolve,
       timer: setTimeout(() => {
-        const current = relayPollWaiters.get(accountId) || [];
+        const current = browserBridgePollWaiters.get(bridgeId) || [];
         const index = current.indexOf(waiter);
         if (index >= 0) current.splice(index, 1);
-        if (!current.length) relayPollWaiters.delete(accountId);
+        if (!current.length) browserBridgePollWaiters.delete(bridgeId);
         resolve(null);
       }, waitMs)
     };
     waiters.push(waiter);
-    relayPollWaiters.set(accountId, waiters);
+    browserBridgePollWaiters.set(bridgeId, waiters);
   });
 }
 
-function enqueueRelayJob(accountId, job) {
-  const waiters = relayPollWaiters.get(accountId) || [];
+function enqueueBrowserBridgeJob(bridgeId, job) {
+  const waiters = browserBridgePollWaiters.get(bridgeId) || [];
   const waiter = waiters.shift();
-  if (!waiters.length) relayPollWaiters.delete(accountId);
+  if (!waiters.length) browserBridgePollWaiters.delete(bridgeId);
   if (waiter) {
     clearTimeout(waiter.timer);
     waiter.resolve(job);
     return;
   }
-  const queue = relayJobQueues.get(accountId) || [];
+  const queue = browserBridgeQueues.get(bridgeId) || [];
   queue.push(job);
-  relayJobQueues.set(accountId, queue);
+  browserBridgeQueues.set(bridgeId, queue);
 }
 
-function removeQueuedRelayJob(accountId, jobId) {
-  const queue = relayJobQueues.get(accountId) || [];
-  const remaining = queue.filter(job => job.id !== jobId);
-  if (remaining.length) relayJobQueues.set(accountId, remaining);
-  else relayJobQueues.delete(accountId);
+function removeQueuedBrowserBridgeJob(bridgeId, requestId) {
+  const queue = browserBridgeQueues.get(bridgeId) || [];
+  const remaining = queue.filter(job => job.requestId !== requestId);
+  if (remaining.length) browserBridgeQueues.set(bridgeId, remaining);
+  else browserBridgeQueues.delete(bridgeId);
 }
 
-async function requestThroughUserRelay(accountId, apiPath, { method = 'GET', body } = {}) {
-  const account = readStore().accounts?.[accountId];
-  if (!account?.ciderRelayKeyHash) {
-    throw ciderBridgeError(
-      'CIDER_BRIDGE_NOT_CONFIGURED',
-      'This BitCider account needs its local Cider relay. Download the BitCider relay config from the account page and run it on the computer where Cider is installed.'
-    );
-  }
-  const lastSeen = relayLastSeen.get(accountId) || 0;
-  if (!lastSeen || Date.now() - lastSeen >= RELAY_ONLINE_WINDOW_MS) {
+async function requestThroughBrowserBridge(ownerKey, apiPath, { method = 'GET', body } = {}) {
+  const bridgeId = browserBridgeByOwner.get(ownerKey);
+  const registration = bridgeId ? browserBridges.get(bridgeId) : null;
+  if (!registration || Date.now() - registration.lastSeenAt >= BROWSER_BRIDGE_ONLINE_WINDOW_MS) {
     throw ciderBridgeError(
       'CIDER_BRIDGE_OFFLINE',
-      'Your local Cider relay is not connected. Start bitcider-relay.mjs on the computer running Cider, then retry the song.'
+      'The BitCider browser bridge is offline. Keep the BitCider website open in a browser tab on the same computer where Cider is running.'
     );
   }
 
   const configuredTimeout = Number(process.env.BITCIDER_CIDER_REQUEST_TIMEOUT_MS || 20000);
   const timeoutMs = Number.isFinite(configuredTimeout)
-    ? Math.max(1000, Math.min(Math.floor(configuredTimeout), 30000))
+    ? Math.max(3000, Math.min(Math.floor(configuredTimeout), 30000))
     : 20000;
-  const pendingForAccount = [...relayJobs.values()].filter(job => job.accountId === accountId).length;
-  if (pendingForAccount >= 12) {
-    throw ciderBridgeError('CIDER_BRIDGE_BUSY', 'Your local Cider relay has too many pending requests. Wait a moment and retry.', 429);
+  const pendingForBridge = [...browserBridgeJobs.values()].filter(job => job.bridgeId === bridgeId).length;
+  if (pendingForBridge >= 12) {
+    throw ciderBridgeError('CIDER_BRIDGE_BUSY', 'The BitCider browser bridge has too many pending requests. Wait a moment and retry.', 429);
   }
-  const id = crypto.randomBytes(18).toString('base64url');
+
+  const requestId = crypto.randomBytes(18).toString('base64url');
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      relayJobs.delete(id);
-      removeQueuedRelayJob(accountId, id);
+      browserBridgeJobs.delete(requestId);
+      removeQueuedBrowserBridgeJob(bridgeId, requestId);
       reject(ciderBridgeError(
         'CIDER_BRIDGE_TIMEOUT',
-        'The local Cider relay did not complete the request within ' + Math.round(timeoutMs / 1000) + ' seconds.',
+        'The BitCider browser bridge did not complete the local Cider request within ' + Math.round(timeoutMs / 1000) + ' seconds.',
         504
       ));
     }, timeoutMs);
-    relayJobs.set(id, { accountId, resolve, reject, timer });
-    enqueueRelayJob(accountId, { id, apiPath, method, ...(body === undefined ? {} : { body }) });
+    browserBridgeJobs.set(requestId, { ownerKey, bridgeId, resolve, reject, timer });
+    enqueueBrowserBridgeJob(bridgeId, {
+      requestId,
+      path: apiPath,
+      method,
+      ...(body === undefined ? {} : { body })
+    });
   });
 }
 
-function relayBearer(req) {
-  const header = String(req.get('authorization') || '');
-  const match = /^Bearer\s+([A-Za-z0-9_-]{32,160})$/i.exec(header);
-  return match?.[1] || '';
-}
-
-async function ciderRequest(apiPath, { method = 'GET', body, token, accountId } = {}) {
+async function ciderRequest(apiPath, { method = 'GET', body, token, bridgeOwnerKey } = {}) {
   if (!token) {
     const error = new Error('This BitCider user has not linked a Cider account.');
     error.status = 401;
@@ -791,10 +795,10 @@ async function ciderRequest(apiPath, { method = 'GET', body, token, accountId } 
 
   let status;
   let payload;
-  if (accountId) {
-    const result = await requestThroughUserRelay(accountId, apiPath, { method, body });
+  if (bridgeOwnerKey) {
+    const result = await requestThroughBrowserBridge(bridgeOwnerKey, apiPath, { method, body });
     status = result.status;
-    payload = result.payload;
+    payload = result.body;
   } else {
     if (!CIDER_API) {
       if (CIDER_API_CONFIG.error) {
@@ -945,7 +949,7 @@ function normalizeSong(song, { quality = 'high', preferAtmos = false } = {}) {
   return rows;
 }
 
-async function searchCiderSongs(term, token, { quality = 'high', preferAtmos = false, accountId = null } = {}) {
+async function searchCiderSongs(term, token, { quality = 'high', preferAtmos = false, bridgeOwnerKey = null } = {}) {
   // Search Apple's full catalog through Cider's signed AMAPI proxy rather than
   // scanning only the user's saved library. Cider supplies the user's
   // storefront and signs the upstream request; no MusicKit credentials leave Cider.
@@ -957,7 +961,7 @@ async function searchCiderSongs(term, token, { quality = 'high', preferAtmos = f
   });
   const result = await ciderRequest(
     '/api/v2/amapi/search?' + params.toString(),
-    { token, accountId }
+    { token, bridgeOwnerKey }
   );
   const rows = songRows(result);
   const matches = [];
@@ -990,7 +994,7 @@ function streamDetails(url, queueItem, quality = 'high') {
   return streamMetadata(url, queueItem, quality);
 }
 
-async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high', accountId = null) {
+async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high', bridgeOwnerKey = null) {
   const parsedTrack = parseAddonTrackId(addonTrackId);
   const trackId = parsedTrack.trackId;
   const quality = parsedTrack.atmos ? 'atmos' : normalizeQuality(requestedQuality);
@@ -1000,13 +1004,13 @@ async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high'
     method: 'POST',
     body: { id: trackId, type: 'songs' },
     token,
-    accountId
+    bridgeOwnerKey
   });
 
   let queuePayload;
   let queueRows = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    queuePayload = await ciderRequest('/api/v2/queue', { token, accountId });
+    queuePayload = await ciderRequest('/api/v2/queue', { token, bridgeOwnerKey });
     queueRows = findQueueRows(queuePayload);
     const item = queueRows.find(row => String(
       row?.id || row?.attributes?.playParams?.id || row?.attributes?.id || ''
@@ -1021,7 +1025,7 @@ async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high'
       // output instead of leaving the desktop player playing in parallel.
       if (String(process.env.BITCIDER_PAUSE_CIDER_AFTER_RESOLVE || 'true').toLowerCase() !== 'false') {
         try {
-          await ciderRequest('/api/v2/playback/pause', { method: 'POST', token, accountId });
+          await ciderRequest('/api/v2/playback/pause', { method: 'POST', token, bridgeOwnerKey });
         } catch (error) {
           console.warn('Could not pause Cider after resolving the stream:', error.message);
         }
@@ -1043,12 +1047,16 @@ function validAddonKey(req, res, next) {
   );
   const user = accountMatch?.[1] || sessionMatch?.[1] || null;
   const accountId = accountMatch?.[0] || null;
+  const ownerSessionId = sessionMatch?.[0] || null;
+  const bridgeOwnerKey = accountMatch
+    ? browserBridgeOwnerKey(accountId, '')
+    : ownerSessionId ? browserBridgeOwnerKey(null, ownerSessionId) : null;
   const token = tokenForUser(user);
-  if (!user || !token) {
+  if (!user || !token || !bridgeOwnerKey) {
     return res.status(404).json({ error: 'ADDON_NOT_FOUND', message: 'This personal BitCider source is not available.' });
   }
   res.set('Cache-Control', 'private, no-store');
-  req.bitciderUser = { ...user, token, accountId };
+  req.bitciderUser = { ...user, token, accountId, bridgeOwnerKey };
   next();
 }
 
@@ -1094,6 +1102,8 @@ app.get('/api/status', localOnly, async (req, res) => {
   const token = tokenForUser(user);
   const base = addonBaseUrl();
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
+  const ownerKey = browserBridgeOwnerKey(accountId, sessionId);
+  const ciderRelay = browserBridgeStatus(ownerKey, Boolean(token && user?.addonKey));
   const devices = authenticated ? activeAccountDevices(store, accountId, sessionId) : [];
   const passkeys = authenticated ? publicPasskeys(user) : [];
   res.set('Cache-Control', 'no-store');
@@ -1101,9 +1111,9 @@ app.get('/api/status', localOnly, async (req, res) => {
     apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
-    ciderBridgeConfigured: authenticated ? Boolean(user?.ciderRelayKeyHash) : Boolean(CIDER_API),
-    ciderBridgeConfigurationError: authenticated && user?.ciderRelayKeyHash ? null : (CIDER_API_CONFIG.error || null),
-    ciderRelay: authenticated ? relayStatus(accountId, user) : { provisioned: false, online: false, lastSeenAt: null },
+    ciderBridgeConfigured: ciderRelay.online,
+    ciderBridgeConfigurationError: null,
+    ciderRelay,
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
     pendingAccountSetup: Boolean(token && !authenticated),
@@ -1306,6 +1316,10 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
 
 app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   const sessionId = req.bitciderSessionId;
+  const session = getUserSession(req, res);
+  if (session.authenticated) {
+    invalidateBrowserBridge(browserBridgeOwnerKey(session.accountId, sessionId), 'This BitCider account session was signed out.');
+  }
   await updateStore(store => {
     delete store.authSessions[hashSessionId(sessionId)];
     return { ok: true };
@@ -1767,11 +1781,10 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
         delete account.authMethod;
         delete account.scopes;
         delete account.connectedAt;
-        delete account.ciderRelayKeyHash;
-        delete account.ciderRelayKeyCreatedAt;
-        invalidateRelaySession(accountId);
       }
+      invalidateBrowserBridge(browserBridgeOwnerKey(accountId, sessionId), 'Cider was disconnected from this BitCider account.');
     } else {
+      invalidateBrowserBridge(browserBridgeOwnerKey(null, sessionId), 'Cider was disconnected from this BitCider session.');
       delete store.sessions[sessionId];
     }
     return { ok: true };
@@ -1840,7 +1853,7 @@ app.get('/:addonKey/search', validAddonKey, async (req, res) => {
   try {
     const quality = normalizeQuality(req.query.quality);
     const preferAtmos = String(req.query.atmos || '').toLowerCase() === 'auto';
-    const tracks = await searchCiderSongs(query, req.bitciderUser.token, { quality, preferAtmos, accountId: req.bitciderUser.accountId });
+    const tracks = await searchCiderSongs(query, req.bitciderUser.token, { quality, preferAtmos, bridgeOwnerKey: req.bitciderUser.bridgeOwnerKey });
     res.set('Cache-Control', 'no-store');
     res.json({ tracks });
   } catch (error) {
@@ -1853,7 +1866,7 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
   const trackId = String(req.params.trackId || '');
   if (!trackId || trackId.length > 180) return res.status(400).json({ error: 'Invalid track id.' });
   try {
-    const stream = await resolveCiderStream(trackId, req.bitciderUser.token, req.query.quality, req.bitciderUser.accountId);
+    const stream = await resolveCiderStream(trackId, req.bitciderUser.token, req.query.quality, req.bitciderUser.bridgeOwnerKey);
     res.set('Cache-Control', 'no-store');
     res.json(stream);
   } catch (error) {
