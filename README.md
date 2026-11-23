@@ -68,6 +68,6 @@ Copy `.env.example` to `.env` and set:
 ## Current boundaries
 
 - This is a single-user BitCider server instance. Each user's Cider account needs its own running instance and personal addon URL.
-- The Cider auth endpoint's response shape and Cider search response can vary by Cider version. The browser flow handles several token response shapes and includes the manual one-time-token fallback.
-- The first adapter targets Cider's current v2 library search and the documented legacy queue/play-item API for media resolution. If your Cider version does not expose an asset URL for a track, that track cannot be streamed through this adapter yet.
+- This initial version searches the linked Cider library, not the entire Apple Music catalogue. Full catalogue search would require the more sensitive `account` scope to obtain MusicKit credentials, so it is intentionally not requested.
+- The first adapter searches paginated songs from the user's Cider library using the scoped v2 Library API, then asks the v2 Playback API to resolve the selected song. It reads the legacy v1 playback queue for Cider's playable asset URL. If your Cider version does not expose an asset URL for a track, that track cannot be streamed through this adapter yet.
 - The manifest does not claim BitChord's optional hardware-backed `bitchordAuth` verification until the verifier is added and tested against the target hostname.
