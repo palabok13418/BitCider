@@ -16,6 +16,11 @@ const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
 
+// Deplexo terminates TLS in front of this Node service. Trust the immediate
+// platform proxy so Express can read the forwarded public host/protocol.
+const app = express();
+app.set('trust proxy', 1);
+
 app.disable('x-powered-by');
 app.use(express.json({ limit: '24kb' }));
 
@@ -139,17 +144,48 @@ function trustedProxy(request) {
 }
 
 function trustedFrontend(request) {
-  if (!PUBLIC_URL) return false;
-  const allowedOrigin = new URL(PUBLIC_URL).origin;
-  const origin = request.get('origin');
-  if (origin) return origin === allowedOrigin;
+  const expectedOrigins = [
+    PUBLIC_URL,
+    ...String(process.env.BITCIDER_ALLOWED_ORIGINS || '').split(',')
+  ].map(value => {
+    try { return new URL(value.trim()).origin; } catch { return ''; }
+  }).filter(Boolean);
 
+  // The public host is forwarded by the platform proxy. This lets the
+  // Deplexo-hosted site call its own API even when BITCIDER_PUBLIC_URL was
+  // omitted or has a trailing/proxy-specific URL configuration mismatch.
+  const requestHost = String(
+    request.get('x-forwarded-host') || request.get('host') || ''
+  ).split(',')[0].trim().toLowerCase();
+
+  const originHeader = request.get('origin');
+  const refererHeader = request.get('referer');
+  let browserOrigin = '';
   try {
-    const referer = request.get('referer');
-    return Boolean(referer && new URL(referer).origin === allowedOrigin);
+    if (originHeader) browserOrigin = new URL(originHeader).origin;
+    else if (refererHeader) browserOrigin = new URL(refererHeader).origin;
   } catch {
     return false;
   }
+
+  if (browserOrigin) {
+    if (expectedOrigins.includes(browserOrigin)) return true;
+
+    try {
+      const parsed = new URL(browserOrigin);
+      const secure = parsed.protocol === 'https:'
+        || (parsed.protocol === 'http:' && isLoopback(parsed.hostname));
+      return secure && parsed.host.toLowerCase() === requestHost;
+    } catch {
+      return false;
+    }
+  }
+
+  // Some privacy modes omit Origin and Referer on same-origin GET requests.
+  // In that case, accept the explicitly configured Deplexo host only.
+  return expectedOrigins.some(value => {
+    try { return new URL(value).host.toLowerCase() === requestHost; } catch { return false; }
+  });
 }
 
 function localOnly(req, res, next) {
