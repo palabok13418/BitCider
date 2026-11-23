@@ -62,8 +62,10 @@ export function parseAddonTrackId(value) {
 export function streamMetadata(url, queueItem, requestedQuality = 'high') {
   const attributes = queueItem?.attributes || queueItem || {};
   const lowerUrl = String(url).toLowerCase();
-  const hls = lowerUrl.includes('m3u8') || String(attributes.manifest || '').toLowerCase() === 'hls';
-  const dash = lowerUrl.includes('.mpd') || String(attributes.manifest || '').toLowerCase() === 'dash';
+  const formatHint = String(attributes.format || '').toLowerCase();
+  const manifestHint = String(attributes.manifest || '').toLowerCase();
+  const hls = lowerUrl.includes('m3u8') || manifestHint === 'hls' || ['hls', 'm3u8'].includes(formatHint);
+  const dash = lowerUrl.includes('.mpd') || manifestHint === 'dash' || formatHint === 'dash';
   const encrypted = attributes.encrypted === true;
   const sampleRate = Number(attributes.sampleRate);
   const knownContainer = String(attributes.container || '').toLowerCase();
