@@ -414,16 +414,19 @@ app.post('/api/connect', localOnly, async (req, res) => {
     });
   }
 
-  store.sessions[sessionId] = {
+  // Re-read after the asynchronous Cider verification so two users linking
+  // at the same time cannot overwrite each other's session records.
+  const latestStore = readStore();
+  latestStore.sessions[sessionId] = {
     addonKey: previous?.addonKey || crypto.randomBytes(18).toString('base64url'),
     ciderToken: encryptToken(token),
     connectedAt: new Date().toISOString()
   };
-  writeStore(store);
+  writeStore(latestStore);
   res.set('Cache-Control', 'no-store');
   res.json({
     ok: true,
-    addonUrl: addonBaseUrl() + '/' + store.sessions[sessionId].addonKey + '/manifest.json'
+    addonUrl: addonBaseUrl() + '/' + latestStore.sessions[sessionId].addonKey + '/manifest.json'
   });
 });
 
