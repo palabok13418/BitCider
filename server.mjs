@@ -2192,11 +2192,11 @@ app.get('/bitmono/manifest.json', (_req, res) => {
 
 app.get('/bitmono/search', async (req, res) => {
   const requestId = crypto.randomUUID();
-  const queryFromClient = bitMonoLogText(req.query.q || '', 320);
-  const requestedTitle = bitMonoLogText(req.query.title || '', 140);
-  const requestedArtist = bitMonoLogText(req.query.artist || '', 140);
+  const queryFromClient = String(req.query.q || '').trim();
+  const requestedTitle = String(req.query.title || '').trim();
+  const requestedArtist = String(req.query.artist || '').trim();
   const query = (queryFromClient || [requestedTitle, requestedArtist].filter(Boolean).join(' '))
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
   res.set('X-BitMono-Request-Id', requestId);
