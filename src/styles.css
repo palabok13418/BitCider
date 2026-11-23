@@ -737,3 +737,144 @@ h1 .bitchord-word {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+
+.account-passkey-button {
+  min-height: 42px;
+  width: min(100%, 440px);
+  margin-top: 12px;
+  padding: 0 15px;
+  border: 1px solid rgba(111, 173, 255, .25);
+  border-radius: 8px;
+  color: #e1ecff;
+  background: rgba(104, 146, 211, .09);
+  font: 10px var(--mono);
+  letter-spacing: .08em;
+  transition: border-color .18s ease, background .18s ease;
+}
+.account-passkey-button:hover:not(:disabled) {
+  border-color: rgba(142, 189, 255, .5);
+  background: rgba(104, 146, 211, .16);
+}
+.account-passkey-button:disabled { opacity: .55; cursor: not-allowed; }
+.account-security-management {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,.075);
+}
+.security-management-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+}
+.security-management-header h3 {
+  margin: 7px 0 6px;
+  color: #e6ecfb;
+  font-size: 15px;
+  letter-spacing: -.025em;
+}
+.security-management-header h3 span {
+  margin-left: 7px;
+  color: #aebbd2;
+  font: 10px var(--mono);
+}
+.security-management-header p {
+  max-width: 760px;
+  margin: 0;
+  color: #8793a8;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.security-management-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.4fr) minmax(140px, .7fr);
+  gap: 10px;
+  align-items: end;
+  margin-top: 16px;
+}
+.security-management-form label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+.security-management-form label span {
+  color: #8995aa;
+  font: 9px var(--mono);
+  letter-spacing: .1em;
+}
+.security-management-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid rgba(181,197,232,.16);
+  border-radius: 8px;
+  outline: none;
+  color: #e6ecfb;
+  background: rgba(3,6,12,.42);
+  font-size: 11px;
+}
+.security-management-form input:focus {
+  border-color: rgba(255,77,116,.58);
+  box-shadow: 0 0 0 3px rgba(255,43,94,.08);
+}
+.security-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+.security-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(181,197,232,.1);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+}
+.security-list-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.security-list-copy strong {
+  color: #dce5f6;
+  font-size: 11px;
+  font-weight: 650;
+}
+.security-list-copy span,
+.security-list-copy small {
+  overflow-wrap: anywhere;
+  color: #8793a8;
+  font-size: 9px;
+  line-height: 1.55;
+}
+.security-current-device {
+  flex: 0 0 auto;
+  color: #9fd4b9;
+  font: 9px var(--mono);
+  letter-spacing: .06em;
+}
+.security-empty {
+  margin: 12px 0 0;
+  color: #8390a6;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.security-management-divider {
+  height: 1px;
+  margin: 20px 0;
+  background: rgba(255,255,255,.075);
+}
+@media (max-width: 760px) {
+  .security-management-form { grid-template-columns: 1fr; }
+  .security-management-form .account-submit-button { margin-top: 2px; }
+}
+@media (max-width: 520px) {
+  .security-list-item { align-items: flex-start; }
+  .security-list-item .account-secondary-button { min-height: 32px; padding: 0 9px; }
+  .security-current-device { padding-top: 9px; }
+}
