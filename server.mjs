@@ -1771,7 +1771,7 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
 });
 
 
-const BITMONO_TRACKS_API_BASE = String(process.env.BITMONO_TRACKS_API_BASE || 'https://tracks.monochrome.st').replace(/\\/+$/, '');
+const BITMONO_TRACKS_API_BASE = String(process.env.BITMONO_TRACKS_API_BASE || 'https://tracks.monochrome.st').replace(/\/+$/, '');
 const BITMONO_QUALITY_OPTIONS = Object.freeze([
   { value: 'auto', label: 'Auto' },
   { value: 'dolby_atmos_hi', label: 'Dolby Atmos Hi' },
