@@ -961,6 +961,8 @@ app.get('/api/status', localOnly, async (req, res) => {
     apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
+    ciderBridgeConfigured: Boolean(CIDER_API),
+    ciderBridgeConfigurationError: CIDER_API_CONFIG.error || null,
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
     pendingAccountSetup: Boolean(token && !authenticated),
