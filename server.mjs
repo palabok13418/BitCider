@@ -40,8 +40,9 @@ const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
 const API_VERSION = '2026-11-23-account-key-v7';
-const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
+const CIDER_API_CONFIG = normalizeCiderApiUrl(process.env.CIDER_API_URL);
+const CIDER_API = CIDER_API_CONFIG.url;
 const app = express();
 const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
   crypto.randomBytes(32).toString('base64url') + '-dummy-account-passphrase'
@@ -58,6 +59,34 @@ app.use('/api', (_req, res, next) => {
   res.set('Pragma', 'no-cache');
   next();
 });
+
+function normalizeCiderApiUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { url: '', error: '' };
+
+  try {
+    const parsed = new URL(raw);
+    const hostname = parsed.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    const isLoopbackHost = hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname === '::1';
+    if (!['https:', 'http:'].includes(parsed.protocol)
+      || parsed.username || parsed.password
+      || parsed.pathname !== '/' || parsed.search || parsed.hash
+      || (parsed.protocol !== 'https:' && !isLoopbackHost)) {
+      return {
+        url: '',
+        error: 'CIDER_API_URL must be an HTTPS origin, or a loopback HTTP origin for local development.'
+      };
+    }
+    return { url: parsed.origin, error: '' };
+  } catch {
+    return {
+      url: '',
+      error: 'CIDER_API_URL is not a valid absolute HTTPS origin.'
+    };
+  }
+}
 
 function ensureSecret() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -599,6 +628,13 @@ async function consumeWebAuthnChallenge(sessionId, purpose, accountId = null) {
   }).then(result => result.challenge);
 }
 
+function ciderBridgeError(code, message, status = 503) {
+  const error = new Error(message);
+  error.status = status;
+  error.ciderCode = code;
+  return error;
+}
+
 async function ciderRequest(apiPath, { method = 'GET', body, token } = {}) {
   if (!token) {
     const error = new Error('This BitCider user has not linked a Cider account.');
@@ -606,17 +642,51 @@ async function ciderRequest(apiPath, { method = 'GET', body, token } = {}) {
     throw error;
   }
 
-  const response = await fetch(CIDER_API + apiPath, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      apptoken: token,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: 'no-store',
-    redirect: 'error'
-  });
+  if (!CIDER_API) {
+    if (CIDER_API_CONFIG.error) {
+      throw ciderBridgeError(
+        'CIDER_BRIDGE_MISCONFIGURED',
+        CIDER_API_CONFIG.error + ' Do not use Deplexo container localhost as a substitute for the Cider desktop bridge.'
+      );
+    }
+    throw ciderBridgeError(
+      'CIDER_BRIDGE_NOT_CONFIGURED',
+      'No Cider bridge is configured for this hosted BitCider service. Deplexo cannot reach the Cider app at 127.0.0.1 on the user’s computer. A secure per-user Cider relay must be online before addon search or streaming can work.'
+    );
+  }
+
+  const timeoutValue = Number(process.env.BITCIDER_CIDER_REQUEST_TIMEOUT_MS || 12000);
+  const timeoutMs = Number.isFinite(timeoutValue)
+    ? Math.max(1000, Math.min(Math.floor(timeoutValue), 30000))
+    : 12000;
+  let response;
+  try {
+    const target = new URL(apiPath, CIDER_API + '/');
+    if (target.origin !== CIDER_API || !target.pathname.startsWith('/api/v2/')) {
+      throw ciderBridgeError('CIDER_BRIDGE_INVALID_REQUEST', 'BitCider refused an invalid Cider API path.', 400);
+    }
+    response = await fetch(target, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        apptoken: token,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
+      redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (cause) {
+    if (cause?.ciderCode) throw cause;
+    const timedOut = cause?.name === 'TimeoutError' || cause?.name === 'AbortError';
+    throw ciderBridgeError(
+      timedOut ? 'CIDER_BRIDGE_TIMEOUT' : 'CIDER_BRIDGE_UNAVAILABLE',
+      timedOut
+        ? 'The configured Cider bridge did not respond within ' + Math.round(timeoutMs / 1000) + ' seconds.'
+        : 'The configured Cider bridge is offline or unreachable. Confirm that the secure per-user relay is running and reachable over HTTPS.'
+    , timedOut ? 504 : 503);
+  }
 
   const text = await response.text();
   let payload;
@@ -852,7 +922,13 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider', apiVersion: API_VERSION }));
+app.get('/health', (_req, res) => res.json({
+  ok: true,
+  service: 'BitCider',
+  apiVersion: API_VERSION,
+  ciderBridgeConfigured: Boolean(CIDER_API),
+  ciderBridgeConfigurationError: CIDER_API_CONFIG.error || null
+}));
 
 app.use('/api/account', (_req, res, next) => {
   res.set('Cache-Control', 'no-store');
@@ -1486,6 +1562,36 @@ app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   });
 });
 
+const addonFailureLogTimes = new Map();
+
+function logAddonFailure(operation, error) {
+  const code = String(error?.ciderCode || 'CIDER_REQUEST_FAILED');
+  if (code.startsWith('CIDER_BRIDGE_')) {
+    const now = Date.now();
+    const previous = addonFailureLogTimes.get(operation + ':' + code) || 0;
+    if (now - previous < 60000) return;
+    addonFailureLogTimes.set(operation + ':' + code, now);
+    if (addonFailureLogTimes.size > 128) {
+      for (const [key, time] of addonFailureLogTimes) {
+        if (now - time >= 60000) addonFailureLogTimes.delete(key);
+      }
+    }
+    console.warn('BitCider addon ' + operation + ' unavailable (' + code + '):', error.message);
+    return;
+  }
+  console.error('BitCider addon ' + operation + ' failed:', error.message, code);
+}
+
+function sendAddonFailure(res, fallbackCode, error) {
+  const code = String(error?.ciderCode || fallbackCode);
+  if (code.startsWith('CIDER_BRIDGE_')) res.set('Retry-After', '10');
+  return res.status(error.status || 502).json({
+    error: fallbackCode,
+    code,
+    message: error.message || 'Cider request failed.'
+  });
+}
+
 app.get('/:addonKey/search', validAddonKey, async (req, res) => {
   const query = String(req.query.q || '').trim();
   if (!query) return res.json({ tracks: [] });
@@ -1497,11 +1603,8 @@ app.get('/:addonKey/search', validAddonKey, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json({ tracks });
   } catch (error) {
-    console.error('BitCider search failed:', error.message, error.ciderCode || '');
-    res.status(error.status || 502).json({
-      error: 'CIDER_SEARCH_FAILED',
-      message: error.message || 'Cider search failed.'
-    });
+    logAddonFailure('search', error);
+    sendAddonFailure(res, 'CIDER_SEARCH_FAILED', error);
   }
 });
 
@@ -1513,11 +1616,8 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(stream);
   } catch (error) {
-    console.error('BitCider stream resolution failed:', error.message, error.ciderCode || '');
-    res.status(error.status || 502).json({
-      error: 'CIDER_STREAM_FAILED',
-      message: error.message || 'Cider could not resolve this stream.'
-    });
+    logAddonFailure('stream resolution', error);
+    sendAddonFailure(res, 'CIDER_STREAM_FAILED', error);
   }
 });
 
@@ -1541,12 +1641,40 @@ if (!tokenEncryptionStatus.configured) {
   console.log('BitCider token encryption key is configured; migrated legacy tokens:', tokenEncryptionStatus.migrated);
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('  BitCider service is running');
   console.log('  Local UI:    http://localhost:' + PORT);
   console.log('  LAN address: http://' + localIPv4() + ':' + PORT);
-  console.log('  Cider API:   ' + CIDER_API);
+  console.log('  Cider bridge:', CIDER_API ? 'configured' : 'NOT CONFIGURED');
+  if (CIDER_API_CONFIG.error) console.warn('  Cider bridge configuration:', CIDER_API_CONFIG.error);
+  if (!CIDER_API && !CIDER_API_CONFIG.error) {
+    console.warn('  Addon search and streaming need a secure per-user Cider relay; container localhost is not the user’s Cider app.');
+  }
   console.log('');
-  if (!PUBLIC_URL) console.log('  Set BITCIDER_PUBLIC_URL to your public HTTPS tunnel URL for off-network BitChord access.');
+  if (!PUBLIC_URL) console.log('  Set BITCIDER_PUBLIC_URL to the public HTTPS origin for off-network BitChord access.');
 });
+
+httpServer.keepAliveTimeout = 5000;
+httpServer.headersTimeout = 15000;
+httpServer.requestTimeout = 30000;
+
+let shutdownStarted = false;
+function shutdown(signal) {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  console.log('BitCider received ' + signal + '; gracefully closing the HTTP server.');
+  const forceClose = setTimeout(() => {
+    httpServer.closeAllConnections?.();
+  }, 8000);
+  forceClose.unref();
+  httpServer.close(error => {
+    clearTimeout(forceClose);
+    if (error) {
+      console.error('BitCider shutdown error:', error.message);
+      process.exitCode = 1;
+    }
+  });
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
