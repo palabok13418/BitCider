@@ -735,6 +735,12 @@ h1 .bitchord-word {
 .footer a { display: flex; align-items: center; gap: 6px; color: #a8878d; }
 .footer a:hover { color: #f8d2d8; }
 
+/* Pull the footer into the hero's lower breathing room on desktop so it is
+   visible without a small extra scroll on common laptop viewport heights. */
+@media (min-width: 901px) {
+  .footer { margin-top: -5vh; }
+}
+
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; gap: 40px; padding: 70px 0 65px; }
   .hero-copy { max-width: 680px; }
