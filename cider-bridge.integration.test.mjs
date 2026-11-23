@@ -592,7 +592,7 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.includes('className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly'));
   assert.ok(appSource.includes('SWITCH SOURCE'));
   assert.ok(appSource.includes("setPageMode(nextMode)"));
-  assert.ok(appSource.includes('The extra Atmos, Hi-Res, and lossy choices stay available in BitChord'));
+  assert.ok(appSource.includes('The extra Atmos, Hi-Res, High, and Low choices stay available in BitChord'));
   assert.ok(styleSource.includes('.site-shell.mono-mode'));
   assert.ok(styleSource.includes('brand-logo-mono'));
   assert.ok(styleSource.includes('.bitmono-quality-note'));
