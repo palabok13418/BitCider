@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "test": "node --test account-security.test.mjs audio-quality.test.mjs account-flow.integration.test.mjs",
+    "test": "node --test account-security.test.mjs audio-quality.test.mjs account-flow.integration.test.mjs cider-bridge.integration.test.mjs",
     "start": "node server.mjs",
     "dev:server": "node server.mjs",
     "deploy:cloudflare": "npm run build && npx wrangler deploy"
