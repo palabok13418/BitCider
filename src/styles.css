@@ -141,6 +141,175 @@ h1 .bitchord-word {
 .connected-actions .primary-button { margin: 0; }
 .disconnect-button { justify-self: center; display: inline-flex; gap: 7px; align-items: center; border: 0; color: #8793a8; background: transparent; font-size: 10px; }
 .disconnect-button:hover { color: #e2a5a5; }
+
+/* Connect button: label-to-dots loading state and explicit denial feedback. */
+.connect-button {
+  position: relative;
+  overflow: hidden;
+  transform-origin: center;
+}
+.connect-button-label {
+  display: inline-block;
+  white-space: nowrap;
+  transform-origin: center;
+  transition: opacity .24s ease, transform .24s ease;
+}
+.connect-button-dots {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.42);
+  pointer-events: none;
+}
+.connect-button-dots i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .34;
+  transform: scale(.72);
+}
+.connect-phase-connecting,
+.connect-phase-denied {
+  justify-content: center;
+}
+.connect-phase-connecting:disabled,
+.connect-phase-denied:disabled {
+  opacity: 1;
+}
+.connect-phase-connecting .connect-button-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.68);
+}
+.connect-phase-connecting .connect-button-dots {
+  opacity: 1;
+  animation: connect-dots-enter .32s cubic-bezier(.2,.8,.2,1) both;
+}
+.connect-phase-connecting .connect-button-dots i {
+  animation: connect-dot-pulse .9s ease-in-out infinite;
+}
+.connect-phase-connecting .connect-button-dots i:nth-child(2) { animation-delay: .15s; }
+.connect-phase-connecting .connect-button-dots i:nth-child(3) { animation-delay: .3s; }
+.connect-phase-connecting .connect-button-icon {
+  opacity: 0;
+  transform: scale(.65);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.connect-phase-denied {
+  animation: connect-denied-shrink-shake .9s cubic-bezier(.2,.8,.2,1) both;
+}
+.connect-phase-denied .connect-button-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.76);
+  animation: connect-denied-label .82s ease-out both;
+}
+.connect-phase-denied .connect-button-dots,
+.connect-phase-denied .connect-button-icon {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.4);
+}
+.connect-phase-denied .connect-button-icon {
+  transform: scale(.65);
+}
+
+@keyframes connect-dots-enter {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.42); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes connect-dot-pulse {
+  0%, 100% { opacity: .3; transform: scale(.72); }
+  45% { opacity: 1; transform: scale(1.22); }
+}
+@keyframes connect-denied-shrink-shake {
+  0%, 100% { transform: scaleX(1) translateX(0); }
+  18% { transform: scaleX(.78) translateX(0); }
+  34% { transform: scaleX(.91) translateX(0); }
+  46% { transform: scaleX(1) translateX(0); }
+  54% { transform: translateX(-5px); }
+  63% { transform: translateX(5px); }
+  72% { transform: translateX(-3px); }
+  82% { transform: translateX(3px); }
+  92% { transform: translateX(-1px); }
+}
+@keyframes connect-denied-label {
+  0%, 28% { opacity: 0; transform: translate(-50%, -50%) scale(.76); }
+  44% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  58%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Success: reveal the addon URL and promote Disconnect into the main action. */
+.addon-url-panel.is-entering {
+  animation: addon-url-rise .68s cubic-bezier(.18,.82,.24,1) both;
+  transform-origin: center bottom;
+}
+.connected-actions.is-promoting {
+  gap: 0;
+}
+.copy-addon-cta {
+  min-height: 52px;
+  max-height: 52px;
+  margin: 0 !important;
+  overflow: hidden;
+  opacity: 1;
+  transform-origin: top center;
+}
+.connected-actions.is-promoting .copy-addon-cta {
+  animation: copy-addon-cta-exit .58s cubic-bezier(.5,0,.7,.25) both;
+  pointer-events: none;
+}
+.disconnect-button.disconnect-primary {
+  justify-self: stretch;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(255,91,124,.38);
+  border-radius: 10px;
+  color: #ffdce5;
+  background: linear-gradient(100deg, rgba(255,43,94,.19), rgba(253,63,87,.12));
+  box-shadow: 0 8px 26px rgba(255,43,94,.08), inset 0 1px rgba(255,255,255,.045);
+  font: 11px var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  transition: transform .2s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.disconnect-button.disconnect-primary:hover:not(:disabled) {
+  color: #fff0f3;
+  border-color: rgba(255,91,124,.65);
+  background: linear-gradient(100deg, rgba(255,43,94,.27), rgba(253,63,87,.2));
+  box-shadow: 0 10px 30px rgba(255,43,94,.13);
+}
+.disconnect-button.disconnect-primary.is-promoting {
+  animation: disconnect-rise-grow .76s cubic-bezier(.18,.82,.24,1) .08s both;
+}
+@keyframes addon-url-rise {
+  from { opacity: 0; transform: translateY(22px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes copy-addon-cta-exit {
+  from { max-height: 52px; min-height: 52px; opacity: 1; transform: scaleY(1); border-width: 1px; }
+  to { max-height: 0; min-height: 0; opacity: 0; transform: scaleY(.7); border-width: 0; }
+}
+@keyframes disconnect-rise-grow {
+  from { opacity: .3; transform: translateY(13px) scale(.93); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .notice { margin-top: 15px; padding: 10px 12px; border-radius: 8px; font-size: 10px; line-height: 1.6; }
 .notice-info { color: #aebcdb; background: rgba(112,141,204,.1); border: 1px solid rgba(112,141,204,.13); }
 .notice-success { color: #abebc9; background: rgba(69,171,121,.1); border: 1px solid rgba(69,171,121,.17); }
