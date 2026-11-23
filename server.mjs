@@ -1771,7 +1771,7 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
 });
 
 
-const BITMONO_TRACKS_API_BASE = String(process.env.BITMONO_TRACKS_API_BASE || 'https://tracks.monochrome.st').replace(/\/+$/, '');
+const BITMONO_TRACKS_API_BASE = String(process.env.BITMONO_TRACKS_API_BASE || 'https://tracks.monochrome.st').replace(/\\/+$/, '');
 const BITMONO_QUALITY_OPTIONS = Object.freeze([
   { value: 'auto', label: 'Auto' },
   { value: 'dolby_atmos_hi', label: 'Dolby Atmos Hi' },
@@ -1782,8 +1782,30 @@ const BITMONO_QUALITY_OPTIONS = Object.freeze([
   { value: 'high', label: 'High' },
   { value: 'low', label: 'Low' }
 ]);
+const BITMONO_SEARCH_CACHE_TTL_MS = 15000;
+const BITMONO_UPSTREAM_TIMEOUT_MS = 9000;
 const bitMonoSearchCache = new Map();
+const bitMonoSearchInFlight = new Map();
 const bitMonoTrackMetadata = new Map();
+
+function bitMonoLog(level, event, fields = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    component: 'BitMono',
+    event,
+    ...fields
+  };
+  const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'info';
+  console[method]('[BitMono] ' + JSON.stringify(entry));
+}
+
+function bitMonoLogText(value, maxLength = 120) {
+  return String(value || '')
+    .replace(/[\\u0000-\\u001f\\u007f]/g, ' ')
+    .replace(/\\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
 
 function bitMonoRememberTrack(id, metadata) {
   bitMonoTrackMetadata.set(id, metadata);
@@ -1793,86 +1815,356 @@ function bitMonoRememberTrack(id, metadata) {
   }
 }
 
-function normalizeBitMonoTrack(item) {
-  if (!item || typeof item !== 'object') return null;
-  const rawId = String(item.trackId ?? item.id ?? '').trim();
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(rawId)) return null;
+function bitMonoRawTrackId(item) {
+  const track = item?.track && typeof item.track === 'object' ? item.track : item;
+  const value = track?.trackId ?? track?.id ?? track?.track_id ?? '';
+  return String(value).trim();
+}
 
-  const rawArtists = Array.isArray(item.artistNames) && item.artistNames.length
-    ? item.artistNames
-    : Array.isArray(item.artists)
-      ? item.artists.map(artist => artist?.name || artist?.displayName || artist).filter(Boolean)
-      : [];
-  const artist = rawArtists.map(value => String(value || '').trim()).filter(Boolean).join(', ')
-    || item.artist?.name
-    || item.artist
-    || 'Unknown Artist';
-  const durationValue = Number(item.duration ?? item.durationMs ?? 0);
+function normalizeBitMonoTrack(item, stats = null) {
+  if (!item || typeof item !== 'object') {
+    if (stats) stats.invalidObjects += 1;
+    return null;
+  }
+
+  const track = item.track && typeof item.track === 'object' ? item.track : item;
+  const rawId = bitMonoRawTrackId(track);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(rawId)) {
+    if (stats) stats.invalidIds += 1;
+    return null;
+  }
+
+  const rawTitle = track.title ?? track.name ?? track.trackTitle ?? '';
+  const title = String(rawTitle).trim();
+  if (!title) {
+    if (stats) stats.missingTitles += 1;
+    return null;
+  }
+
+  const artistEntries = Array.isArray(track.artistNames) && track.artistNames.length
+    ? track.artistNames
+    : Array.isArray(track.artists) && track.artists.length
+      ? track.artists
+      : [track.artistName ?? track.artist ?? ''];
+  const artist = artistEntries
+    .map(value => {
+      if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+      return String(value?.name || value?.displayName || value?.artistName || '').trim();
+    })
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join(', ');
+
+  const durationValue = Number(
+    track.duration ?? track.durationMs ?? track.durationInMillis ?? track.duration_in_ms ?? 0
+  );
   const duration = Number.isFinite(durationValue) && durationValue > 0
-    ? (durationValue > 1000 ? Math.round(durationValue / 1000) : Math.round(durationValue))
+    ? (durationValue > 1000
+      ? Math.round(durationValue / 10) / 100
+      : Math.round(durationValue * 100) / 100)
     : 0;
-  const artworkURL = item.artwork || item.cover || item.release?.artwork || null;
-  const album = item.albumTitle || item.releaseTitle || item.release?.title || '';
+
+  const album = String(
+    track.albumTitle
+      || track.releaseTitle
+      || track.album?.title
+      || track.release?.title
+      || track.albumName
+      || ''
+  ).trim();
+  const artworkURL = track.artwork
+    || track.cover
+    || track.album?.cover
+    || track.album?.artwork
+    || track.release?.artwork
+    || track.image
+    || null;
+  const isrc = track.isrc || track.recordingId || null;
+  const mediaTags = Array.isArray(track.mediaMetadata?.tags) ? track.mediaMetadata.tags : [];
+  const audioQuality = mediaTags.includes('HIRES_LOSSLESS') ? 'HI_RES_LOSSLESS' : 'LOSSLESS';
 
   bitMonoRememberTrack(rawId, {
-    title: item.title || 'Unknown Title',
+    title,
     artist,
     album,
     artworkURL,
-    isrc: item.isrc || null,
+    isrc,
     duration
   });
 
+  if (stats) stats.normalized += 1;
   return {
     id: 'mono_' + rawId,
-    title: item.title || 'Unknown Title',
+    title,
     artist,
     album,
     duration,
     artworkURL,
     format: 'flac',
-    audioQuality: 'LOSSLESS',
+    audioQuality,
     audioMode: 'STEREO',
     audioModes: ['STEREO'],
-    isrc: item.isrc || null
+    isrc
   };
 }
 
-async function fetchBitMonoTracksSearch(query) {
-  const url = new URL('/search/tracks', BITMONO_TRACKS_API_BASE);
+function bitMonoPayloadContainers(payload) {
+  const containers = [];
+  const seen = new Set();
+  const add = value => {
+    if (!value || typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    containers.push(value);
+  };
+  add(payload);
+  add(payload?.data);
+  add(payload?.result);
+  add(payload?.results);
+  add(payload?.data?.data);
+  add(payload?.data?.results);
+  add(payload?.response);
+  return containers;
+}
+
+function extractBitMonoTrackCandidates(payload) {
+  const candidates = [];
+  const seen = new Set();
+  const addArray = (items, source) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const candidate = item.track && typeof item.track === 'object' ? item.track : item;
+      const key = bitMonoRawTrackId(candidate) || (candidate.title ? 'title:' + candidate.title + ':' + (candidate.artistName || '') : '');
+      const stableKey = key || item;
+      if (seen.has(stableKey)) continue;
+      seen.add(stableKey);
+      candidates.push({ item: candidate, source });
+    }
+  };
+
+  for (const container of bitMonoPayloadContainers(payload)) {
+    if (Array.isArray(container)) {
+      addArray(container, 'array');
+      continue;
+    }
+    addArray(container.tracks, 'tracks');
+    addArray(container.items, 'items');
+    addArray(container.songs, 'songs');
+
+    if (Array.isArray(container.topResults)) {
+      addArray(container.topResults.filter(item => (
+        item?.entityType === 'track'
+        || item?.type === 'track'
+        || item?.trackId != null
+        || item?.track?.trackId != null
+      )), 'topResults');
+    }
+  }
+
+  return candidates;
+}
+
+function bitMonoPayloadSummary(payload) {
+  const containers = bitMonoPayloadContainers(payload);
+  const arrays = [];
+  for (const container of containers) {
+    if (Array.isArray(container)) {
+      arrays.push({ key: 'array', count: container.length });
+      continue;
+    }
+    for (const key of ['tracks', 'items', 'songs', 'topResults']) {
+      if (Array.isArray(container[key])) arrays.push({ key, count: container[key].length });
+    }
+  }
+  return {
+    payloadKeys: payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? Object.keys(payload).slice(0, 24)
+      : [Array.isArray(payload) ? 'array' : typeof payload],
+    resultArrays: arrays
+  };
+}
+
+async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestContext) {
+  const url = new URL(endpoint, BITMONO_TRACKS_API_BASE);
   url.searchParams.set('q', query);
-  url.searchParams.set('limit', '20');
+  if (endpoint === '/search/tracks') url.searchParams.set('limit', '40');
 
   let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const startedAt = Date.now();
+    bitMonoLog('info', 'upstream.request', {
+      requestId,
+      endpoint,
+      attempt,
+      query: bitMonoLogText(query),
+      queryLength: query.length,
+      bitChordTitle: requestContext.title,
+      bitChordArtist: requestContext.artist
+    });
+
     try {
       const response = await fetch(url, {
         headers: {
           Accept: 'application/json',
-          'User-Agent': 'BitMono-BitChord-Addon/1.0',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           Origin: 'https://monochrome.st',
-          Referer: 'https://monochrome.st/'
+          Referer: 'https://monochrome.st/',
+          'Accept-Language': 'en-US,en;q=0.9'
         },
-        signal: AbortSignal.timeout(9000)
+        signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS)
       });
-      if ((response.status === 429 || response.status >= 500) && attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
-        continue;
+
+      const rawBody = await response.text();
+      const durationMs = Date.now() - startedAt;
+      if (!response.ok) {
+        const error = new Error('Monochrome ' + endpoint + ' returned HTTP ' + response.status + '.');
+        error.status = response.status;
+        bitMonoLog(response.status >= 500 || response.status === 429 ? 'warn' : 'error', 'upstream.http_error', {
+          requestId,
+          endpoint,
+          attempt,
+          status: response.status,
+          contentType: response.headers.get('content-type') || '',
+          durationMs,
+          bodyPreview: bitMonoLogText(rawBody, 180)
+        });
+        lastError = error;
+        if ((response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) && attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+          continue;
+        }
+        throw error;
       }
-      if (!response.ok) throw new Error('Monochrome track search returned HTTP ' + response.status + '.');
-      const payload = await response.json();
-      const items = Array.isArray(payload?.tracks)
-        ? payload.tracks
-        : Array.isArray(payload?.data?.tracks)
-          ? payload.data.tracks
-          : [];
-      return items.map(normalizeBitMonoTrack).filter(Boolean);
+
+      let payload;
+      try {
+        payload = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        const error = new Error('Monochrome ' + endpoint + ' returned invalid JSON.');
+        bitMonoLog('error', 'upstream.invalid_json', {
+          requestId,
+          endpoint,
+          attempt,
+          status: response.status,
+          contentType: response.headers.get('content-type') || '',
+          bodyLength: rawBody.length,
+          bodyPreview: bitMonoLogText(rawBody, 180),
+          durationMs
+        });
+        throw error;
+      }
+
+      const summary = bitMonoPayloadSummary(payload);
+      const candidates = extractBitMonoTrackCandidates(payload);
+      bitMonoLog('info', 'upstream.response', {
+        requestId,
+        endpoint,
+        attempt,
+        status: response.status,
+        contentType: response.headers.get('content-type') || '',
+        durationMs,
+        bodyLength: rawBody.length,
+        payloadKeys: summary.payloadKeys,
+        resultArrays: summary.resultArrays,
+        candidateCount: candidates.length
+      });
+
+      return { endpoint, payload, candidates, status: response.status, durationMs };
     } catch (error) {
       lastError = error;
-      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+      const durationMs = Date.now() - startedAt;
+      const retryable = !Number.isInteger(error?.status)
+        || error.status === 408
+        || error.status === 425
+        || error.status === 429
+        || error.status >= 500;
+      if (retryable && attempt < 2) {
+        bitMonoLog('warn', 'upstream.retry', {
+          requestId,
+          endpoint,
+          attempt,
+          durationMs,
+          error: bitMonoLogText(error?.message || error, 180)
+        });
+        await new Promise(resolve => setTimeout(resolve, 300 * attempt));
+        continue;
+      }
+      bitMonoLog('error', 'upstream.failed', {
+        requestId,
+        endpoint,
+        attempt,
+        durationMs,
+        status: Number.isInteger(error?.status) ? error.status : null,
+        error: bitMonoLogText(error?.message || error, 180)
+      });
     }
   }
-  throw lastError || new Error('Monochrome track search failed.');
+  throw lastError || new Error('Monochrome ' + endpoint + ' search failed.');
+}
+
+async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
+  // The modern Monochrome client exposes both the focused track route and a
+  // unified search route. Unified search contains topResults in some responses,
+  // which can hold the exact song even when the focused list ranks it lower.
+  const endpoints = ['/search', '/search/tracks'];
+  const responses = await Promise.allSettled(
+    endpoints.map(endpoint => fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestContext))
+  );
+  const successes = responses
+    .filter(result => result.status === 'fulfilled')
+    .map(result => result.value);
+  const failures = responses
+    .filter(result => result.status === 'rejected')
+    .map(result => bitMonoLogText(result.reason?.message || result.reason, 180));
+
+  if (!successes.length) {
+    throw new Error('All Monochrome search endpoints failed: ' + failures.join(' | '));
+  }
+
+  const tracksById = new Map();
+  const stats = {
+    rawCandidates: 0,
+    normalized: 0,
+    invalidObjects: 0,
+    invalidIds: 0,
+    missingTitles: 0,
+    duplicates: 0
+  };
+  for (const response of successes) {
+    stats.rawCandidates += response.candidates.length;
+    for (const candidate of response.candidates) {
+      const track = normalizeBitMonoTrack(candidate.item, stats);
+      if (!track) continue;
+      if (tracksById.has(track.id)) {
+        stats.duplicates += 1;
+        continue;
+      }
+      tracksById.set(track.id, track);
+    }
+  }
+
+  const tracks = [...tracksById.values()].slice(0, 60);
+  bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'search.merged' : 'search.upstream_empty', {
+    requestId,
+    query: bitMonoLogText(query),
+    endpointsAttempted: endpoints,
+    endpointsSucceeded: successes.map(response => response.endpoint),
+    endpointFailures: failures,
+    rawCandidates: stats.rawCandidates,
+    normalizedTracks: stats.normalized,
+    invalidObjects: stats.invalidObjects,
+    invalidIds: stats.invalidIds,
+    missingTitles: stats.missingTitles,
+    duplicates: stats.duplicates,
+    resultCount: tracks.length,
+    sample: tracks.slice(0, 5).map(track => ({
+      id: track.id,
+      title: bitMonoLogText(track.title, 80),
+      artist: bitMonoLogText(track.artist, 80)
+    }))
+  });
+
+  return tracks;
 }
 
 // BitMono is an intentionally free, public BitChord source. It does not
@@ -1899,32 +2191,108 @@ app.get('/bitmono/manifest.json', (_req, res) => {
 });
 
 app.get('/bitmono/search', async (req, res) => {
-  const query = String(req.query.q || '').trim();
-  if (!query) return res.json({ tracks: [] });
-  if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
+  const requestId = crypto.randomUUID();
+  const queryFromClient = bitMonoLogText(req.query.q || '', 320);
+  const requestedTitle = bitMonoLogText(req.query.title || '', 140);
+  const requestedArtist = bitMonoLogText(req.query.artist || '', 140);
+  const query = (queryFromClient || [requestedTitle, requestedArtist].filter(Boolean).join(' '))
+    .replace(/\\s+/g, ' ')
+    .trim();
 
-  const cacheKey = query.toLowerCase();
+  res.set('X-BitMono-Request-Id', requestId);
+  bitMonoLog('info', 'search.received', {
+    requestId,
+    query: bitMonoLogText(query),
+    queryLength: query.length,
+    bitChordTitle: requestedTitle,
+    bitChordArtist: requestedArtist,
+    quality: bitMonoLogText(req.query.quality || 'auto', 48),
+    atmos: bitMonoLogText(req.query.atmos || '', 24),
+    userAgent: bitMonoLogText(req.get('user-agent') || '', 110)
+  });
+
+  if (!query) {
+    bitMonoLog('warn', 'search.empty_query', { requestId });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ tracks: [] });
+  }
+  if (query.length > 320) {
+    bitMonoLog('warn', 'search.query_too_long', { requestId, queryLength: query.length });
+    return res.status(400).json({
+      error: 'Search query is too long.',
+      requestId
+    });
+  }
+
+  const cacheKey = query.normalize('NFKC').toLowerCase();
   const cached = bitMonoSearchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    res.set('Cache-Control', 'public, max-age=30');
+    bitMonoLog('info', 'search.cache_hit', {
+      requestId,
+      query: bitMonoLogText(query),
+      resultCount: cached.tracks.length,
+      ageMs: Date.now() - cached.createdAt
+    });
+    res.set('Cache-Control', 'public, max-age=10');
+    res.set('X-BitMono-Cache', 'HIT');
     return res.json({ tracks: cached.tracks });
   }
   if (cached) bitMonoSearchCache.delete(cacheKey);
+  res.set('X-BitMono-Cache', 'MISS');
 
   try {
-    const tracks = await fetchBitMonoTracksSearch(query);
-    bitMonoSearchCache.set(cacheKey, { tracks, expiresAt: Date.now() + 30000 });
-    if (bitMonoSearchCache.size > 300) {
-      const oldest = bitMonoSearchCache.keys().next().value;
-      bitMonoSearchCache.delete(oldest);
+    let pending = bitMonoSearchInFlight.get(cacheKey);
+    if (pending) {
+      bitMonoLog('info', 'search.inflight_join', { requestId, query: bitMonoLogText(query) });
+    } else {
+      pending = fetchBitMonoTracksSearch(query, requestId, {
+        title: requestedTitle,
+        artist: requestedArtist
+      });
+      bitMonoSearchInFlight.set(cacheKey, pending);
     }
-    res.set('Cache-Control', 'public, max-age=30');
+
+    let tracks;
+    try {
+      tracks = await pending;
+    } finally {
+      if (bitMonoSearchInFlight.get(cacheKey) === pending) bitMonoSearchInFlight.delete(cacheKey);
+    }
+
+    if (tracks.length > 0) {
+      bitMonoSearchCache.set(cacheKey, {
+        tracks,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + BITMONO_SEARCH_CACHE_TTL_MS
+      });
+      if (bitMonoSearchCache.size > 300) {
+        const oldest = bitMonoSearchCache.keys().next().value;
+        bitMonoSearchCache.delete(oldest);
+      }
+      res.set('Cache-Control', 'public, max-age=10');
+    } else {
+      // Do not cache empty searches: upstream can briefly return an empty list
+      // during an outage or index refresh, and a cached miss hides recovery.
+      res.set('Cache-Control', 'no-store');
+    }
+
+    bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'search.complete' : 'search.no_matches', {
+      requestId,
+      query: bitMonoLogText(query),
+      resultCount: tracks.length,
+      cached: tracks.length > 0
+    });
     return res.json({ tracks });
   } catch (error) {
-    console.warn('BitMono search failed:', error.message);
+    bitMonoLog('error', 'search.failed', {
+      requestId,
+      query: bitMonoLogText(query),
+      error: bitMonoLogText(error?.message || error, 260)
+    });
     return res.status(502).json({
       error: 'BITMONO_SEARCH_FAILED',
-      message: 'The Monochrome track service could not complete this search. Please try again.'
+      message: 'The Monochrome track service could not complete this search. Please try again.',
+      requestId
     });
   }
 });
