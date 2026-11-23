@@ -342,11 +342,16 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
     const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
     const username = String(req.body?.username || '').trim().toLowerCase();
     const usernameKey = username ? crypto.createHash('sha256').update(username).digest('hex').slice(0, 16) : '';
+    const routeKey = String(req.baseUrl || '') + String(req.path || '');
     const keys = [
-      { key: 'ip:' + ip, limit: maxAttempts * 4 },
+      // Keep aggregate limits consistent across different account actions.
+      { key: 'ip:' + ip, limit: 60 },
       ...(usernameKey ? [
-        { key: 'user-ip:' + ip + ':' + usernameKey, limit: maxAttempts },
-        { key: 'user-global:' + usernameKey, limit: maxAttempts * 4 }
+        // A successful sign-in should not consume the separate recovery
+        // endpoint's lower attempt budget, so per-action limits are isolated.
+        { key: 'user-route:' + ip + ':' + routeKey + ':' + usernameKey, limit: maxAttempts },
+        // Retain an account-wide ceiling across IPs and account endpoints.
+        { key: 'user-global:' + usernameKey, limit: 30 }
       ] : [])
     ];
     let retryAfter = 0;
