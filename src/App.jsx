@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-22-secure-accounts-v3';
+const API_VERSION = '2026-11-22-passkeys-devices-v4';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   if (name === 'arrow') return <svg {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
@@ -35,6 +36,8 @@ export default function App() {
   const [recoveryCode, setRecoveryCode] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [passkeyName, setPasskeyName] = useState('');
+  const [securityPassword, setSecurityPassword] = useState('');
 
   async function refreshStatus() {
     try {
@@ -91,7 +94,9 @@ export default function App() {
         setAccountPasswordConfirm('');
         setRecoveryCode('');
       } else {
-        setNotice('You are signed in. Your saved Cider connection has been restored.');
+        setNotice(result.evictedDevice
+          ? 'Signed in. ' + result.evictedDevice + ' was signed out to keep your account within the five-device limit.'
+          : 'You are signed in. Your saved Cider connection has been restored.');
         setNoticeType('success');
       }
       setAccountPassword('');
@@ -148,6 +153,123 @@ export default function App() {
       await refreshStatus();
     } catch (error) {
       setNotice(error.message || 'Could not sign out.');
+      setNoticeType('warning');
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+
+  async function postAccountAction(path, payload = {}) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-BitCider-CSRF': csrfToken
+      },
+      cache: 'no-store',
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(getErrorMessage(result, 'The account security action could not be completed.'));
+    return result;
+  }
+
+  async function signInWithPasskey() {
+    setAccountBusy(true);
+    setNotice('Waiting for your passkey…');
+    setNoticeType('info');
+    try {
+      const optionsJSON = await postAccountAction('/api/account/passkeys/auth/options');
+      const authentication = await startAuthentication({ optionsJSON });
+      const result = await postAccountAction('/api/account/passkeys/auth/verify', authentication);
+      setNotice(result.evictedDevice
+        ? 'Signed in with your passkey. ' + result.evictedDevice + ' was signed out to keep the five-device limit.'
+        : 'Signed in with your passkey. Your saved Cider connection has been restored.');
+      setNoticeType('success');
+      await refreshStatus();
+    } catch (error) {
+      setNotice(error?.message || 'Passkey sign-in was cancelled or could not be completed.');
+      setNoticeType('warning');
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  async function addPasskey() {
+    if (!securityPassword) {
+      setNotice('Enter your current BitCider passphrase to add a passkey.');
+      setNoticeType('warning');
+      return;
+    }
+    setAccountBusy(true);
+    setNotice('Opening your device’s passkey setup…');
+    setNoticeType('info');
+    try {
+      const deviceName = passkeyName.trim().slice(0, 40);
+      const optionsJSON = await postAccountAction('/api/account/passkeys/register/options', {
+        password: securityPassword
+      });
+      const registration = await startRegistration({ optionsJSON });
+      const result = await postAccountAction('/api/account/passkeys/register/verify', {
+        ...registration,
+        deviceName
+      });
+      setSecurityPassword('');
+      setPasskeyName('');
+      setNotice('Passkey added. You can now sign in with it on this website.');
+      setNoticeType('success');
+      await refreshStatus();
+    } catch (error) {
+      setNotice(error?.message || 'Could not add that passkey. Try again.');
+      setNoticeType('warning');
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  async function removePasskey(credentialId) {
+    if (!securityPassword) {
+      setNotice('Enter your current BitCider passphrase to remove a passkey.');
+      setNoticeType('warning');
+      return;
+    }
+    setAccountBusy(true);
+    try {
+      await postAccountAction('/api/account/passkeys/remove', {
+        credentialId,
+        password: securityPassword
+      });
+      setSecurityPassword('');
+      setNotice('Passkey removed from your BitCider account.');
+      setNoticeType('success');
+      await refreshStatus();
+    } catch (error) {
+      setNotice(error?.message || 'Could not remove that passkey.');
+      setNoticeType('warning');
+    } finally {
+      setAccountBusy(false);
+    }
+  }
+
+  async function revokeDevice(sessionIdHash) {
+    if (!securityPassword) {
+      setNotice('Enter your current BitCider passphrase to revoke a device.');
+      setNoticeType('warning');
+      return;
+    }
+    setAccountBusy(true);
+    try {
+      await postAccountAction('/api/account/devices/revoke', {
+        sessionIdHash,
+        password: securityPassword
+      });
+      setSecurityPassword('');
+      setNotice('That device has been signed out of your BitCider account.');
+      setNoticeType('success');
+      await refreshStatus();
+    } catch (error) {
+      setNotice(error?.message || 'Could not revoke that device.');
       setNoticeType('warning');
     } finally {
       setAccountBusy(false);
@@ -484,6 +606,79 @@ export default function App() {
               <span className="account-saved-indicator" />
               <span>{status.connected ? 'Cider connection and addon URL saved in the cloud' : 'Account saved. Connect Cider to create your personal addon URL.'}</span>
             </div>
+            <div className="account-security-management">
+              <div className="security-management-header">
+                <div>
+                  <div className="card-label">SIGN-IN SECURITY</div>
+                  <h3>Passkeys <span>{status.passkeyCount || 0}/{status.passkeyLimit || 5}</span></h3>
+                  <p>Use Face ID, Touch ID, Windows Hello, a password manager, or a security key. Up to five passkeys can be registered.</p>
+                </div>
+              </div>
+              <div className="security-management-form">
+                <label>
+                  <span>PASSKEY NAME</span>
+                  <input
+                    type="text"
+                    maxLength={40}
+                    value={passkeyName}
+                    onChange={event => setPasskeyName(event.target.value)}
+                    placeholder="e.g. Windows laptop"
+                    autoComplete="off"
+                  />
+                </label>
+                <label>
+                  <span>CURRENT BITCIDER PASSPHRASE</span>
+                  <input
+                    type="password"
+                    maxLength={128}
+                    value={securityPassword}
+                    onChange={event => setSecurityPassword(event.target.value)}
+                    placeholder="Confirm it to change security settings"
+                    autoComplete="current-password"
+                  />
+                </label>
+                <button className="account-submit-button" type="button" onClick={addPasskey} disabled={accountBusy || !securityPassword || !status.tokenEncryptionConfigured || (status.passkeyCount || 0) >= (status.passkeyLimit || 5)}>
+                  {accountBusy ? 'PLEASE WAIT…' : 'ADD PASSKEY'}
+                </button>
+              </div>
+              <div className="security-list">
+                {(status.passkeys || []).length === 0 ? (
+                  <p className="security-empty">No passkeys registered yet. Add one to enable passwordless sign-in.</p>
+                ) : (status.passkeys || []).map(passkey => (
+                  <div className="security-list-item" key={passkey.id}>
+                    <div className="security-list-copy">
+                      <strong>{passkey.name}</strong>
+                      <span>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device-bound credential'} · {passkey.rpID}</span>
+                      <small>Added {passkey.createdAt ? new Date(passkey.createdAt).toLocaleString() : 'recently'}{passkey.lastUsedAt ? ' · Last used ' + new Date(passkey.lastUsedAt).toLocaleString() : ''}</small>
+                    </div>
+                    <button type="button" className="account-secondary-button" onClick={() => removePasskey(passkey.id)} disabled={accountBusy || !securityPassword}>REMOVE</button>
+                  </div>
+                ))}
+              </div>
+              <div className="security-management-divider" />
+              <div className="security-management-header">
+                <div>
+                  <h3>Signed-in devices <span>{status.deviceCount || 0}/{status.deviceLimit || 5}</span></h3>
+                  <p>Up to five active BitCider sign-in sessions. A sixth sign-in automatically signs out the least-recently-active session.</p>
+                </div>
+              </div>
+              <div className="security-list">
+                {(status.devices || []).map(device => (
+                  <div className="security-list-item" key={device.id}>
+                    <div className="security-list-copy">
+                      <strong>{device.name}</strong>
+                      <span>{device.isCurrent ? 'This device' : 'Signed in device'} · Last active {device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'unknown'}</span>
+                    </div>
+                    {device.isCurrent ? (
+                      <span className="security-current-device">THIS DEVICE</span>
+                    ) : (
+                      <button type="button" className="account-secondary-button" onClick={() => revokeDevice(device.id)} disabled={accountBusy || !securityPassword}>REVOKE</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="account-security-note">Passkey changes and device revocations require your BitCider passphrase again. Passkeys are tied to the website domain where they were created. Synced passkeys may also work on other physical devices, while the five-device limit counts active BitCider sessions.</p>
+            </div>
           </>
         ) : (
           <>
@@ -556,6 +751,16 @@ export default function App() {
                 {accountBusy ? 'SECURING YOUR ACCOUNT…' : accountMode === 'register' ? 'CREATE SECURE ACCOUNT' : accountMode === 'recover' ? 'RESET PASSPHRASE' : 'SIGN IN'}
               </button>
             </form>
+            {accountMode === 'login' && (
+              <button
+                type="button"
+                className="account-passkey-button"
+                onClick={signInWithPasskey}
+                disabled={accountBusy || !csrfToken || status.backendCompatible !== true || !status.tokenEncryptionConfigured}
+              >
+                SIGN IN WITH A PASSKEY
+              </button>
+            )}
             <p className="account-security-note">Your device keeps only a Secure, HttpOnly sign-in cookie, not your passphrase or addon URL. Passphrases use scrypt hashing; Cider tokens are encrypted on the server. Recovery codes are shown once and can each be used one time.</p>
           </>
         )}
