@@ -151,12 +151,14 @@ function trustedFrontend(request) {
     try { return new URL(value.trim()).origin; } catch { return ''; }
   }).filter(Boolean);
 
-  // The public host is forwarded by the platform proxy. This lets the
-  // Deplexo-hosted site call its own API even when BITCIDER_PUBLIC_URL was
-  // omitted or has a trailing/proxy-specific URL configuration mismatch.
   const requestHost = String(
     request.get('x-forwarded-host') || request.get('host') || ''
   ).split(',')[0].trim().toLowerCase();
+
+  const isDeplexoHost = hostname => {
+    const value = String(hostname || '').toLowerCase().split(':')[0];
+    return value === 'deplexo.com' || value.endsWith('.deplexo.com');
+  };
 
   const originHeader = request.get('origin');
   const refererHeader = request.get('referer');
@@ -175,14 +177,23 @@ function trustedFrontend(request) {
       const parsed = new URL(browserOrigin);
       const secure = parsed.protocol === 'https:'
         || (parsed.protocol === 'http:' && isLoopback(parsed.hostname));
-      return secure && parsed.host.toLowerCase() === requestHost;
+      if (!secure) return false;
+
+      // Deplexo assigns HTTPS app URLs on *.deplexo.com. Treat those as
+      // first-party deployments even if the dashboard's PUBLIC_URL value
+      // was not set or the reverse proxy rewrites the upstream Host header.
+      if (parsed.protocol === 'https:' && isDeplexoHost(parsed.hostname)) return true;
+
+      return parsed.host.toLowerCase() === requestHost;
     } catch {
       return false;
     }
   }
 
-  // Some privacy modes omit Origin and Referer on same-origin GET requests.
-  // In that case, accept the explicitly configured Deplexo host only.
+  // Privacy settings sometimes omit Origin and Referer. Allow the official
+  // Deplexo app hostname itself, or an explicitly configured origin, in that case.
+  if (isDeplexoHost(requestHost)) return true;
+
   return expectedOrigins.some(value => {
     try { return new URL(value).host.toLowerCase() === requestHost; } catch { return false; }
   });
