@@ -15,6 +15,12 @@ const INTRO_SECONDS = 1.6;
 const DEFAULT_COLORS = ['#120f17', '#2a0f0a', '#9a3412', '#f97316', '#fed7aa'];
 const TYPES = { linear: 0, radial: 1 };
 const LIFT = 0.2;
+const FIELD_UNIFORMS = [
+  'uAspect', 'uTime', 'uRamp', 'uCount', 'uType', 'uDir', 'uExtent',
+  'uBands', 'uSoftness', 'uFlow', 'uScale', 'uSilk', 'uStir',
+  'uStirWeight', 'uTwirl', 'uSeed', 'uContrast', 'uSaturation', 'uSettle', 'uReveal'
+];
+const COMPOSITE_UNIFORMS = ['uField', 'uGrain', 'uGrainSize', 'uFrame'];
 
 const VERTEX = `#version 300 es
 out vec2 vUv;
@@ -238,7 +244,7 @@ const compile = (gl, type, source) => {
   throw new Error(details);
 };
 
-const link = (gl, fragmentSource) => {
+const link = (gl, fragmentSource, requiredUniforms) => {
   let vertex = null;
   let fragment = null;
   let program = null;
@@ -259,9 +265,17 @@ const link = (gl, fragmentSource) => {
       const info = gl.getActiveUniform(program, i);
       if (!info) continue;
       const name = info.name.replace(/\[0\]$/, '');
-      const location = gl.getUniformLocation(program, name);
+      const location = gl.getUniformLocation(program, info.name);
       if (location === null) throw new Error('Grainient could not resolve the shader uniform: ' + name);
       uniforms[name] = location;
+    }
+    for (const name of requiredUniforms) {
+      if (uniforms[name] === undefined) {
+        const locationName = ['uRamp', 'uStir', 'uStirWeight', 'uTwirl'].includes(name) ? name + '[0]' : name;
+        const location = gl.getUniformLocation(program, locationName);
+        if (location === null) throw new Error('Grainient is missing the required shader uniform: ' + name);
+        uniforms[name] = location;
+      }
     }
     const result = { program, uniforms };
     program = null;
@@ -307,7 +321,8 @@ const Grainient = ({
   const wakeRef = useRef(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
-  const palette = (Array.isArray(colors) && colors.length ? colors : DEFAULT_COLORS).filter(Boolean).slice(0, MAX_COLORS);
+  const requestedPalette = Array.isArray(colors) ? colors.filter(Boolean).slice(0, MAX_COLORS) : [];
+  const palette = requestedPalette.length ? requestedPalette : DEFAULT_COLORS;
   const settings = {
     colors: palette.length > 1 ? palette : [palette[0], palette[0]],
     type: TYPES[type] ?? 0,
@@ -371,8 +386,8 @@ const Grainient = ({
     let target = null;
     let buffer = null;
     try {
-      field = link(gl, FIELD);
-      composite = link(gl, COMPOSITE);
+      field = link(gl, FIELD, FIELD_UNIFORMS);
+      composite = link(gl, COMPOSITE, COMPOSITE_UNIFORMS);
       vao = gl.createVertexArray();
       target = gl.createTexture();
       buffer = gl.createFramebuffer();
@@ -718,7 +733,14 @@ const Grainient = ({
     } catch (error) {
       reportError(error);
     }
-    window.addEventListener('resize', resize, { passive: true });
+    const onResize = () => {
+      try {
+        resize();
+      } catch (error) {
+        reportError(error);
+      }
+    };
+    window.addEventListener('resize', onResize, { passive: true });
     wake();
     wakeRef.current = wake;
 
@@ -728,7 +750,7 @@ const Grainient = ({
       resizeObserver?.disconnect();
       intersection?.disconnect();
       motionQuery?.removeEventListener?.('change', onMotionChange);
-      window.removeEventListener('resize', resize);
+      window.removeEventListener('resize', onResize);
       canvas.removeEventListener('webglcontextlost', onContextLost);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerdown', onPointerDown);
