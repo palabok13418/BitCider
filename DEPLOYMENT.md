@@ -157,12 +157,12 @@ The agent reconnects automatically after temporary network failures. Start it ag
 ### What is forwarded
 
 The local runner has a strict allowlist for the BitCider operations currently required:
-- `GET /api/v2/library/songs` with `offset` and `limit` only (maximum page size 100).
+- `GET /api/v2/amapi/search` with `term`, `types=songs`, `limit` (maximum 25), and `offset` only.
 - `POST /api/v2/playback/play-item` for a song ID.
 - `GET /api/v2/queue`.
 - `POST /api/v2/playback/pause`.
 
-Other Cider API paths, arbitrary hosts, redirects, and non-loopback local API URLs are rejected. The local Cider app token is added by the runner and is never logged or returned to BitCider. Relay responses are account-bound, size-limited, and returned over HTTPS. Search currently searches the songs in the linked Cider library; it is not an unrestricted Apple Music catalog search.
+Other Cider API paths, arbitrary hosts, redirects, and non-loopback local API URLs are rejected. The local Cider app token is added by the runner and is never logged or returned to BitCider. Relay responses are account-bound, size-limited, and returned over HTTPS. Search uses Cider's Apple Music catalog proxy, with Cider signing the catalog request using the user's own storefront. It can return songs that have not yet been added to the user's library.
 
 ### Credentials and revocation
 
