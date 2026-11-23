@@ -2288,7 +2288,10 @@ async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {})
 
 async function resolveBitMonoDeezerStream(trackId, quality, requestId) {
   const metadata = bitMonoTrackMetadata.get(trackId) || {};
-  if (typeof metadata.streamURL === 'string' && metadata.streamURL.startsWith('https://')) return { url: metadata.streamURL };
+  if (typeof metadata.streamURL === 'string') {
+    try { return { url: validateBitMonoMediaUrl(metadata.streamURL).toString() }; }
+    catch {}
+  }
   const url = new URL('/stream/' + encodeURIComponent(metadata.upstreamId || trackId), BITMONO_DEEZER_API_BASE);
   url.searchParams.set('quality', quality === 'low' ? 'LOW' : 'HIGH');
   const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
@@ -2298,12 +2301,18 @@ async function resolveBitMonoDeezerStream(trackId, quality, requestId) {
   }
   const payload = await response.json();
   const streamUrl = payload?.url || payload?.streamURL || payload?.stream_url || payload?.data?.url;
-  if (typeof streamUrl !== 'string' || !streamUrl.startsWith('https://')) {
+  if (typeof streamUrl !== 'string') {
+    bitMonoLog('warn', 'fallback.deezer.stream_invalid', { requestId, trackId: bitMonoLogText(trackId, 100), payloadKeys: Object.keys(payload || {}).slice(0, 16) });
+    return null;
+  }
+  try {
+    validateBitMonoMediaUrl(streamUrl);
+  } catch {
     bitMonoLog('warn', 'fallback.deezer.stream_invalid', { requestId, trackId: bitMonoLogText(trackId, 100), payloadKeys: Object.keys(payload || {}).slice(0, 16) });
     return null;
   }
   bitMonoLog('info', 'fallback.deezer.stream_resolved', { requestId, trackId: bitMonoLogText(trackId, 100) });
-  return payload;
+  return { ...payload, url: streamUrl };
 }
 
 // BitMono is an intentionally free, public BitChord source. It does not
