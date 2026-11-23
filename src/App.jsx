@@ -157,7 +157,7 @@ export default function App() {
   async function copyRecoveryCodes() {
     if (!recoveryCodes.length) return;
     try {
-      await navigator.clipboard.writeText(recoveryCodes.join('\\n'));
+      await navigator.clipboard.writeText(recoveryCodes.join(String.fromCharCode(10)));
       setNotice('Recovery codes copied. Store them somewhere private and offline.');
       setNoticeType('success');
     } catch {
@@ -550,7 +550,7 @@ export default function App() {
                 {accountBusy ? 'SECURING YOUR ACCOUNT…' : accountMode === 'register' ? 'CREATE SECURE ACCOUNT' : accountMode === 'recover' ? 'RESET PASSPHRASE' : 'SIGN IN'}
               </button>
             </form>
-            <p className="account-security-note">Passphrases are protected with scrypt. Cider tokens are encrypted on the server. Recovery codes are shown once and can each be used one time.</p>
+            <p className="account-security-note">Your device keeps only a Secure, HttpOnly sign-in cookie, not your passphrase or addon URL. Passphrases use scrypt hashing; Cider tokens are encrypted on the server. Recovery codes are shown once and can each be used one time.</p>
           </>
         )}
         {recoveryCodes.length > 0 && (
@@ -569,7 +569,6 @@ export default function App() {
             <button type="button" className="account-submit-button" onClick={() => setRecoveryCodes([])}>I SAVED MY RECOVERY CODES</button>
           </div>
         )}
-        {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
       </section>
 
       {!status.publicUrlConfigured && connected && (
