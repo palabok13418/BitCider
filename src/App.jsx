@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import LineWaves from './LineWaves.jsx';
 
-const CIDER_API = 'http://127.0.0.1:10767';
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const CIDER_AUTH_URI = 'cider://request-auth?app-name=BitCider&scopes=playback%2Cqueue%2Clibrary%2Caudio';
 
@@ -20,19 +19,6 @@ function Icon({ name, size = 18 }) {
 
 function getErrorMessage(payload, fallback) {
   return payload?.error?.message || payload?.message || payload?.error || fallback;
-}
-
-function extractToken(payload) {
-  const candidates = [
-    payload?.data?.token,
-    payload?.data?.appToken,
-    payload?.data?.app_token,
-    payload?.token,
-    payload?.appToken,
-    payload?.app_token
-  ];
-  const token = candidates.find(value => typeof value === 'string' && value.length > 12);
-  return token || null;
 }
 
 export default function App() {
