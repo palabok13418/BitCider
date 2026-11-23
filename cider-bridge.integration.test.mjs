@@ -236,7 +236,7 @@ test('addon search uses the configured Cider relay and forwards the scoped app t
   assert.equal(search.status, 200, JSON.stringify(payload));
   assert.deepEqual(payload, { tracks: [] });
   assert.equal(observedToken, 'fake-cider-api-token-for-bridge-test');
-  assert.match(observedPath, /^\/api\/v2\/library\/songs\?offset=0&limit=100$/);
+  assert.equal(observedPath, '/api/v2/amapi/search?term=bridge-test&types=songs&limit=25&offset=0');
 });
 
 test('unreachable Cider relay returns a bounded, machine-readable 503', async t => {
