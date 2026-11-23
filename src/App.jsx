@@ -221,22 +221,15 @@ export default function App() {
 
       <header className="topbar">
         <a className="brand" href="/" aria-label="BitCider home">
-          <span className="brand-mark"><Icon name="music" size={19} /></span>
+          <img className="brand-logo" src="/favicon.svg" alt="" />
           <span className="brand-word">bit<span>cider</span></span>
         </a>
-        <div className="topbar-right">
-          <span className="topbar-caption">PERSONAL AUDIO BRIDGE</span>
-          <span className={'connection-pill ' + (connected ? 'is-connected' : '')}>
-            <span className="status-dot" />
-            {status.loading ? 'CHECKING' : connected ? 'CIDER LINKED' : 'NOT LINKED'}
-          </span>
-        </div>
       </header>
 
       <section className="hero">
         <div className="hero-copy">
           <div className="eyebrow"><span className="eyebrow-line" /> CIDER × BITCHORD</div>
-          <h1>Your Cider.<br /><span>Your BitChord.</span></h1>
+          <h1>Your <span className="cider-word">Cider.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
           <p className="hero-description">
             Connect your Cider account once. BitCider turns that approved connection into a personal source you can add to BitChord.
           </p>
@@ -250,7 +243,6 @@ export default function App() {
         <section className="connection-card" aria-live="polite">
           <div className="card-topline">
             <div className="card-label">YOUR CONNECTION</div>
-            <span className="step-counter">{connected ? 'READY' : 'STEP 01 / 02'}</span>
           </div>
 
           {!connected ? (
@@ -261,13 +253,6 @@ export default function App() {
                   <h2>Link Cider</h2>
                   <p>Approve BitCider directly in Cider. Your token is returned automatically.</p>
                 </div>
-              </div>
-              <div className="scope-panel">
-                <div className="scope-title">BITCIDER WILL REQUEST</div>
-                <div className="scope-list">
-                  {SCOPES.map(scope => <span className="scope-chip" key={scope}>{scope}</span>)}
-                </div>
-                <p>Search your Cider library, read the queue and control playback.</p>
               </div>
               <button className="primary-button" onClick={connectCider} disabled={busy || status.loading || status.backendCompatible !== true}>
                 <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
@@ -297,11 +282,6 @@ export default function App() {
                   {status.publicUrlConfigured ? 'Public endpoint configured' : 'Local network endpoint'}
                 </div>
               </div>
-              <div className="install-steps">
-                <div className="install-step"><span>01</span><p>Copy your personal URL above.</p></div>
-                <div className="install-step"><span>02</span><p>In BitChord, open <b>Settings → Sources → Add an addon</b>.</p></div>
-                <div className="install-step"><span>03</span><p>Paste the URL and save. Cider is the source, BitChord is the player.</p></div>
-              </div>
               <div className="connected-actions">
                 <button className="primary-button" onClick={copyAddonUrl}>
                   <span>{copied ? 'COPIED' : 'COPY ADDON URL'}</span>
@@ -317,21 +297,6 @@ export default function App() {
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
           {!notice && (status.message || status.error || status.deploymentWarning) && <div className="notice notice-warning">{status.message || status.error || status.deploymentWarning}</div>}
         </section>
-      </section>
-
-      <section className="feature-strip">
-        <article className="feature-item">
-          <span className="feature-number">01</span>
-          <div><h3>Your Cider account</h3><p>Authorization stays tied to the Cider account you approve.</p></div>
-        </article>
-        <article className="feature-item">
-          <span className="feature-number">02</span>
-          <div><h3>Your personal endpoint</h3><p>BitCider creates a unique addon URL for this connection.</p></div>
-        </article>
-        <article className="feature-item">
-          <span className="feature-number">03</span>
-          <div><h3>BitChord playback</h3><p>Add the URL once. BitChord requests music from your source.</p></div>
-        </article>
       </section>
 
       {!status.publicUrlConfigured && connected && (
