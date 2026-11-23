@@ -14,7 +14,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 ## Current features
 
-- Opens Cider's `cider://request-auth` authorization flow as **BitCider**.
+- Requests a Cider app token directly through `POST http://127.0.0.1:10767/api/v2/auth/request` as **BitCider**.
 - Requests `playback`, `queue`, `library`, and `audio` scopes.
 - Includes the supplied LineWaves WebGL background.
 - Gives each browser session its own encrypted Cider connection record and unique personal BitChord addon URL.
@@ -25,13 +25,21 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 ## Cider authorization
 
-The site opens:
+BitCider uses Cider's documented interactive Auth API directly from the user's browser:
 
-```
-cider://request-auth?app-name=BitCider&scopes=playback,queue,library,audio
+```http
+POST http://127.0.0.1:10767/api/v2/auth/request
+Content-Type: application/json
+
+{
+  "app_name": "BitCider",
+  "scopes": ["playback", "queue", "library", "audio"]
+}
 ```
 
-After the user approves the app in Cider, this first version asks the user to paste the one-time Cider app token into BitCider. The browser cannot silently read text displayed by another desktop application.
+Cider displays its native approval dialog. Once the user approves, Cider returns the app token in the API response (`data.token`). BitCider sends that token to the Deplexo backend, where it is encrypted before storage. No custom URL protocol or manual token copy/paste is needed.
+
+Cider's web API security may require the user to allow the exact BitCider website origin. In Cider, review **Settings → Connections → Extension security** and approve the site when prompted. Cider must be open on the same device as the browser.
 
 ## Critical Cider bridge limitation
 
