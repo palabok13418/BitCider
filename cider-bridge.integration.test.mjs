@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { allowedCiderRequest } from './bitcider-relay.mjs';
+import { allowedLocalCiderJob } from './src/cider-bridge.js';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -122,7 +122,7 @@ async function jsonRequest(origin, route, { method = 'GET', cookie, csrf, body }
   return { response, payload };
 }
 
-async function createAuthenticatedRelayConfig(backend) {
+async function createAuthenticatedBrowserBridge(backend) {
   const initial = await jsonRequest(backend.origin, '/api/status');
   const initialCookie = cookieFrom(initial.response);
   const connect = await jsonRequest(backend.origin, '/api/connect', {
@@ -130,7 +130,7 @@ async function createAuthenticatedRelayConfig(backend) {
     cookie: initialCookie,
     csrf: initial.payload.csrfToken,
     body: {
-      token: 'fake-cider-api-token-for-relay-test',
+      token: 'fake-cider-api-token-for-browser-bridge-test',
       scopes: ['playback', 'queue', 'library', 'audio']
     }
   });
@@ -148,30 +148,28 @@ async function createAuthenticatedRelayConfig(backend) {
   assert.equal(status.response.status, 200);
   assert.equal(status.payload.account.authenticated, true);
 
-  const setup = await jsonRequest(backend.origin, '/api/relay/config', {
+  const bridge = await jsonRequest(backend.origin, '/api/bridge/register', {
     method: 'POST',
     cookie: accountCookie,
     csrf: status.payload.csrfToken,
     body: {}
   });
-  assert.equal(setup.response.status, 200, JSON.stringify(setup.payload));
-  const credentialsResponse = await fetch(backend.origin + '/api/relay/credentials', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + setup.payload.config.relayKey,
-      'Content-Type': 'application/json'
-    },
-    body: '{}',
-    cache: 'no-store'
-  });
-  const credentials = await credentialsResponse.json();
-  assert.equal(credentialsResponse.status, 200, JSON.stringify(credentials));
+  assert.equal(bridge.response.status, 200, JSON.stringify(bridge.payload));
   return {
     addonUrl: status.payload.addonUrl,
     cookie: accountCookie,
-    status: status.payload,
-    config: setup.payload.config,
-    ciderToken: credentials.ciderToken
+    csrfToken: status.payload.csrfToken,
+    bridgeId: bridge.payload.bridgeId,
+    bridgeSecret: bridge.payload.bridgeSecret,
+    ciderToken: bridge.payload.ciderToken
+  };
+}
+
+function browserBridgeHeaders(bridge) {
+  return {
+    'X-BitCider-Bridge-Id': bridge.bridgeId,
+    'X-BitCider-Bridge-Secret': bridge.bridgeSecret,
+    'Content-Type': 'application/json'
   };
 }
 
@@ -195,125 +193,27 @@ async function createAddon(backend) {
   return connect.payload.addonUrl;
 }
 
-test('hosted addon requests fail clearly when no per-user Cider bridge is configured', async t => {
+test('addon requests clearly require the BitCider browser tab to remain open', async t => {
   const backend = await startBackend('');
   t.after(() => backend.stop());
 
   const health = await fetch(backend.origin + '/health').then(response => response.json());
-  assert.equal(health.ciderBridgeConfigured, false);
-  assert.equal(health.ciderBridgeConfigurationError, null);
+  assert.equal(health.browserCiderBridgeSupported, true);
 
   const addonUrl = await createAddon(backend);
-  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
-  const search = await fetch(searchUrl);
+  const search = await fetch(addonUrl.replace('/manifest.json', '/search?q=bridge-test'));
   const searchPayload = await search.json();
   assert.equal(search.status, 503);
   assert.equal(search.headers.get('retry-after'), '10');
   assert.equal(searchPayload.error, 'CIDER_SEARCH_FAILED');
-  assert.equal(searchPayload.code, 'CIDER_BRIDGE_NOT_CONFIGURED');
-  assert.match(searchPayload.message, /per-user Cider relay/i);
-  assert.doesNotMatch(backend.output(), /fetch failed/i);
+  assert.equal(searchPayload.code, 'CIDER_BRIDGE_OFFLINE');
+  assert.match(searchPayload.message, /keep the BitCider website open/i);
 
-  const streamUrl = addonUrl.replace('/manifest.json', '/stream/12345');
-  const stream = await fetch(streamUrl);
+  const stream = await fetch(addonUrl.replace('/manifest.json', '/stream/12345'));
   const streamPayload = await stream.json();
   assert.equal(stream.status, 503);
-  assert.equal(streamPayload.error, 'CIDER_STREAM_FAILED');
-  assert.equal(streamPayload.code, 'CIDER_BRIDGE_NOT_CONFIGURED');
-});
-
-test('addon search uses the configured Cider relay and forwards the scoped app token', async t => {
-  let observedToken = '';
-  let observedPath = '';
-  const cider = http.createServer((request, response) => {
-    observedToken = request.headers.apptoken || '';
-    observedPath = request.url || '';
-    response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ data: { results: { songs: { data: [] } } } }));
-  });
-  const ciderPort = await listen(cider);
-  const backend = await startBackend('http://127.0.0.1:' + ciderPort, { allowLoopbackCiderApi: true });
-  t.after(async () => {
-    await backend.stop();
-    await new Promise(resolve => cider.close(resolve));
-  });
-
-  const health = await fetch(backend.origin + '/health').then(response => response.json());
-  assert.equal(health.ciderBridgeConfigured, true);
-
-  const addonUrl = await createAddon(backend);
-  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
-  const search = await fetch(searchUrl);
-  const payload = await search.json();
-
-  assert.equal(search.status, 200, JSON.stringify(payload));
-  assert.deepEqual(payload, { tracks: [] });
-  assert.equal(observedToken, 'fake-cider-api-token-for-bridge-test');
-  assert.equal(observedPath, '/api/v2/amapi/search?term=bridge-test&types=songs&limit=25&offset=0');
-});
-
-test('unreachable Cider relay returns a bounded, machine-readable 503', async t => {
-  const unusedPort = await freePort();
-  const backend = await startBackend('http://127.0.0.1:' + unusedPort, { allowLoopbackCiderApi: true });
-  t.after(() => backend.stop());
-
-  const addonUrl = await createAddon(backend);
-  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
-  const startedAt = Date.now();
-  const response = await fetch(searchUrl);
-  const payload = await response.json();
-
-  assert.equal(response.status, 503);
-  assert.equal(payload.error, 'CIDER_SEARCH_FAILED');
-  assert.equal(payload.code, 'CIDER_BRIDGE_UNAVAILABLE');
-  assert.ok(Date.now() - startedAt < 5000, 'an offline bridge should fail promptly');
-  assert.doesNotMatch(payload.message, /fetch failed/i);
-});
-
-test('hosted configuration rejects the old Deplexo localhost Cider API setting', async t => {
-  const backend = await startBackend('http://127.0.0.1:10767');
-  t.after(() => backend.stop());
-
-  const health = await fetch(backend.origin + '/health').then(response => response.json());
-  assert.equal(health.ciderBridgeConfigured, false);
-  assert.match(health.ciderBridgeConfigurationError, /HTTPS relay origin/i);
-
-  const addonUrl = await createAddon(backend);
-  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
-  const response = await fetch(searchUrl);
-  const payload = await response.json();
-
-  assert.equal(response.status, 503);
-  assert.equal(payload.code, 'CIDER_BRIDGE_MISCONFIGURED');
-  assert.match(payload.message, /BITCIDER_ALLOW_LOOPBACK_CIDER_API=true/i);
+  assert.equal(streamPayload.code, 'CIDER_BRIDGE_OFFLINE');
   assert.doesNotMatch(backend.output(), /fetch failed/i);
-});
-
-test('Cider bridge requests enforce their configured timeout', async t => {
-  const cider = http.createServer((_request, response) => {
-    setTimeout(() => {
-      if (!response.destroyed) {
-        response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ data: [] }));
-      }
-    }, 2500);
-  });
-  const ciderPort = await listen(cider);
-  const backend = await startBackend('http://127.0.0.1:' + ciderPort, { allowLoopbackCiderApi: true });
-  t.after(async () => {
-    await backend.stop();
-    await new Promise(resolve => cider.close(resolve));
-  });
-
-  const addonUrl = await createAddon(backend);
-  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
-  const startedAt = Date.now();
-  const response = await fetch(searchUrl);
-  const payload = await response.json();
-
-  assert.equal(response.status, 504);
-  assert.equal(payload.code, 'CIDER_BRIDGE_TIMEOUT');
-  assert.ok(Date.now() - startedAt < 3500, 'the upstream request should be aborted at the configured deadline');
 });
 
 test('authenticated addon search and stream resolve through the matching local desktop relay', async t => {
@@ -430,13 +330,120 @@ test('authenticated addon search and stream resolve through the matching local d
   try {
     const searchUrl = linked.addonUrl.replace('/manifest.json', '/search?q=Bridge%20Test');
     const search = await fetch(searchUrl);
+    constest('authenticated addon search and stream resolve through the local Cider API in the BitCider browser tab', async t => {
+  const backend = await startBackend('');
+  const ciderRequests = [];
+  const cider = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      ciderRequests.push({
+        method: request.method,
+        path: request.url,
+        token: request.headers.apptoken || '',
+        body: body ? JSON.parse(body) : null
+      });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      if (request.url?.startsWith('/api/v2/amapi/search?')) {
+        response.end(JSON.stringify({
+          data: {
+            results: {
+              songs: {
+                data: [{
+                  id: 'catalog-track-123',
+                  type: 'songs',
+                  attributes: {
+                    name: 'Bridge Test Song',
+                    artistName: 'BitCider Test Artist',
+                    albumName: 'Relay Album',
+                    durationInMillis: 180000,
+                    playParams: { id: 'catalog-track-123' }
+                  }
+                }]
+              }
+            }
+          }
+        }));
+      } else if (request.url === '/api/v2/queue') {
+        response.end(JSON.stringify({
+          data: [{
+            id: 'catalog-track-123',
+            assetURL: 'https://media.example.invalid/bitcider-test.m4a',
+            attributes: { name: 'Bridge Test Song', artistName: 'BitCider Test Artist' }
+          }]
+        }));
+      } else {
+        response.end(JSON.stringify({ data: {} }));
+      }
+    });
+  });
+  const ciderPort = await listen(cider);
+  t.after(async () => {
+    await backend.stop();
+    await new Promise(resolve => cider.close(resolve));
+  });
+
+  const bridge = await createAuthenticatedBrowserBridge(backend);
+  assert.match(bridge.bridgeId, /^[A-Za-z0-9_-]{20,80}$/);
+  assert.match(bridge.bridgeSecret, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(bridge.ciderToken, 'fake-cider-api-token-for-browser-bridge-test');
+
+  const controller = new AbortController();
+  const bridgeLoop = (async () => {
+    while (!controller.signal.aborted) {
+      try {
+        const poll = await fetch(backend.origin + '/api/bridge/poll', {
+          method: 'POST',
+          headers: browserBridgeHeaders(bridge),
+          body: JSON.stringify({ waitMs: 750 }),
+          signal: controller.signal
+        });
+        const next = await poll.json();
+        if (poll.status === 401) throw new Error('test browser bridge unexpectedly rejected its secret');
+        if (!poll.ok) throw new Error('test browser bridge poll returned HTTP ' + poll.status);
+        if (!next.job) continue;
+
+        const localUrl = 'http://127.0.0.1:' + ciderPort + next.job.path;
+        const localResponse = await fetch(localUrl, {
+          method: next.job.method,
+          headers: {
+            Accept: 'application/json',
+            apptoken: bridge.ciderToken,
+            ...(next.job.body ? { 'Content-Type': 'application/json' } : {})
+          },
+          ...(next.job.body ? { body: JSON.stringify(next.job.body) } : {})
+        });
+        const raw = await localResponse.text();
+        let body;
+        try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
+        const delivered = await fetch(backend.origin + '/api/bridge/result', {
+          method: 'POST',
+          headers: browserBridgeHeaders(bridge),
+          body: JSON.stringify({
+            requestId: next.job.requestId,
+            status: localResponse.status,
+            body
+          }),
+          signal: controller.signal
+        });
+        assert.equal(delivered.status, 200);
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        throw error;
+      }
+    }
+  })();
+
+  try {
+    const searchUrl = bridge.addonUrl.replace('/manifest.json', '/search?q=Bridge%20Test');
+    const search = await fetch(searchUrl);
     const searchPayload = await search.json();
     assert.equal(search.status, 200, JSON.stringify(searchPayload));
     assert.equal(searchPayload.tracks[0].title, 'Bridge Test Song');
     assert.equal(searchPayload.tracks[0].artist, 'BitCider Test Artist');
 
-    const streamUrl = linked.addonUrl.replace('/manifest.json', '/stream/catalog-track-123');
-    const stream = await fetch(streamUrl);
+    const stream = await fetch(bridge.addonUrl.replace('/manifest.json', '/stream/catalog-track-123'));
     const streamPayload = await stream.json();
     assert.equal(stream.status, 200, JSON.stringify(streamPayload));
     assert.equal(streamPayload.url, 'https://media.example.invalid/bitcider-test.m4a');
@@ -445,47 +452,67 @@ test('authenticated addon search and stream resolve through the matching local d
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/play-item' && item.method === 'POST'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/pause' && item.method === 'POST'));
-    assert.ok(ciderRequests.every(item => item.token === linked.ciderToken));
-    assert.ok(ciderRequests.every(item => item.token !== linked.config.relayKey));
+    assert.ok(ciderRequests.every(item => item.token === bridge.ciderToken));
   } finally {
     controller.abort();
-    await relayLoop;
+    await bridgeLoop;
   }
 });
 
+test('browser bridge rejects invalid credentials and does not accept arbitrary Cider endpoints', async t => {
+  const backend = await startBackend('');
+  t.after(() => backend.stop());
+  const bridge = await createAuthenticatedBrowserBridge(backend);
+  const badPoll = await fetch(backend.origin + '/api/bridge/poll', {
+    method: 'POST',
+    headers: {
+      'X-BitCider-Bridge-Id': bridge.bridgeId,
+      'X-BitCider-Bridge-Secret': 'A'.repeat(43),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({})
+  });
+  assert.equal(badPoll.status, 401);
 
-test('desktop relay accepts only the bounded Cider catalog search and playback routes', () => {
-  const catalog = allowedCiderRequest({
+  const unknownResult = await fetch(backend.origin + '/api/bridge/result', {
+    method: 'POST',
+    headers: browserBridgeHeaders(bridge),
+    body: JSON.stringify({ requestId: 'not-a-live-job', status: 200, body: {} })
+  });
+  assert.equal(unknownResult.status, 404);
+});
+
+test('browser relay accepts only the bounded Cider catalog search and playback routes', () => {
+  const catalog = allowedLocalCiderJob({
     method: 'GET',
-    apiPath: '/api/v2/amapi/search?term=bridge+test&types=songs&limit=25&offset=0'
+    path: '/api/v2/amapi/search?term=bridge+test&types=songs&limit=25&offset=0'
   });
   assert.equal(catalog?.method, 'GET');
 
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'GET',
-    apiPath: '/api/v2/amapi/search?term=bridge&types=albums&limit=25&offset=0'
+    path: '/api/v2/amapi/search?term=bridge&types=albums&limit=25&offset=0'
   }), null);
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'GET',
-    apiPath: '/api/v2/amapi/search?term=bridge&types=songs&limit=100&offset=0'
+    path: '/api/v2/amapi/search?term=bridge&types=songs&limit=100&offset=0'
   }), null);
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'GET',
-    apiPath: '/api/v2/amapi/raw/v1/me/library/songs'
+    path: '/api/v2/amapi/raw/v1/me/library/songs'
   }), null);
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'GET',
-    apiPath: 'https://example.com/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0'
+    path: 'https://example.com/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0'
   }), null);
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'POST',
-    apiPath: '/api/v2/playback/play-item',
+    path: '/api/v2/playback/play-item',
     body: { id: 'catalog-track-123', type: 'songs' }
   })?.method, 'POST');
-  assert.equal(allowedCiderRequest({
+  assert.equal(allowedLocalCiderJob({
     method: 'POST',
-    apiPath: '/api/v2/plugins/install',
+    path: '/api/v2/plugins/install',
     body: { url: 'https://example.com/plugin.zip' }
   }), null);
 });
-
