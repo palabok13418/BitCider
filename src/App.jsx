@@ -1192,7 +1192,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="cider-relay-copy">
-                    Search and playback requests are sent through your own encrypted outbound relay. Cider’s API port stays on your computer and is never exposed to the internet.
+                    Search and playback requests are sent through your own authenticated HTTPS relay. Cider’s API port stays on your computer and is never exposed to the internet.
                   </p>
                   <button
                     className="primary-button relay-config-button"
