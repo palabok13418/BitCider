@@ -520,7 +520,7 @@ const GradientASCII = ({
   const settings = {
     colors: palette.length > 1 ? palette : [palette[0], palette[0]],
     shape: SHAPES[shape] ?? 0,
-    characters: characters || DEFAULT_CHARACTERS,
+    characters: String(characters || DEFAULT_CHARACTERS).slice(0, MAX_CHARACTERS),
     cellSize: clamp(cellSize, 6, 64),
     density: clamp(density, 0, 1),
     glyphOpacity: clamp(glyphOpacity, 0, 1),
@@ -669,7 +669,8 @@ const GradientASCII = ({
       return rgb;
     };
 
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    let reduce = motionQuery?.matches ?? false;
     const view = { width: 1, height: 1, ratio: 1 };
     const ramp = new Float32Array(MAX_COLORS * 3);
     const clickData = new Float32Array(MAX_CLICKS * 4);
