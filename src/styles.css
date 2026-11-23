@@ -46,6 +46,7 @@ a { color: inherit; text-decoration: none; }
 .site-waves .balatro__canvas { mix-blend-mode: screen; }
 .site-waves .gradient-waves-canvas { mix-blend-mode: screen; }
 .site-waves .laser-flow-canvas { mix-blend-mode: screen; }
+.site-waves .light-tunnel-canvas { mix-blend-mode: screen; }
 .ambient { position: fixed; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(100px); opacity: .16; }
 .ambient-one { width: 440px; height: 280px; background: #b75364; top: 12%; left: -15%; }
 .ambient-two { width: 420px; height: 360px; background: #ab3e50; right: -16%; bottom: 4%; }
