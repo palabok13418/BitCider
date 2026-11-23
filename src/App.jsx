@@ -1102,13 +1102,8 @@ export default function App() {
           <div className="eyebrow"><span className="eyebrow-line" /> CIDER × BITCHORD</div>
           <h1>Your <span className="cider-word">Cider.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
           <p className="hero-description">
-            Connect your Cider account once. BitCider turns that approved connection into a personal source you can add to BitChord.
+            Connect your Cider account now to use as a source within BitChord as your personal source of music.
           </p>
-          <div className="hero-meta">
-            <span><Icon name="shield" size={15} /> Your own connection</span>
-            <span className="meta-separator" />
-            <span><Icon name="link" size={15} /> One addon URL</span>
-          </div>
         </div>
 
         <section className="connection-card" aria-live="polite">
