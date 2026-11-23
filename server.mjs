@@ -1081,6 +1081,7 @@ app.get('/health', (_req, res) => res.json({
   service: 'BitCider',
   apiVersion: API_VERSION,
   ciderBridgeConfigured: Boolean(CIDER_API),
+  perUserCiderRelaySupported: true,
   ciderBridgeConfigurationError: CIDER_API_CONFIG.error || null
 }));
 
@@ -1112,8 +1113,8 @@ app.get('/api/status', localOnly, async (req, res) => {
     apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
-    ciderBridgeConfigured: Boolean(CIDER_API) || Boolean(authenticated && user?.ciderRelayKeyHash),
-    ciderBridgeConfigurationError: CIDER_API_CONFIG.error || null,
+    ciderBridgeConfigured: authenticated ? Boolean(user?.ciderRelayKeyHash) : Boolean(CIDER_API),
+    ciderBridgeConfigurationError: authenticated && user?.ciderRelayKeyHash ? null : (CIDER_API_CONFIG.error || null),
     ciderRelay: authenticated ? relayStatus(accountId, user) : { provisioned: false, online: false, lastSeenAt: null },
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
