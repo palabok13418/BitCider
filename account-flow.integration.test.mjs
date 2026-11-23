@@ -207,6 +207,17 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.match(manifestResponse.headers.get('cache-control') || '', /no-store/i);
   assert.equal(manifestResponse.headers.get('cache-control')?.includes('public'), false);
 
+  // A fresh browser cannot password-sign-in before Cider identifies the account.
+  const unlinkedBrowser = await jsonRequest(secondOrigin, '/api/status');
+  const unlinkedBrowserCookie = cookieFrom(unlinkedBrowser.response);
+  const unlinkedPasswordLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
+    method: 'POST',
+    cookie: unlinkedBrowserCookie,
+    csrf: unlinkedBrowser.payload.csrfToken,
+    body: { password: initialPassword }
+  });
+  assert.equal(unlinkedPasswordLogin.response.status, 401);
+
   // A second browser that approves the same Cider token is directed to the
   // existing account instead of creating a duplicate anonymous connection.
   const secondAnonymous = await jsonRequest(secondOrigin, '/api/status');
@@ -226,15 +237,6 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.equal(duplicateBrowserStatus.payload.pendingAccountSetup, false);
 
   // A clean second browser can sign in and recover the account-owned addon URL.
-  const unlinkedPasswordLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
-    method: 'POST',
-    cookie: secondAnonymousCookie,
-    csrf: secondAnonymous.payload.csrfToken,
-    body: { password: initialPassword }
-  });
-  assert.equal(unlinkedPasswordLogin.response.status, 401);
-  const secondLoginLink = await connectExistingCiderToken(secondOrigin, secondAnonymousCookie, secondAnonymous.payload.csrfToken, fakeCiderToken);
-  assert.equal(secondLoginLink.response.status, 200);
   const secondLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
     method: 'POST',
     cookie: secondAnonymousCookie,
