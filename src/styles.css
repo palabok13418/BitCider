@@ -1732,7 +1732,7 @@ h1 .bitchord-word {
 .mode-toggle.is-dragging .mode-toggle-thumb {
   cursor: grabbing;
   filter: url(#bitcider-source-warp);
-  transition: none;
+  transition: background .24s ease, box-shadow .24s ease, border-radius .2s ease;
   animation: source-selector-warp .65s ease-in-out infinite;
 }
 
@@ -1744,6 +1744,7 @@ h1 .bitchord-word {
 
 .mode-toggle.is-switching .mode-toggle-thumb {
   filter: saturate(1.2) drop-shadow(0 0 12px rgba(255,255,255,.2));
+  animation: source-selector-confirm .7s cubic-bezier(.18,.82,.24,1) both;
 }
 
 .mode-warp-defs {
@@ -1786,6 +1787,12 @@ h1 .bitchord-word {
 @keyframes source-selector-glint {
   0%, 100% { transform: translateX(-24%); opacity: .15; }
   50% { transform: translateX(24%); opacity: .9; }
+}
+
+@keyframes source-selector-confirm {
+  0% { scale: .96 1.04; border-radius: 13px; }
+  42% { scale: 1.035 .94; border-radius: 15px 8px 13px 9px; }
+  100% { scale: 1 1; border-radius: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
