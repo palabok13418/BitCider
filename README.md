@@ -10,7 +10,7 @@ BitCider is configured for only these hosting providers:
 - **Netlify** serves the React frontend and forwards API/addon requests through a Netlify Function.
 - **Cloudflare Workers** serves the React frontend and forwards API/addon requests through a Worker.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup and environment variables.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, and the Deplexo same-origin API rule.
 
 ## Current features
 
@@ -21,7 +21,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup and environment variables.
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Encrypts saved Cider app tokens with AES-256-GCM.
 - Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
-- Keeps connection-management API routes behind the trusted Netlify/Cloudflare gateway secret.
+- Allows the official Deplexo HTTPS app origin to manage its own session directly, while Netlify/Cloudflare use a private gateway secret.
 
 ## Cider authorization
 
