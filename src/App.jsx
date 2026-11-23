@@ -66,6 +66,7 @@ function AccountSetupWindow({
   const [tokenEncryptionConfigured, setTokenEncryptionConfigured] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [recoverySaved, setRecoverySaved] = useState(false);
+  const [clipboardNotice, setClipboardNotice] = useState('');
   const [enrollmentPassword, setEnrollmentPassword] = useState('');
   const strength = passwordStrength(password);
 
@@ -228,21 +229,31 @@ function AccountSetupWindow({
     }
   }
 
+  function showClipboardNotice() {
+    setClipboardNotice('Copied to clipboard');
+    window.setTimeout(() => setClipboardNotice(''), 1900);
+  }
+
   async function copyAccountKey() {
     if (!accountKey) return;
     try {
       await navigator.clipboard.writeText(accountKey);
-      setInfo('Account Key copied. Keep it private.');
+      setError('');
+      showClipboardNotice();
     } catch {
+      setClipboardNotice('');
       setError('Clipboard access was blocked. Select and copy the Account Key manually.');
     }
   }
 
   async function copyRecoveryCodes() {
+    if (!recoveryCodes.length) return;
     try {
       await navigator.clipboard.writeText(recoveryCodes.join('\n'));
-      setInfo('Recovery codes copied. Store them somewhere private and offline.');
+      setError('');
+      showClipboardNotice();
     } catch {
+      setClipboardNotice('');
       setError('Clipboard access was blocked. Select and copy the codes manually.');
     }
   }
@@ -325,8 +336,7 @@ function AccountSetupWindow({
           )}
 
           {stage === 'recovery' && (
-            <div className="account-popup-state">
-              <div className="card-label">ACCOUNT SECURITY</div>
+            <div className="account-popup-state account-security-compact">
               <h1>Save your Account Key and recovery codes.</h1>
               <p>Your Account Key identifies your BitCider account on new devices. It is shown once. Keep it private and store the recovery codes separately.</p>
               <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
@@ -422,7 +432,7 @@ function AccountSetupWindow({
           )}
 
           {stage === 'recovery-reset' && (
-            <div className="account-popup-state">
+            <div className="account-popup-state account-security-compact">
               <div className="card-label">PASSWORD RECOVERED</div>
               <h1>Save your new recovery codes.</h1>
               <p>Your password and Account Key have been reset. Other active devices were signed out. Save the new key and replacement recovery codes before continuing.</p>
@@ -437,6 +447,12 @@ function AccountSetupWindow({
 
           {error && <div className="notice notice-warning">{error}</div>}
           {info && stage !== 'recovery' && <div className="notice notice-info">{info}</div>}
+          {clipboardNotice && (
+            <div className="account-clipboard-toast" role="status" aria-live="polite">
+              <Icon name="check" size={13} />
+              <span>{clipboardNotice}</span>
+            </div>
+          )}
         </div>
       </section>
     </div>
