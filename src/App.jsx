@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const CIDER_AUTH_URI = 'cider://request-auth?app-name=BitCider&scopes=playback%2Cqueue%2Clibrary%2Caudio';
-
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   if (name === 'arrow') return <svg {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
@@ -26,11 +24,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [noticeType, setNoticeType] = useState('info');
-  const [manualToken, setManualToken] = useState('');
-  const [showManualToken, setShowManualToken] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  const authUri = useMemo(() => CIDER_AUTH_URI, []);
 
   async function refreshStatus() {
     try {
@@ -52,30 +46,69 @@ export default function App() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not save the Cider connection.'));
-    setManualToken('');
-    setShowManualToken(false);
-    setNotice('Cider is linked. Your personal BitChord source is ready.');
+    setNotice('Cider is linked. Your personal BitChord source has been created.');
     setNoticeType('success');
     await refreshStatus();
   }
 
-  function connectCider() {
-    setShowManualToken(true);
-    setNotice('Cider is opening. Approve BitCider, then paste the one-time app token shown by Cider below.');
-    setNoticeType('info');
-    // Use the exact Cider custom-protocol request supplied for BitCider.
-    // A web page cannot silently read a token displayed by another desktop app.
-    window.location.href = authUri;
+  async function requestCiderToken() {
+    let response;
+    try {
+      response = await fetch('http://127.0.0.1:10767/api/v2/auth/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ app_name: 'BitCider', scopes: SCOPES }),
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: AbortSignal.timeout(125000)
+      });
+    } catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw new Error('Cider authorization timed out. Make sure Cider is open, then try again.');
+      }
+      throw new Error('Could not reach Cider’s local API. Open Cider and allow this website under Settings → Connections → Extension security, then try again.');
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const apiError = payload?.error;
+    const errorCode = typeof apiError === 'object' ? apiError?.code : '';
+    const apiMessage = typeof apiError === 'object'
+      ? apiError?.message
+      : (typeof apiError === 'string' ? apiError : '');
+
+    const knownErrors = {
+      AUTH_REQUEST_DENIED: 'Cider authorization was denied. You can try again whenever you’re ready.',
+      AUTH_REQUEST_TIMEOUT: 'Cider’s approval dialog timed out. Try connecting again.',
+      AUTH_REQUEST_BUSY: 'Cider already has an approval dialog open. Finish or dismiss it before trying again.',
+      AUTH_REQUEST_COOLDOWN: 'Cider is briefly limiting authorization requests. Wait a few seconds and try again.',
+      AUTH_REQUEST_BANNED: 'Cider temporarily blocked authorization after repeated denied requests. Try again later.'
+    };
+
+    if (!response.ok) {
+      if (response.status === 404 || response.status === 405) {
+        throw new Error('This Cider version does not support the current authorization API. Update Cider and try again.');
+      }
+      throw new Error(knownErrors[errorCode] || apiMessage || 'Cider could not authorize BitCider. Check the Cider app and try again.');
+    }
+
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+    const token = typeof data?.token === 'string' ? data.token.trim() : '';
+    if (token.length < 12 || token.length > 8192 || /[\\r\\n]/.test(token)) {
+      throw new Error('Cider returned an invalid authorization response. Please try again.');
+    }
+    return token;
   }
 
-  async function submitManualToken(event) {
-    event.preventDefault();
-    if (!manualToken.trim()) return;
+  async function connectCider() {
     setBusy(true);
+    setNotice('Requesting access from Cider. Approve the BitCider dialog in the Cider app.');
+    setNoticeType('info');
     try {
-      await saveToken(manualToken.trim());
+      const token = await requestCiderToken();
+      setNotice('Cider approved BitCider. Saving your encrypted connection…');
+      await saveToken(token);
     } catch (error) {
-      setNotice(error.message);
+      setNotice(error.message || 'Could not complete Cider authorization.');
       setNoticeType('warning');
     } finally {
       setBusy(false);
@@ -102,7 +135,6 @@ export default function App() {
       if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not disconnect.'));
       setNotice('Cider has been disconnected from this BitCider instance.');
       setNoticeType('info');
-      setShowManualToken(false);
       await refreshStatus();
     } catch (error) {
       setNotice(error.message);
@@ -179,7 +211,7 @@ export default function App() {
                 <div className="cider-icon"><Icon name="music" size={25} /></div>
                 <div>
                   <h2>Link Cider</h2>
-                  <p>Authorize BitCider from the Cider app.</p>
+                  <p>Approve BitCider directly in Cider. Your token is returned automatically.</p>
                 </div>
               </div>
               <div className="scope-panel">
@@ -193,24 +225,7 @@ export default function App() {
                 <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
                 <span className="button-icon"><Icon name="arrow" /></span>
               </button>
-              <a className="text-link" href={authUri}>Open Cider authorization manually <Icon name="external" size={14} /></a>
-
-              {showManualToken && (
-                <form className="manual-token-form" onSubmit={submitManualToken}>
-                  <label htmlFor="cider-token">ONE-TIME CIDER TOKEN</label>
-                  <input
-                    id="cider-token"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck="false"
-                    value={manualToken}
-                    onChange={event => setManualToken(event.target.value)}
-                    placeholder="Paste the token shown by Cider"
-                  />
-                  <button type="submit" disabled={busy || !manualToken.trim()}>FINISH LINKING</button>
-                  <small>The token is saved encrypted by your BitCider service. Do not share it.</small>
-                </form>
-              )}
+              <p className="auth-help">Keep this page open while Cider displays the permission prompt. Approve the requested playback, queue, library, and audio access to finish linking.</p>
             </>
           ) : (
             <>
