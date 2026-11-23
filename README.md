@@ -123,6 +123,8 @@ The logs intentionally omit raw upstream response bodies and credentials. They i
 
 Optional environment variable: `BITMONO_TRACKS_API_BASE` (defaults to `https://tracks.monochrome.st`). It must be the upstream API root, not a `/search` URL.
 
+If both Monochrome search routes fail or return no usable tracks, BitMono automatically falls back to the Deezer provider at `https://dzr.tabs-vs-spaces.wtf`. It uses the BitChord-compatible `GET /search?q=...&quality=HIGH` and `GET /stream/{id}?quality=HIGH|LOW` routes. Deezer results receive a `dzr_` ID prefix so stream resolution is routed back to the correct provider. Deezer fallback is reported as HIGH/LOW and MP3 (or the actual upstream metadata); it is never mislabeled as FLAC, Hi-Res, or Dolby Atmos. Set `BITMONO_DEEZER_API_BASE` to override the fallback API root. Logs use the `fallback.deezer.*` event prefix.
+
 ## BitChord audio qualities
 
 The personal addon exposes exactly three quality choices in BitChord:
