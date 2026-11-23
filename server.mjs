@@ -2239,7 +2239,7 @@ const BITMONO_DEEZER_API_BASE = String(process.env.BITMONO_DEEZER_API_BASE || 'h
 async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {}) {
   const url = new URL('/search', BITMONO_DEEZER_API_BASE);
   url.searchParams.set('q', query);
-  url.searchParams.set('quality', 'LOSSLESS');
+  url.searchParams.set('quality', 'HIGH');
   bitMonoLog('info', 'fallback.deezer.request', { requestId, query: bitMonoLogText(query), title: bitMonoLogText(requestContext.title, 120), artist: bitMonoLogText(requestContext.artist, 120) });
   try {
     const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
@@ -2277,7 +2277,7 @@ async function resolveBitMonoDeezerStream(trackId, quality, requestId) {
   const metadata = bitMonoTrackMetadata.get(trackId) || {};
   if (typeof metadata.streamURL === 'string' && metadata.streamURL.startsWith('https://')) return { url: metadata.streamURL };
   const url = new URL('/stream/' + encodeURIComponent(metadata.upstreamId || trackId), BITMONO_DEEZER_API_BASE);
-  url.searchParams.set('quality', quality === 'auto' ? 'LOSSLESS' : quality.toUpperCase());
+  url.searchParams.set('quality', quality === 'low' ? 'LOW' : 'HIGH');
   const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
   if (!response.ok) {
     bitMonoLog('warn', 'fallback.deezer.stream_http_error', { requestId, status: response.status, trackId: bitMonoLogText(trackId, 100) });
@@ -2301,7 +2301,7 @@ app.get('/bitmono/manifest.json', (_req, res) => {
     id: 'com.bitcider.bitmono',
     name: 'BitMono',
     version: '1.0.0',
-    description: 'Free Monochrome music source for BitChord. The current upstream stream is FLAC/Lossless stereo; audio metadata reflects the rendition actually supplied.',
+    description: 'Free Monochrome music source for BitChord with Deezer high-quality fallback when Monochrome has no usable match.',
     icon: 'https://monochrome.st/favicon.ico',
     resources: ['search', 'stream'],
     types: ['track'],
