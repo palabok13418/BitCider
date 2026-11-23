@@ -66,17 +66,20 @@ function normalizeCiderApiUrl(value) {
 
   try {
     const parsed = new URL(raw);
-    const hostname = parsed.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    const hostname = parsed.hostname.toLowerCase();
     const isLoopbackHost = hostname === 'localhost'
       || hostname === '127.0.0.1'
-      || hostname === '::1';
-    if (!['https:', 'http:'].includes(parsed.protocol)
+      || hostname === '::1'
+      || hostname === '[::1]';
+    const allowLoopbackHttp = process.env.BITCIDER_ALLOW_LOOPBACK_CIDER_API === 'true';
+    const isAllowedProtocol = parsed.protocol === 'https:'
+      || (parsed.protocol === 'http:' && isLoopbackHost && allowLoopbackHttp);
+    if (!isAllowedProtocol
       || parsed.username || parsed.password
-      || parsed.pathname !== '/' || parsed.search || parsed.hash
-      || (parsed.protocol !== 'https:' && !isLoopbackHost)) {
+      || parsed.pathname !== '/' || parsed.search || parsed.hash) {
       return {
         url: '',
-        error: 'CIDER_API_URL must be an HTTPS origin, or a loopback HTTP origin for local development.'
+        error: 'CIDER_API_URL must be an HTTPS relay origin. HTTP loopback is allowed only for local development when BITCIDER_ALLOW_LOOPBACK_CIDER_API=true.'
       };
     }
     return { url: parsed.origin, error: '' };
