@@ -201,7 +201,7 @@ export default function App() {
                 <div className="scope-list">
                   {SCOPES.map(scope => <span className="scope-chip" key={scope}>{scope}</span>)}
                 </div>
-                <p>Only the access needed for discovery, queue handling and playback.</p>
+                <p>Search your Cider library, read the queue and control playback.</p>
               </div>
               <button className="primary-button" onClick={connectCider} disabled={busy || status.loading}>
                 <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
