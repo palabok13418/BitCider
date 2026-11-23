@@ -1261,7 +1261,9 @@ export default function App() {
 
           {connected && status.ciderBridgeConfigured === false && (
             <div className="notice notice-warning addon-bridge-notice">
-              Your Cider connection is saved, but this account has no desktop relay configured yet. Download the relay config above to reconnect addon search and playback.
+              {status.account?.authenticated === true
+                ? 'Your Cider connection is saved, but this account has no desktop relay configured yet. Download the relay config in the Desktop Cider Relay panel above to restore addon search and playback.'
+                : 'Create or sign in to a BitCider account to generate your private desktop Cider relay. Hosted addon search and playback cannot reach Cider on this computer until that relay is running.'}
             </div>
           )}
           {status.backendCompatible === false && (
