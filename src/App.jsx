@@ -463,6 +463,13 @@ function AccountSetupWindow({
 export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
+  const [pageMode, setPageMode] = useState('cider');
+  const [modePickerOpen, setModePickerOpen] = useState(false);
+  const [modeTransitioning, setModeTransitioning] = useState(false);
+  const [bitMonoCopied, setBitMonoCopied] = useState(false);
+  const bitMonoAddonUrl = typeof window !== 'undefined'
+    ? window.location.origin + '/bitmono/manifest.json'
+    : '/bitmono/manifest.json';
   const [status, setStatus] = useState({ loading: true, connected: false });
   const [browserBridge, setBrowserBridge] = useState({ state: 'offline', message: 'Waiting for the local Cider bridge.' });
   const [busy, setBusy] = useState(false);
@@ -486,6 +493,22 @@ export default function App() {
       return false;
     }
   });
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const mono = pageMode === 'mono';
+    document.title = mono ? 'BitMono' : 'BitCider';
+    const favicon = document.querySelector('link[rel~="icon"]');
+    if (favicon) favicon.href = mono
+      ? '/monochrome-logo.svg?v=bitmono-brand-20261123'
+      : '/favicon.svg?v=bitcider-brand-20261122';
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.content = mono ? '#080808' : '#0d0708';
+    const description = document.querySelector('meta[name="description"]');
+    if (description) description.content = mono
+      ? 'BitMono is a free Monochrome music source for BitChord.'
+      : 'Connect your Cider account and use it as a personal BitChord source with BitCider.';
+  }, [pageMode]);
+
   const [syncNotificationPermission, setSyncNotificationPermission] = useState(() => {
     try {
       return typeof window !== 'undefined' && 'Notification' in window
@@ -1059,6 +1082,29 @@ export default function App() {
     }
   }
 
+  async function copyBitMonoAddonUrl() {
+    try {
+      await navigator.clipboard.writeText(bitMonoAddonUrl);
+      setBitMonoCopied(true);
+      window.setTimeout(() => setBitMonoCopied(false), 1800);
+    } catch {
+      setNotice('Clipboard access was blocked. Select and copy the BitMono URL manually.');
+      setNoticeType('warning');
+    }
+  }
+
+  function switchPageMode(nextMode) {
+    if (nextMode !== 'cider' && nextMode !== 'mono') return;
+    if (nextMode === pageMode) {
+      setModePickerOpen(false);
+      return;
+    }
+    setModeTransitioning(true);
+    setPageMode(nextMode);
+    setModePickerOpen(false);
+    window.setTimeout(() => setModeTransitioning(false), 920);
+  }
+
   async function disconnect() {
     setBusy(true);
     try {
@@ -1085,28 +1131,76 @@ export default function App() {
   if (isAccountPopup) return <AccountSetupWindow />;
 
   return (
-    <main className="site-shell">
-      <BackgroundSwitcher warping={addonUrlGenerating} />
+    <main className={`site-shell ${pageMode === 'mono' ? 'mono-mode' : 'cider-mode'} ${modeTransitioning ? 'is-mode-transitioning' : ''}`}>
+      <BackgroundSwitcher warping={addonUrlGenerating} mode={pageMode} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
       <header className="topbar">
-        <a className="brand" href="/" aria-label="BitCider home">
-          <img className="brand-logo" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
-          <span className="brand-word">Bit<span>Cider</span></span>
+        <a className={`brand ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} href="/" aria-label={pageMode === 'mono' ? 'BitMono home' : 'BitCider home'}>
+          <span className="brand-logo-stack" aria-hidden="true">
+            <img className="brand-logo brand-logo-cider" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
+            <img className="brand-logo brand-logo-mono" src="/monochrome-logo.svg?v=bitmono-brand-20261123" alt="" />
+          </span>
+          <span className="brand-word-stack" aria-hidden="true">
+            <span className="brand-word brand-word-cider">Bit<span>Cider</span></span>
+            <span className="brand-word brand-word-mono">Bit<span>Mono</span></span>
+          </span>
         </a>
       </header>
 
       <section className="hero">
         <div className="hero-copy">
-          <div className="eyebrow"><span className="eyebrow-line" /> CIDER × BITCHORD</div>
-          <h1>Your <span className="cider-word">Cider.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
-          <p className="hero-description">
-            Connect your Cider account now to use as a source within BitChord as your personal source of music.
-          </p>
+          {pageMode === 'mono' ? (
+            <>
+              <div className="eyebrow"><span className="eyebrow-line" /> MONOCHROME × BITCHORD</div>
+              <h1>Your <span className="monochrome-word">Monochrome.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
+              <p className="hero-description">
+                Use Monochrome as your free personal music source in BitChord. Copy the BitMono addon link below to add it.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="eyebrow"><span className="eyebrow-line" /> CIDER × BITCHORD</div>
+              <h1>Your <span className="cider-word">Cider.</span><br /><span className="bitchord-word">Your BitChord.</span></h1>
+              <p className="hero-description">
+                Connect your Cider account now to use as a source within BitChord as your personal source of music.
+              </p>
+            </>
+          )}
         </div>
 
         <section className="connection-card" aria-live="polite">
+          {pageMode === 'mono' ? (
+            <div className="bitmono-card-content">
+              <div className="card-heading bitmono-card-heading">
+                <span className="bitmono-card-mark"><img src="/monochrome-logo.svg?v=bitmono-brand-20261123" alt="" /></span>
+                <div>
+                  <h2>BitMono is ready</h2>
+                  <p>A free Monochrome music source for BitChord. No account linking or addon payment is required.</p>
+                </div>
+              </div>
+              <div className="addon-url-panel bitmono-url-panel">
+                <div className="scope-title">FREE BITMONO ADDON URL</div>
+                <div className="url-row bitmono-url-row">
+                  <input className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly aria-label="BitMono addon URL" onFocus={event => event.currentTarget.select()} />
+                  <button
+                    className={`copy-button ${bitMonoCopied ? 'is-copied' : ''}`}
+                    type="button"
+                    onClick={copyBitMonoAddonUrl}
+                    aria-label="Copy BitMono addon URL"
+                  >
+                    {bitMonoCopied ? <Icon name="check" /> : <Icon name="copy" />}
+                  </button>
+                </div>
+                <div className="url-hint bitmono-free-hint">
+                  <span className="tiny-dot" /> FREE · NO ACCOUNT LINKING
+                </div>
+              </div>
+              <p className="bitmono-setup-hint">In BitChord, open Settings → Sources / Add-ons → Add custom source, then paste this URL.</p>
+            </div>
+          ) : (
+            <>
           {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
             <div className="notice notice-warning">
               Secure account storage is not configured. Add the stable 32-byte base64url BITCIDER_ENCRYPTION_KEY secret in Deplexo before linking Cider.
@@ -1264,10 +1358,36 @@ export default function App() {
           {!notice && status.backendCompatible !== false && (status.message || status.error || status.deploymentWarning) && (
             <div className="notice notice-warning">{status.message || status.error || status.deploymentWarning}</div>
           )}
+            </>
+          )}
         </section>
       </section>
 
-      {inlineAccountFlow && (
+      <section className={`mode-switcher ${modePickerOpen ? 'is-open' : ''}`} aria-label="Switch source experience">
+        <button
+          className="mode-pull-tab"
+          type="button"
+          onClick={() => setModePickerOpen(open => !open)}
+          aria-expanded={modePickerOpen}
+          aria-controls="bitcider-mode-panel"
+        >
+          <span className="mode-pull-grip" aria-hidden="true"><i /><i /><i /></span>
+          <span>{modePickerOpen ? 'CLOSE SOURCE SWITCHER' : 'SWITCH SOURCE'}</span>
+          <span className={`mode-pull-chevron ${modePickerOpen ? 'is-open' : ''}`} aria-hidden="true">⌃</span>
+        </button>
+        {modePickerOpen && (
+          <div className="mode-switch-panel" id="bitcider-mode-panel">
+            <div className="mode-switch-caption">CHOOSE YOUR BITCHORD SOURCE</div>
+            <div className={`mode-toggle ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} role="group" aria-label="Choose Cider or Monochrome">
+              <span className="mode-toggle-thumb" aria-hidden="true" />
+              <button type="button" onClick={() => switchPageMode('cider')} aria-pressed={pageMode === 'cider'}>Cider</button>
+              <button type="button" onClick={() => switchPageMode('mono')} aria-pressed={pageMode === 'mono'}>Monochrome</button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {pageMode === 'cider' && inlineAccountFlow && (
         <AccountSetupWindow
           inline
           initialFlow={inlineAccountFlow.flow}
@@ -1285,7 +1405,7 @@ export default function App() {
         />
       )}
 
-      {!status.publicUrlConfigured && connected && !status.pendingAccountSetup && (
+      {pageMode === 'cider' && !status.publicUrlConfigured && connected && !status.pendingAccountSetup && (
         <div className="network-note">
           <b>Network note</b>
           Your generated URL uses your local network address. BitChord must be able to reach this computer on the same network. For access outside your network, configure a public HTTPS tunnel and set <code>BITCIDER_PUBLIC_URL</code>.
@@ -1293,8 +1413,8 @@ export default function App() {
       )}
 
       <footer className="footer">
-        <span>BITCIDER</span>
-        <span>MADE FOR BITCHORD · POWERED BY CIDER</span>
+        <span>{pageMode === 'mono' ? 'BITMONO' : 'BITCIDER'}</span>
+        <span>{pageMode === 'mono' ? 'MADE FOR BITCHORD · POWERED BY MONOCHROME' : 'MADE FOR BITCHORD · POWERED BY CIDER'}</span>
         <a href="https://bitchord.kushagrasingh.in/docs" target="_blank" rel="noreferrer">ADDON PROTOCOL <Icon name="external" size={12} /></a>
       </footer>
     </main>

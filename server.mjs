@@ -1770,6 +1770,193 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+const BITMONO_TRACKS_API_BASE = String(process.env.BITMONO_TRACKS_API_BASE || 'https://tracks.monochrome.st').replace(/\/+$/, '');
+const BITMONO_QUALITY_OPTIONS = Object.freeze([
+  { value: 'auto', label: 'Auto' },
+  { value: 'dolby_atmos_hi', label: 'Dolby Atmos Hi' },
+  { value: 'dolby_atmos_mid', label: 'Dolby Atmos Mid' },
+  { value: 'dolby_atmos_low', label: 'Dolby Atmos Low' },
+  { value: 'hi_res_lossless', label: 'Hi-Res Lossless (24 Bit)' },
+  { value: 'lossless', label: 'Lossless (16 Bit)' },
+  { value: 'high', label: 'High' },
+  { value: 'low', label: 'Low' }
+]);
+const bitMonoSearchCache = new Map();
+const bitMonoTrackMetadata = new Map();
+
+function bitMonoRememberTrack(id, metadata) {
+  bitMonoTrackMetadata.set(id, metadata);
+  if (bitMonoTrackMetadata.size > 500) {
+    const oldest = bitMonoTrackMetadata.keys().next().value;
+    bitMonoTrackMetadata.delete(oldest);
+  }
+}
+
+function normalizeBitMonoTrack(item) {
+  if (!item || typeof item !== 'object') return null;
+  const rawId = String(item.trackId ?? item.id ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(rawId)) return null;
+
+  const rawArtists = Array.isArray(item.artistNames) && item.artistNames.length
+    ? item.artistNames
+    : Array.isArray(item.artists)
+      ? item.artists.map(artist => artist?.name || artist?.displayName || artist).filter(Boolean)
+      : [];
+  const artist = rawArtists.map(value => String(value || '').trim()).filter(Boolean).join(', ')
+    || item.artist?.name
+    || item.artist
+    || 'Unknown Artist';
+  const durationValue = Number(item.duration ?? item.durationMs ?? 0);
+  const duration = Number.isFinite(durationValue) && durationValue > 0
+    ? (durationValue > 1000 ? Math.round(durationValue / 1000) : Math.round(durationValue))
+    : 0;
+  const artworkURL = item.artwork || item.cover || item.release?.artwork || null;
+  const album = item.albumTitle || item.releaseTitle || item.release?.title || '';
+
+  bitMonoRememberTrack(rawId, {
+    title: item.title || 'Unknown Title',
+    artist,
+    album,
+    artworkURL,
+    isrc: item.isrc || null,
+    duration
+  });
+
+  return {
+    id: 'mono_' + rawId,
+    title: item.title || 'Unknown Title',
+    artist,
+    album,
+    duration,
+    artworkURL,
+    format: 'flac',
+    audioQuality: 'LOSSLESS',
+    audioMode: 'STEREO',
+    audioModes: ['STEREO'],
+    isrc: item.isrc || null
+  };
+}
+
+async function fetchBitMonoTracksSearch(query) {
+  const url = new URL('/search/tracks', BITMONO_TRACKS_API_BASE);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', '20');
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'BitMono-BitChord-Addon/1.0',
+          Origin: 'https://monochrome.st',
+          Referer: 'https://monochrome.st/'
+        },
+        signal: AbortSignal.timeout(9000)
+      });
+      if ((response.status === 429 || response.status >= 500) && attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      if (!response.ok) throw new Error('Monochrome track search returned HTTP ' + response.status + '.');
+      const payload = await response.json();
+      const items = Array.isArray(payload?.tracks)
+        ? payload.tracks
+        : Array.isArray(payload?.data?.tracks)
+          ? payload.data.tracks
+          : [];
+      return items.map(normalizeBitMonoTrack).filter(Boolean);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error('Monochrome track search failed.');
+}
+
+// BitMono is an intentionally free, public BitChord source. It does not
+// depend on a Cider token, user account, or per-user addon key.
+app.get('/bitmono/manifest.json', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    id: 'com.bitcider.bitmono',
+    name: 'BitMono',
+    version: '1.0.0',
+    description: 'Free Monochrome music source for BitChord, powered by tracks.monochrome.st. Audio metadata reflects the rendition actually supplied upstream.',
+    icon: 'https://monochrome.st/favicon.ico',
+    resources: ['search', 'stream'],
+    types: ['track'],
+    contentType: 'music',
+    settings: [{
+      key: 'quality',
+      type: 'select',
+      label: 'Audio quality',
+      default: 'auto',
+      options: BITMONO_QUALITY_OPTIONS
+    }]
+  });
+});
+
+app.get('/bitmono/search', async (req, res) => {
+  const query = String(req.query.q || '').trim();
+  if (!query) return res.json({ tracks: [] });
+  if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
+
+  const cacheKey = query.toLowerCase();
+  const cached = bitMonoSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    res.set('Cache-Control', 'public, max-age=30');
+    return res.json({ tracks: cached.tracks });
+  }
+  if (cached) bitMonoSearchCache.delete(cacheKey);
+
+  try {
+    const tracks = await fetchBitMonoTracksSearch(query);
+    bitMonoSearchCache.set(cacheKey, { tracks, expiresAt: Date.now() + 30000 });
+    if (bitMonoSearchCache.size > 300) {
+      const oldest = bitMonoSearchCache.keys().next().value;
+      bitMonoSearchCache.delete(oldest);
+    }
+    res.set('Cache-Control', 'public, max-age=30');
+    return res.json({ tracks });
+  } catch (error) {
+    console.warn('BitMono search failed:', error.message);
+    return res.status(502).json({
+      error: 'BITMONO_SEARCH_FAILED',
+      message: 'The Monochrome track service could not complete this search. Please try again.'
+    });
+  }
+});
+
+app.get('/bitmono/stream/:trackId', (req, res) => {
+  const suppliedId = String(req.params.trackId || '').trim();
+  const trackId = suppliedId.startsWith('mono_') ? suppliedId.slice(5) : suppliedId;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(trackId)) {
+    return res.status(400).json({ error: 'INVALID_TRACK_ID', message: 'The Monochrome track ID is invalid.' });
+  }
+
+  const metadata = bitMonoTrackMetadata.get(trackId) || null;
+  const url = BITMONO_TRACKS_API_BASE + '/track/' + encodeURIComponent(trackId);
+  res.set('Cache-Control', 'public, max-age=60');
+  // The official Monochrome web client resolves its stream with /track/{id}
+  // and identifies it as FLAC/Lossless stereo. Do not fabricate Atmos or
+  // 24-bit metadata based only on a user-selected preference.
+  return res.json({
+    url,
+    format: 'flac',
+    quality: 'LOSSLESS',
+    audioQuality: 'LOSSLESS',
+    codec: 'flac',
+    mimeType: 'audio/flac',
+    manifest: 'none',
+    encrypted: false,
+    audioMode: 'STEREO',
+    audioModes: ['STEREO'],
+    ...(metadata?.duration ? { duration: metadata.duration } : {})
+  });
+});
+
 app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   res.set('Cache-Control', 'private, no-store');
   res.json({

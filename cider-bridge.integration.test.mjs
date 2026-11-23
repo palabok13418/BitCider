@@ -32,7 +32,7 @@ async function listen(server) {
   return server.address().port;
 }
 
-async function startBackend() {
+async function startBackend(extraEnv = {}) {
   const port = await freePort();
   const origin = 'http://127.0.0.1:' + port;
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-bridge-test-'));
@@ -47,6 +47,7 @@ async function startBackend() {
       BITCIDER_ALLOW_LOOPBACK_ADMIN: 'true',
       BITCIDER_ENCRYPTION_KEY: encryptionKey,
       BITCIDER_CIDER_REQUEST_TIMEOUT_MS: '1500',
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -492,4 +493,106 @@ test('GradientASCII declares its shader-link readiness helper only once', async 
   const source = await fs.readFile(path.join(ROOT, 'src/GradientASCII.jsx'), 'utf8');
   const declarationCount = source.split('const linked = () =>').length - 1;
   assert.equal(declarationCount, 1, 'duplicate linked declarations break the production Vite build');
+});
+
+
+test('BitMono is a free Monochrome-backed addon with accurate stream metadata', async t => {
+  const upstreamRequests = [];
+  const upstream = http.createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    upstreamRequests.push(url.pathname + url.search);
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (url.pathname === '/search/tracks') {
+      response.end(JSON.stringify({
+        tracks: [{
+          trackId: '123456789012345',
+          title: 'Test Monochrome Song',
+          artistNames: ['Test Artist'],
+          albumTitle: 'Test Album',
+          duration: 225000,
+          artwork: 'https://images.example.invalid/test-cover.jpg',
+          isrc: 'USMOCK000001'
+        }]
+      }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: 'not found' }));
+  });
+
+  const upstreamPort = await listen(upstream);
+  t.after(() => {
+    upstream.closeAllConnections?.();
+    return new Promise(resolve => upstream.close(resolve));
+  });
+  const backend = await startBackend({
+    BITMONO_TRACKS_API_BASE: 'http://127.0.0.1:' + upstreamPort
+  });
+  t.after(() => backend.stop());
+
+  const manifestResponse = await fetch(backend.origin + '/bitmono/manifest.json');
+  const manifest = await manifestResponse.json();
+  assert.equal(manifestResponse.status, 200);
+  assert.equal(manifest.name, 'BitMono');
+  assert.deepEqual(manifest.resources, ['search', 'stream']);
+  assert.equal(manifest.settings[0].key, 'quality');
+  assert.deepEqual(
+    manifest.settings[0].options.map(option => option.label),
+    [
+      'Auto',
+      'Dolby Atmos Hi',
+      'Dolby Atmos Mid',
+      'Dolby Atmos Low',
+      'Hi-Res Lossless (24 Bit)',
+      'Lossless (16 Bit)',
+      'High',
+      'Low'
+    ]
+  );
+
+  const preflight = await fetch(backend.origin + '/bitmono/search', { method: 'OPTIONS' });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+
+  const search = await fetch(backend.origin + '/bitmono/search?q=Test%20Monochrome%20Song');
+  const searchPayload = await search.json();
+  assert.equal(search.status, 200, JSON.stringify(searchPayload));
+  assert.equal(searchPayload.tracks.length, 1);
+  assert.equal(searchPayload.tracks[0].id, 'mono_123456789012345');
+  assert.equal(searchPayload.tracks[0].title, 'Test Monochrome Song');
+  assert.equal(searchPayload.tracks[0].artist, 'Test Artist');
+  assert.equal(searchPayload.tracks[0].album, 'Test Album');
+  assert.equal(searchPayload.tracks[0].duration, 225);
+  assert.equal(searchPayload.tracks[0].audioQuality, 'LOSSLESS');
+  assert.deepEqual(searchPayload.tracks[0].audioModes, ['STEREO']);
+
+  const stream = await fetch(backend.origin + '/bitmono/stream/mono_123456789012345?quality=dolby_atmos_hi');
+  const streamPayload = await stream.json();
+  assert.equal(stream.status, 200, JSON.stringify(streamPayload));
+  assert.equal(streamPayload.url, 'http://127.0.0.1:' + upstreamPort + '/track/123456789012345');
+  assert.equal(streamPayload.format, 'flac');
+  assert.equal(streamPayload.codec, 'flac');
+  assert.equal(streamPayload.quality, 'LOSSLESS');
+  assert.equal(streamPayload.encrypted, false);
+  assert.equal(streamPayload.audioMode, 'STEREO');
+  assert.deepEqual(upstreamRequests, ['/search/tracks?q=Test+Monochrome+Song&limit=20']);
+});
+
+test('BitMono page mode updates branding, tab metadata, and keeps the source URL copyable', async () => {
+  const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
+  const styleSource = await fs.readFile(path.join(ROOT, 'src/styles.css'), 'utf8');
+  const backgroundSource = await fs.readFile(path.join(ROOT, 'src/BackgroundSwitcher.jsx'), 'utf8');
+  assert.match(appSource, /MONOCHROME × BITCHORD/);
+  assert.match(appSource, /Your <span className="monochrome-word">Monochrome\\.<\\/span>/);
+  assert.match(appSource, /document\\.title = mono \\? 'BitMono' : 'BitCider'/);
+  assert.match(appSource, /'\\/monochrome-logo\\.svg/);
+  assert.match(appSource, /\\/bitmono\\/manifest\\.json/);
+  assert.match(appSource, /className="bitmono-url-input" type="text" value=\\{bitMonoAddonUrl\\} readOnly/);
+  assert.match(appSource, /SWITCH SOURCE/);
+  assert.match(appSource, /setPageMode\\(nextMode\\)/);
+  assert.match(styleSource, /\\.site-shell\\.mono-mode/);
+  assert.match(styleSource, /brand-logo-mono/);
+  assert.match(styleSource, /Dolby Atmos/);
+  assert.match(backgroundSource, /if \\(mode === 'mono'\\)/);
+  assert.match(backgroundSource, /colors=\\{\\['#030303', '#151515'/);
 });

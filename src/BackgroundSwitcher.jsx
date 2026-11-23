@@ -617,7 +617,7 @@ function chooseBackground() {
   return BACKGROUND_REGISTRY[secureRandomIndex(BACKGROUND_REGISTRY.length)]?.id || 'lightfall';
 }
 
-export default function BackgroundSwitcher({ warping = false }) {
+export default function BackgroundSwitcher({ warping = false, mode = 'cider' }) {
   const [backgroundId, setBackgroundId] = useState(() => chooseBackground());
 
   const selected = BACKGROUND_REGISTRY.find(item => item.id === backgroundId) || BACKGROUND_REGISTRY[0];
@@ -625,6 +625,37 @@ export default function BackgroundSwitcher({ warping = false }) {
     console.warn('[BitCider] The selected animated background is unavailable. Falling back to Lightfall.', error);
     setBackgroundId('lightfall');
   };
+
+  if (mode === 'mono') {
+    return (
+      <Suspense fallback={null}>
+        <Grainient
+          className="site-waves"
+          colors={['#030303', '#151515', '#343434', '#676767', '#a0a0a0', '#dedede']}
+          type="linear"
+          angle={42}
+          bands={1.25}
+          speed={0.22}
+          flow={0.82}
+          scale={1.08}
+          softness={0.76}
+          silk={0.7}
+          grainAmount={0.045}
+          grainSize={1.15}
+          grainAnimated
+          contrast={1.08}
+          saturation={0.16}
+          variation={41}
+          interactive
+          stir={0.7}
+          clickSwirl
+          intro
+          lightMode={false}
+          dpr={1.2}
+        />
+      </Suspense>
+    );
+  }
 
   return selected.render({ warping, onError: handleBackgroundError });
 }
