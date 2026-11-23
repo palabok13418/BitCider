@@ -121,6 +121,47 @@ async function jsonRequest(origin, route, { method = 'GET', cookie, csrf, body }
   return { response, payload };
 }
 
+async function createAuthenticatedRelayConfig(backend) {
+  const initial = await jsonRequest(backend.origin, '/api/status');
+  const initialCookie = cookieFrom(initial.response);
+  const connect = await jsonRequest(backend.origin, '/api/connect', {
+    method: 'POST',
+    cookie: initialCookie,
+    csrf: initial.payload.csrfToken,
+    body: {
+      token: 'fake-cider-api-token-for-relay-test',
+      scopes: ['playback', 'queue', 'library', 'audio']
+    }
+  });
+  assert.equal(connect.response.status, 200, JSON.stringify(connect.payload));
+
+  const registration = await jsonRequest(backend.origin, '/api/account/register', {
+    method: 'POST',
+    cookie: initialCookie,
+    csrf: initial.payload.csrfToken,
+    body: { password: 'A-secure-test-passphrase-2026!' }
+  });
+  assert.equal(registration.response.status, 201, JSON.stringify(registration.payload));
+  const accountCookie = cookieFrom(registration.response);
+  const status = await jsonRequest(backend.origin, '/api/status', { cookie: accountCookie });
+  assert.equal(status.response.status, 200);
+  assert.equal(status.payload.account.authenticated, true);
+
+  const setup = await jsonRequest(backend.origin, '/api/relay/config', {
+    method: 'POST',
+    cookie: accountCookie,
+    csrf: status.payload.csrfToken,
+    body: {}
+  });
+  assert.equal(setup.response.status, 200, JSON.stringify(setup.payload));
+  return {
+    addonUrl: status.payload.addonUrl,
+    cookie: accountCookie,
+    status: status.payload,
+    config: setup.payload.config
+  };
+}
+
 async function createAddon(backend) {
   const status = await jsonRequest(backend.origin, '/api/status');
   const cookie = cookieFrom(status.response);
@@ -261,3 +302,134 @@ test('Cider bridge requests enforce their configured timeout', async t => {
   assert.equal(payload.code, 'CIDER_BRIDGE_TIMEOUT');
   assert.ok(Date.now() - startedAt < 3500, 'the upstream request should be aborted at the configured deadline');
 });
+
+test('authenticated addon search and stream resolve through the matching local desktop relay', async t => {
+  const backend = await startBackend('');
+  const ciderRequests = [];
+  const cider = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      ciderRequests.push({
+        method: request.method,
+        path: request.url,
+        token: request.headers.apptoken || '',
+        body: body ? JSON.parse(body) : null
+      });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      if (request.url?.startsWith('/api/v2/library/songs?')) {
+        response.end(JSON.stringify({
+          data: [{
+            id: 'library-row-1',
+            attributes: {
+              name: 'Bridge Test Song',
+              artistName: 'BitCider Test Artist',
+              albumName: 'Relay Album',
+              durationInMillis: 180000,
+              playParams: { id: 'catalog-track-123' }
+            }
+          }],
+          meta: { offset: 0, limit: 100, total: 1 }
+        }));
+      } else if (request.url === '/api/v2/queue') {
+        response.end(JSON.stringify({
+          data: [{
+            id: 'catalog-track-123',
+            assetURL: 'https://media.example.invalid/bitcider-test.m4a',
+            attributes: { name: 'Bridge Test Song', artistName: 'BitCider Test Artist' }
+          }]
+        }));
+      } else {
+        response.end(JSON.stringify({ data: {} }));
+      }
+    });
+  });
+  const ciderPort = await listen(cider);
+  t.after(async () => {
+    await backend.stop();
+    await new Promise(resolve => cider.close(resolve));
+  });
+
+  const linked = await createAuthenticatedRelayConfig(backend);
+  assert.equal(linked.config.ciderToken, 'fake-cider-api-token-for-relay-test');
+  assert.match(linked.config.relayKey, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(linked.config.ciderApiUrl, 'http://127.0.0.1:10767');
+
+  const controller = new AbortController();
+  const relayLoop = (async () => {
+    while (!controller.signal.aborted) {
+      let poll;
+      try {
+        poll = await fetch(backend.origin + '/api/relay/next', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + linked.config.relayKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ waitMs: 750 }),
+          signal: controller.signal
+        });
+        const next = await poll.json();
+        if (poll.status === 401) throw new Error('test relay unexpectedly rejected its key');
+        if (!next.job) continue;
+        const localUrl = 'http://127.0.0.1:' + ciderPort + next.job.apiPath;
+        const localResponse = await fetch(localUrl, {
+          method: next.job.method,
+          headers: {
+            Accept: 'application/json',
+            apptoken: linked.config.ciderToken,
+            ...(next.job.body ? { 'Content-Type': 'application/json' } : {})
+          },
+          ...(next.job.body ? { body: JSON.stringify(next.job.body) } : {})
+        });
+        const text = await localResponse.text();
+        let payload;
+        try { payload = text ? JSON.parse(text) : {}; } catch { payload = {}; }
+        const delivered = await fetch(backend.origin + '/api/relay/respond', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + linked.config.relayKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            jobId: next.job.id,
+            status: localResponse.status,
+            payload
+          }),
+          signal: controller.signal
+        });
+        assert.equal(delivered.status, 200);
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        throw error;
+      }
+    }
+  })();
+
+  try {
+    const searchUrl = linked.addonUrl.replace('/manifest.json', '/search?q=Bridge%20Test');
+    const search = await fetch(searchUrl);
+    const searchPayload = await search.json();
+    assert.equal(search.status, 200, JSON.stringify(searchPayload));
+    assert.equal(searchPayload.tracks[0].title, 'Bridge Test Song');
+    assert.equal(searchPayload.tracks[0].artist, 'BitCider Test Artist');
+
+    const streamUrl = linked.addonUrl.replace('/manifest.json', '/stream/catalog-track-123');
+    const stream = await fetch(streamUrl);
+    const streamPayload = await stream.json();
+    assert.equal(stream.status, 200, JSON.stringify(streamPayload));
+    assert.equal(streamPayload.url, 'https://media.example.invalid/bitcider-test.m4a');
+
+    assert.ok(ciderRequests.some(item => item.path.startsWith('/api/v2/library/songs?offset=0&limit=100')));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/play-item' && item.method === 'POST'));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/pause' && item.method === 'POST'));
+    assert.ok(ciderRequests.every(item => item.token === linked.config.ciderToken));
+    assert.ok(ciderRequests.every(item => item.token !== linked.config.relayKey));
+  } finally {
+    controller.abort();
+    await relayLoop;
+  }
+});
+
