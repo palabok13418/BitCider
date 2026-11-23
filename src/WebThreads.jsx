@@ -544,7 +544,7 @@ export default function WebThreads({
       const cssHeight = Math.max(1, container.clientHeight);
       const requestedRatio = Math.min(window.devicePixelRatio || 1, s.dpr);
       const budgetRatio = Math.sqrt(MAX_RENDER_PIXELS / (cssWidth * cssHeight));
-      const ratio = Math.max(0.5, Math.min(requestedRatio, budgetRatio));
+      const ratio = Math.min(requestedRatio, budgetRatio);
       const width = Math.max(1, Math.round(cssWidth * ratio));
       const height = Math.max(1, Math.round(cssHeight * ratio));
       if (width === state.width && height === state.height) return false;
