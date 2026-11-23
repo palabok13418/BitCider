@@ -8,6 +8,7 @@ const GradientWaves = lazy(() => import('./GradientWaves.jsx'));
 const LaserFlow = lazy(() => import('./LaserFlow.jsx'));
 const LightTunnel = lazy(() => import('./LightTunnel.jsx'));
 const PrismaticBurst = lazy(() => import('./PrismaticBurst.jsx'));
+const SideRays = lazy(() => import('./SideRays.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -322,6 +323,37 @@ const BACKGROUND_REGISTRY = [
           lightMode={false}
           paused={false}
           dpr={1.2}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'side-rays',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <SideRays
+          className="site-waves"
+          rayColor1="#fd3f57"
+          rayColor2="#ff9bac"
+          blend={0.58}
+          origin="top-right"
+          speed={0.78}
+          intensity={1.65}
+          spread={2.65}
+          density={7}
+          sharpness={0.62}
+          tilt={-8}
+          falloff={1.72}
+          glow={1.05}
+          saturation={1.08}
+          dust={0.2}
+          followMouse
+          mouseInfluence={0.38}
+          intro
+          lightMode={false}
+          opacity={0.86}
+          maxDevicePixelRatio={1.35}
           onError={onError}
         />
       </Suspense>
