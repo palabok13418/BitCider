@@ -1998,8 +1998,8 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
       attempt,
       query: bitMonoLogText(query),
       queryLength: query.length,
-      bitChordTitle: requestContext.title,
-      bitChordArtist: requestContext.artist
+      bitChordTitle: bitMonoLogText(requestContext.title, 140),
+      bitChordArtist: bitMonoLogText(requestContext.artist, 140)
     });
 
     try {
@@ -2204,8 +2204,8 @@ app.get('/bitmono/search', async (req, res) => {
     requestId,
     query: bitMonoLogText(query),
     queryLength: query.length,
-    bitChordTitle: requestedTitle,
-    bitChordArtist: requestedArtist,
+    bitChordTitle: bitMonoLogText(requestedTitle, 140),
+    bitChordArtist: bitMonoLogText(requestedArtist, 140),
     quality: bitMonoLogText(req.query.quality || 'auto', 48),
     atmos: bitMonoLogText(req.query.atmos || '', 24),
     userAgent: bitMonoLogText(req.get('user-agent') || '', 110)
