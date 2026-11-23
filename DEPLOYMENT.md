@@ -28,7 +28,9 @@ Deplexo mounts the app's durable data volume at `/data`. BitCider stores its enc
 
 Keep `BITCIDER_PROXY_SECRET` out of Git, frontend build variables, and browser code. Set it as a secret in each gateway provider. The value on Deplexo must exactly match the value set on Netlify and Cloudflare.
 
-The Deplexo website can call its own `/api/*` routes directly. The backend accepts same-host HTTPS requests through Deplexo's reverse proxy, so you do not need to add the Deplexo domain to `BITCIDER_ALLOWED_ORIGINS` in the normal setup. Add the exact origin there only when using a separate custom frontend domain.
+The Deplexo website can call its own `/api/*` routes directly. The backend accepts HTTPS requests from the official `*.deplexo.com` app host, including through Deplexo's reverse proxy, so you do not need to add the app hostname to `BITCIDER_ALLOWED_ORIGINS` in the normal setup. Add exact origins there only when using a separate custom frontend domain.
+
+If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest `main` commit first. The current backend explicitly recognizes Deplexo's default `*.deplexo.com` HTTPS origins. If you use a custom domain, set `BITCIDER_ALLOWED_ORIGINS` to its exact origin (for example, `https://music.example.com`, with no path).
 
 ## 2. Deploy the website on Netlify
 
