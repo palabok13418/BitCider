@@ -91,6 +91,38 @@ For the Deplexo backend, use `npm start`. Deplexo supplies port 3000 through its
 - Back up Deplexo's persistent volume before deleting or recreating the application.
 
 
+## BitMono source and search diagnostics
+
+BitMono is the free Monochrome-backed BitChord source. It does not use a Cider account or a personal addon key. Its search route queries both official Monochrome endpoints:
+
+- `GET /search?q=...` for unified search, including track entries exposed through `topResults`.
+- `GET /search/tracks?q=...&limit=40` for the focused track catalogue.
+
+The backend normalizes the supported Monochrome response shapes, deduplicates tracks by upstream ID, and returns the BitChord `tracks` array with duration in seconds. When BitChord supplies a separate `title` hint and the combined title/artist search returns fewer than five unique candidates, BitMono also searches by title alone. BitChord's own title/artist matcher then scores the wider candidate pool.
+
+Only non-empty result sets are cached, for 15 seconds. Empty searches use `Cache-Control: no-store`, so a temporary upstream empty response cannot turn into a cached miss. Requests over 320 characters are rejected rather than silently shortened.
+
+### BitMono production logs
+
+Search diagnostics are written by the Deplexo backend as structured JSON lines with the `[BitMono]` prefix. Search responses include an `X-BitMono-Request-Id` header; use that ID to correlate the full request in Deplexo's service logs. The response also includes `X-BitMono-Cache: HIT|MISS`.
+
+Useful events:
+
+| Event | What it tells you |
+|---|---|
+| `search.received` | The query and BitChord title/artist hints reached the BitMono route. |
+| `upstream.request` | Which Monochrome endpoint was requested, with attempt number and elapsed time logged in its response. |
+| `upstream.response` | HTTP status, content type, payload keys, detected result arrays, and candidate count. |
+| `search.title_fallback_started` | The combined query returned fewer than five unique candidates, so the title-only lookup began. |
+| `search.title_fallback_complete` | Number of additional candidates contributed by title-only search. |
+| `search.merged` | Normalized result count, rejected/missing IDs and titles, duplicates, and a small sample of returned tracks. |
+| `search.upstream_empty` / `search.no_matches` | The upstream returned successfully but produced no usable tracks. |
+| `upstream.http_error` / `upstream.failed` / `search.failed` | HTTP, timeout, invalid JSON, or other upstream failures. |
+
+The logs intentionally omit raw upstream response bodies and credentials. They include only bounded query/title/artist text, endpoint metadata, result counts, and a small sample of normalized track metadata. If there is no `search.received` event for a request ID, the request did not reach the BitMono handler, which points to a frontend URL, proxy route, or deployment mismatch rather than a Monochrome catalogue miss.
+
+Optional environment variable: `BITMONO_TRACKS_API_BASE` (defaults to `https://tracks.monochrome.st`). It must be the upstream API root, not a `/search` URL.
+
 ## BitChord audio qualities
 
 The personal addon exposes exactly three quality choices in BitChord:
