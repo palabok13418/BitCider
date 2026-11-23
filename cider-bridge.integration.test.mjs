@@ -473,16 +473,21 @@ test('main App owns the browser bridge state used by its relay effect and panel'
 });
 
 
-test('Cider auth probe authenticates with apptoken and offers reauthorization after CORS failure', async () => {
+test('Cider auth probe separates origin CORS from the apptoken preflight and handles current 403 auth errors', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src/cider-bridge.js'), 'utf8');
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
   const probeStart = source.indexOf('async function probeLocalCider(');
   const probeEnd = source.indexOf('async function executeLocalCiderJob(', probeStart);
   const probe = source.slice(probeStart, probeEnd);
   assert.match(probe, /async function probeLocalCider\(signal, token\)/);
+  assert.match(probe, /headers:\s*\{\s*Accept:\s*'application\/json'\s*\}/);
   assert.match(probe, /apptoken:\s*token/);
+  assert.match(probe, /error\.corsStage = 'origin'/);
+  assert.match(probe, /error\.corsStage = 'apptoken'/);
+  assert.match(probe, /Cider allowed a basic request from this BitCider website/);
   assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
   assert.match(source, /LOCAL_CIDER_CORS_BLOCKED/);
+  assert.match(source, /error\?\.status === 401 \|\| error\?\.status === 403/);
   assert.match(appSource, /browserBridge\.state === 'cider-auth-required' && \(/);
   assert.match(appSource, /browserBridge\.state === 'cider-access-blocked'/);
   assert.match(appSource, /CIDER ACCESS BLOCKED/);
