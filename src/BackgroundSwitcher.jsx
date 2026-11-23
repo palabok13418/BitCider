@@ -14,6 +14,7 @@ const Topography = lazy(() => import('./Topography.jsx'));
 const WebThreads = lazy(() => import('./WebThreads.jsx'));
 const HoloMosaic = lazy(() => import('./HoloMosaic.jsx'));
 const Grainient = lazy(() => import('./Grainient.jsx'));
+const GradientASCII = lazy(() => import('./GradientASCII.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -546,6 +547,40 @@ const BACKGROUND_REGISTRY = [
           clickSwirl
           intro
           lightMode={false}
+          dpr={1.2}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'gradient-ascii',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <GradientASCII
+          className="site-waves"
+          colors={['#16090e', '#561226', '#a51c40', '#fd3f57', '#ff8fab', '#ffe1e7']}
+          shape="horizon"
+          characters=" .,:;-=+*xX0S8#@"
+          cellSize={17}
+          density={0.82}
+          glyphOpacity={0.94}
+          glow={0.42}
+          depthOfField={0.2}
+          flicker={0.16}
+          softness={0.68}
+          scale={1.08}
+          flow={0.72}
+          speed={0.28}
+          gradientOpacity={0.78}
+          grain={0.035}
+          variation={27}
+          mouseInteraction
+          scrambleRadius={0.095}
+          clickEffect="wave"
+          intro
+          lightMode={false}
+          fontFamily="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
           dpr={1.2}
           onError={onError}
         />
