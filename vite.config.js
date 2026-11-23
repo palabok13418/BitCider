@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     proxy: {
-      '/api': 'http://127.0.0.1:8787'
+      '/api': process.env.BITCIDER_DEV_BACKEND || 'http://127.0.0.1:8787'
     }
   }
 });
