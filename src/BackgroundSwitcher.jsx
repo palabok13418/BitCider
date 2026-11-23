@@ -13,6 +13,7 @@ const Silk = lazy(() => import('./Silk.jsx'));
 const Topography = lazy(() => import('./Topography.jsx'));
 const WebThreads = lazy(() => import('./WebThreads.jsx'));
 const HoloMosaic = lazy(() => import('./HoloMosaic.jsx'));
+const Grainient = lazy(() => import('./Grainient.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -513,6 +514,38 @@ const BACKGROUND_REGISTRY = [
           flipOnClick
           lightMode={false}
           paused={false}
+          dpr={1.2}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'grainient',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <Grainient
+          className="site-waves"
+          colors={['#16090e', '#4b1020', '#8c1836', '#d9274c', '#fd3f57', '#ff9bac', '#ffdce2']}
+          type="linear"
+          angle={42}
+          bands={1.35}
+          speed={0.3}
+          flow={0.92}
+          scale={1.12}
+          softness={0.74}
+          silk={0.68}
+          grainAmount={0.055}
+          grainSize={1.25}
+          grainAnimated
+          contrast={1.12}
+          saturation={1.08}
+          variation={31}
+          interactive
+          stir={0.9}
+          clickSwirl
+          intro
+          lightMode={false}
           dpr={1.2}
           onError={onError}
         />
