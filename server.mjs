@@ -1158,11 +1158,20 @@ app.post('/api/relay/config', localOnly, requireCsrf, requireDedicatedTokenEncry
       relayUrl: relayOrigin.origin,
       relayKey,
       ciderApiUrl: 'http://127.0.0.1:10767',
-      ciderToken: token,
       requestTimeoutMs: 15000
     },
     agentUrl: relayOrigin.origin + '/bitcider-relay.mjs'
   });
+});
+
+app.post('/api/relay/credentials', async (req, res) => {
+  const match = findRelayAccount(relayBearer(req));
+  if (!match) return res.status(401).json({ error: 'RELAY_UNAUTHORIZED' });
+  const token = tokenForUser(match.account);
+  if (!token) return res.status(409).json({ error: 'CIDER_CONNECTION_REQUIRED' });
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  return res.json({ ciderToken: token });
 });
 
 app.post('/api/relay/next', async (req, res) => {
