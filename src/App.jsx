@@ -1285,6 +1285,9 @@ export default function App() {
     }
   }
 
+  const selectorMode = modeDragProgress === null
+    ? pageMode
+    : (modeDragProgress >= 0.5 ? 'mono' : 'cider');
   const connected = Boolean(status.connected);
 
   if (isAccountPopup) return <AccountSetupWindow />;
@@ -1524,14 +1527,14 @@ export default function App() {
         </section>
       <section className="mode-switcher" aria-label="Switch source">
         <div
-          className={`mode-toggle ${pageMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''}`}
+          className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''}`}
           role="slider"
           aria-label="Source selector"
           aria-orientation="horizontal"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round((modeDragProgress ?? (pageMode === 'mono' ? 1 : 0)) * 100)}
-          aria-valuetext={pageMode === 'mono' ? 'Monochrome' : 'Cider'}
+          aria-valuetext={selectorMode === 'mono' ? 'Monochrome' : 'Cider'}
           tabIndex={0}
           onKeyDown={handleModeSliderKeyDown}
           onPointerDown={beginModeDrag}
