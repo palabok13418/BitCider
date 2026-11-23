@@ -85,6 +85,35 @@ export function allowedLocalCiderJob(job) {
 }
 
 async function probeLocalCider(signal, token) {
+  // First make a CORS-simple request without apptoken. This tells us whether
+  // Cider permits this website origin at all, independently of its custom
+  // authentication-header preflight.
+  try {
+    await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'error',
+      headers: { Accept: 'application/json' },
+      targetAddressSpace: 'loopback',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
+    });
+  } catch (cause) {
+    if (cause?.name === 'TypeError') {
+      const error = new Error(
+        'Cider did not allow the BitCider website origin to read its local API. Reconnect from this exact BitCider website and approve the origin prompt in Cider. If the origin is still blocked, update Cider to a build that supports browser-origin access; BitCider cannot add CORS permission headers to Cider.'
+      );
+      error.code = 'LOCAL_CIDER_CORS_BLOCKED';
+      error.corsStage = 'origin';
+      error.cause = cause;
+      throw error;
+    }
+    throw cause;
+  }
+
+  // This second request adds the documented apptoken header. Because that
+  // header is not CORS-safelisted, the browser must preflight it with OPTIONS.
   let response;
   try {
     response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
@@ -103,9 +132,10 @@ async function probeLocalCider(signal, token) {
   } catch (cause) {
     if (cause?.name === 'TypeError') {
       const error = new Error(
-        'Chrome cannot read Cider’s local API response. The Cider app must allow https://bitcider.de.deplexo.com and the apptoken request header in its CORS preflight. BitCider cannot add those response headers to Cider.'
+        'Cider allowed a basic request from this BitCider website, but blocked the authenticated request because its CORS policy did not allow the required apptoken header. Reconnecting the same token will not fix this Cider-side preflight restriction. Update Cider to a build that allows apptoken for approved browser origins.'
       );
       error.code = 'LOCAL_CIDER_CORS_BLOCKED';
+      error.corsStage = 'apptoken';
       error.cause = cause;
       throw error;
     }
@@ -136,7 +166,6 @@ async function probeLocalCider(signal, token) {
     throw error;
   }
 }
-
 async function executeLocalCiderJob(job, token) {
   const allowed = allowedLocalCiderJob(job);
   if (!allowed) {
@@ -184,7 +213,7 @@ async function executeLocalCiderJob(job, token) {
           message: timedOut
             ? 'Cider did not answer the local API request within 12 seconds.'
             : (corsBlocked
-              ? 'The browser blocked Cider’s cross-origin API request. Reconnect Cider from this BitCider website and approve the access prompt. If it still fails, this Cider build is not allowing the BitCider origin and apptoken header through CORS.'
+              ? 'The browser blocked Cider’s authenticated cross-origin API request. Cider must allow this BitCider origin and the apptoken header in its CORS preflight. Reconnecting cannot override a Cider-side CORS restriction; update Cider to a build that supports approved browser origins.'
               : 'The BitCider tab cannot reach Cider at 127.0.0.1:10767. Open Cider and allow local-network access for this BitCider site.')
         }
       }
@@ -253,7 +282,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
           setState('connected', 'This BitCider tab is connected to Cider on this computer.');
         } catch (error) {
           localCiderAvailable = false;
-          if (error?.ciderCode === 'UNAUTHORIZED_APP_TOKEN' || error?.status === 401) {
+          if (error?.ciderCode === 'UNAUTHORIZED_APP_TOKEN' || error?.status === 401 || error?.status === 403) {
             localCiderAuthFailed = true;
             setState(
               'cider-auth-required',
