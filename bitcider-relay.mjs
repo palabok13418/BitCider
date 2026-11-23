@@ -4,6 +4,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const isDirectExecution = Boolean(invokedPath && import.meta.url === pathToFileURL(invokedPath).href);
+
 function resolveConfigPath(explicitPath) {
   if (explicitPath) return path.resolve(explicitPath);
   const directory = process.cwd();
@@ -24,7 +27,7 @@ function resolveConfigPath(explicitPath) {
   return path.resolve('./bitcider-relay.json');
 }
 
-const CONFIG_PATH = resolveConfigPath(process.argv[2]);
+const CONFIG_PATH = resolveConfigPath(isDirectExecution ? process.argv[2] : process.env.BITCIDER_RELAY_CONFIG_PATH);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function loadConfig() {
@@ -222,8 +225,7 @@ async function main() {
   }
 }
 
-const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
-if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
+if (isDirectExecution) {
   main().catch(error => {
     process.stderr.write('BitCider relay stopped: ' + error.message + '\\n');
     process.exitCode = 1;
