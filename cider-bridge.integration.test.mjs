@@ -575,6 +575,8 @@ test('BitMono is a free Monochrome-backed addon with accurate stream metadata', 
   assert.equal(streamPayload.quality, 'LOSSLESS');
   assert.equal(streamPayload.encrypted, false);
   assert.equal(streamPayload.audioMode, 'STEREO');
+  assert.equal(streamPayload.requestedQuality, 'dolby_atmos_hi');
+  assert.equal(streamPayload.qualityFallback, true);
   assert.deepEqual(upstreamRequests, ['/search/tracks?q=Test+Monochrome+Song&limit=20']);
 });
 
@@ -590,7 +592,7 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.includes('className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly'));
   assert.ok(appSource.includes('SWITCH SOURCE'));
   assert.ok(appSource.includes("setPageMode(nextMode)"));
-  assert.ok(appSource.includes('Dolby Atmos'));
+  assert.ok(appSource.includes('The extra Atmos, Hi-Res, and lossy choices stay available in BitChord'));
   assert.ok(styleSource.includes('.site-shell.mono-mode'));
   assert.ok(styleSource.includes('brand-logo-mono'));
   assert.ok(styleSource.includes('.bitmono-quality-note'));
