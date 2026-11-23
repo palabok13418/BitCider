@@ -4,13 +4,13 @@ import './LineWaves.css';
 const PIXEL_BUDGET = 2.4e6;
 const MAX_RIPPLES = 4;
 
-const VERTEX = \`#version 300 es
+const VERTEX = `#version 300 es
 const vec2 corners[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
 void main() {
   gl_Position = vec4(corners[gl_VertexID], 0.0, 1.0);
-}\`;
+}`;
 
-const FRAGMENT = \`#version 300 es
+const FRAGMENT = `#version 300 es
 precision highp float;
 uniform vec2 uResolution;
 uniform float uPixel;
@@ -162,7 +162,7 @@ void main() {
   float alpha = max(color.r, max(color.g, color.b));
   color = clamp(color + grain, 0.0, 1.0);
   fragColor = vec4(min(color, vec3(alpha)), alpha);
-}\`;
+}`;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
