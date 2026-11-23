@@ -1180,3 +1180,112 @@ h1 .bitchord-word {
   font: 12px/1.65 var(--mono);
   user-select: text;
 }
+
+
+/* Keep scroll gestures working without drawing browser-native scrollbars. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* The Account Key + recovery checkpoint is designed to fit one screen. */
+.account-popup-overlay,
+.account-popup-page {
+  overflow: hidden;
+}
+.account-popup-card {
+  position: relative;
+  overflow: hidden;
+}
+.popup-recovery-codes {
+  max-height: none;
+  overflow: visible;
+}
+.account-security-compact h1 {
+  margin: 0 0 7px;
+  font-size: clamp(25px, 5.2vw, 31px);
+  line-height: 1.06;
+}
+.account-security-compact > p {
+  margin: 0 0 11px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.account-security-compact .account-key-display {
+  gap: 6px;
+  margin: 9px 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+}
+.account-security-compact .account-key-display > span {
+  font-size: 8px;
+}
+.account-security-compact .account-key-display > code {
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.account-security-compact .account-key-display .account-secondary-button {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 9px;
+}
+.account-security-compact .popup-recovery-codes {
+  gap: 5px;
+  margin: 9px 0 11px;
+}
+.account-security-compact .popup-recovery-codes code {
+  padding: 6px 5px;
+  font-size: 8px;
+  line-height: 1.2;
+}
+.account-security-compact .account-popup-actions {
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.account-security-compact .account-popup-actions > button {
+  min-height: 39px;
+  padding: 8px 10px;
+  font-size: 9px;
+}
+.account-clipboard-toast {
+  position: absolute;
+  z-index: 5;
+  top: 72px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 32px);
+  padding: 9px 13px;
+  border: 1px solid rgba(119, 209, 167, .28);
+  border-radius: 999px;
+  color: #c8f3dc;
+  background: rgba(17, 42, 32, .96);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .32);
+  font: 10px var(--mono);
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: account-clipboard-in .16s ease-out both;
+}
+.account-clipboard-toast svg {
+  flex: 0 0 auto;
+  color: #8de0b5;
+}
+@keyframes account-clipboard-in {
+  from { opacity: 0; translate: 0 -4px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@media (max-height: 700px) {
+  .account-popup-page { padding: 10px; }
+  .account-popup-card { max-height: calc(100vh - 20px); }
+  .account-popup-content { padding: 15px 19px; }
+  .account-security-compact h1 { font-size: 25px; }
+  .account-security-compact .account-key-display { margin: 7px 0; }
+  .account-security-compact .popup-recovery-codes { margin: 7px 0 9px; }
+}
