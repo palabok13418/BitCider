@@ -1353,6 +1353,7 @@ h1 .bitchord-word {
   font-size: 11px;
 }
 .cider-relay-offline-note { color: #e8ad75; }
+.relay-reconnect-button { width: 100%; min-height: 46px; margin-top: 2px; }
 @media (max-width: 560px) {
   .cider-relay-panel { padding: 14px; }
   .cider-relay-panel-head { flex-direction: column; }
