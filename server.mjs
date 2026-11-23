@@ -454,36 +454,23 @@ app.get('/api/status', localOnly, (req, res) => {
 app.post('/api/connect', localOnly, async (req, res) => {
   const { store, sessionId, user: previous } = getUserSession(req, res);
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-  if (token.length < 12 || token.length > 4096 || /[\\r\\n]/.test(token)) {
-    return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Paste the Cider app token exactly as Cider provided it.' });
+  if (token.length < 12 || token.length > 8192 || /[\\r\\n]/.test(token)) {
+    return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Cider returned an invalid app token. Please authorize BitCider again.' });
   }
 
-  // Verify the token with Cider before storing it. This call must be performed
-  // by the per-user Cider bridge once that relay is deployed.
-  try {
-    const check = await fetch(CIDER_API + '/api/v2/client/info', {
-      headers: { Accept: 'application/json', apptoken: token },
-      cache: 'no-store',
-      redirect: 'error'
-    });
-    const payload = await check.json().catch(() => ({}));
-    if (!check.ok) {
-      const message = payload?.error?.message || payload?.error || 'Cider rejected this app token.';
-      return res.status(401).json({ error: 'CIDER_TOKEN_REJECTED', message: String(message) });
-    }
-  } catch {
-    return res.status(502).json({
-      error: 'CIDER_BRIDGE_REQUIRED',
-      message: 'This hosted BitCider server cannot reach Cider on your computer yet. The per-user Cider bridge is required before linking can complete.'
-    });
-  }
-
-  // Re-read after the asynchronous Cider verification so two users linking
-  // at the same time cannot overwrite each other's session records.
+  // The browser obtains this token directly from the user's own Cider instance
+  // through POST /api/v2/auth/request. A hosted Deplexo process cannot verify
+  // a user's 127.0.0.1 API endpoint, so do not attempt a cloud-side loopback
+  // check here. Cider only returns the token after the user approves the
+  // requested app permissions in its native consent dialog.
   const latestStore = readStore();
   latestStore.sessions[sessionId] = {
     addonKey: previous?.addonKey || crypto.randomBytes(18).toString('base64url'),
     ciderToken: encryptToken(token),
+    authMethod: 'cider-api-auth-request',
+    scopes: Array.isArray(req.body?.scopes)
+      ? req.body.scopes.filter(scope => ['playback', 'queue', 'library', 'audio'].includes(scope))
+      : [],
     connectedAt: new Date().toISOString()
   };
   writeStore(latestStore);
