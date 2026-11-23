@@ -4,7 +4,27 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-const CONFIG_PATH = path.resolve(process.argv[2] || './bitcider-relay.json');
+function resolveConfigPath(explicitPath) {
+  if (explicitPath) return path.resolve(explicitPath);
+  const directory = process.cwd();
+  try {
+    const candidates = fs.readdirSync(directory)
+      .filter(name => /^bitcider-relay(?: \(\d+\))?\.json$/i.test(name))
+      .map(name => {
+        const fullPath = path.join(directory, name);
+        try { return { fullPath, modifiedAt: fs.statSync(fullPath).mtimeMs }; }
+        catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.modifiedAt - a.modifiedAt);
+    if (candidates.length) return candidates[0].fullPath;
+  } catch {
+    // Fall back to the canonical name so loadConfig reports the useful error.
+  }
+  return path.resolve('./bitcider-relay.json');
+}
+
+const CONFIG_PATH = resolveConfigPath(process.argv[2]);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function loadConfig() {
