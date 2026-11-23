@@ -652,6 +652,39 @@ test('BitMono preloads the complete Monochrome audio file and serves it from a s
   assert.match(backend.output(), /"event":"search.merged"/);
   assert.match(backend.output(), /"duplicates":2?/);
 });
+
+test('BitMono refuses to return a playback URL when the upstream audio transfer is incomplete', async t => {
+  const upstream = http.createServer((request, response) => {
+    if (request.url === '/track/incomplete') {
+      response.writeHead(200, {
+        'Content-Type': 'audio/flac',
+        'Content-Length': '4096',
+        'Connection': 'close'
+      });
+      response.end(Buffer.alloc(256, 0x44));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  const upstreamPort = await listen(upstream);
+  t.after(() => {
+    upstream.closeAllConnections?.();
+    return new Promise(resolve => upstream.close(resolve));
+  });
+  const backend = await startBackend({
+    BITMONO_TRACKS_API_BASE: 'http://127.0.0.1:' + upstreamPort
+  });
+  t.after(() => backend.stop());
+
+  const stream = await fetch(backend.origin + '/bitmono/stream/mono_incomplete');
+  const payload = await stream.json();
+  assert.equal(stream.status, 502, JSON.stringify(payload));
+  assert.equal(payload.error, 'BITMONO_AUDIO_PRELOAD_FAILED');
+  assert.equal(typeof payload.requestId, 'string');
+  assert.equal(Object.hasOwn(payload, 'url'), false);
+  assert.match(backend.output(), /audio\\.download_failed/);
+});
 test('BitMono uses unified top results and does not cache empty upstream searches', async t => {
   const upstreamRequests = [];
   let recovered = false;
