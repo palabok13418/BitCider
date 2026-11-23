@@ -860,7 +860,7 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
 
   let passwordRecord;
   try { passwordRecord = await createPasswordRecord(password); }
-  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' });
+  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' }); }
   const recovery = createRecoveryCodes();
   const sessionId = req.bitciderSessionId;
 
