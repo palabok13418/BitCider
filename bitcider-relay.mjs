@@ -182,17 +182,17 @@ let stopping = false;
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
     stopping = true;
-    process.stdout.write('\\nBitCider local relay stopping...\\n');
+    process.stdout.write('\nBitCider local relay stopping...\n');
   });
 }
 
 async function main() {
   const config = loadConfig();
-  process.stdout.write('BitCider local Cider relay\\n');
-  process.stdout.write('Config: ' + CONFIG_PATH + '\\n');
-  process.stdout.write('Account relay: ' + config.relayUrl + '\\n');
-  process.stdout.write('Cider API: local loopback only\\n');
-  process.stdout.write('Retrieving the encrypted account Cider token over HTTPS; it will remain in memory only.\\n');
+  process.stdout.write('BitCider local Cider relay\n');
+  process.stdout.write('Config: ' + CONFIG_PATH + '\n');
+  process.stdout.write('Account relay: ' + config.relayUrl + '\n');
+  process.stdout.write('Cider API: local loopback only\n');
+  process.stdout.write('Retrieving the encrypted account Cider token over HTTPS; it will remain in memory only.\n');
 
   let credentialAttempts = 0;
   let ciderToken = '';
@@ -209,7 +209,7 @@ async function main() {
       if (error.fatal) throw error;
       credentialAttempts += 1;
       const delay = Math.min(10000, 750 * (2 ** Math.min(credentialAttempts - 1, 4)));
-      process.stderr.write('Could not retrieve the Cider token: ' + error.message + ' Retrying in ' + delay + ' ms.\\n');
+      process.stderr.write('Could not retrieve the Cider token: ' + error.message + ' Retrying in ' + delay + ' ms.\n');
       await sleep(delay);
     }
   }
@@ -222,10 +222,10 @@ async function main() {
       cache: 'no-store',
       signal: AbortSignal.timeout(3000)
     });
-    if (!probe.ok) process.stdout.write('Cider health probe returned HTTP ' + probe.status + '; continuing to reconnect.\\n');
-    else process.stdout.write('Cider is reachable.\\n');
+    if (!probe.ok) process.stdout.write('Cider health probe returned HTTP ' + probe.status + '; continuing to reconnect.\n');
+    else process.stdout.write('Cider is reachable.\n');
   } catch {
-    process.stdout.write('Cider is not reachable yet. Start Cider; the relay will keep reconnecting.\\n');
+    process.stdout.write('Cider is not reachable yet. Start Cider; the relay will keep reconnecting.\n');
   }
 
   let consecutiveErrors = 0;
@@ -244,7 +244,7 @@ async function main() {
       if (error.fatal) throw error;
       consecutiveErrors += 1;
       const delay = Math.min(10000, 750 * (2 ** Math.min(consecutiveErrors - 1, 4)));
-      process.stderr.write('Relay connection issue: ' + error.message + ' Retrying in ' + delay + ' ms.\\n');
+      process.stderr.write('Relay connection issue: ' + error.message + ' Retrying in ' + delay + ' ms.\n');
       await sleep(delay);
     }
   }
@@ -252,7 +252,7 @@ async function main() {
 
 if (isDirectExecution) {
   main().catch(error => {
-    process.stderr.write('BitCider relay stopped: ' + error.message + '\\n');
+    process.stderr.write('BitCider relay stopped: ' + error.message + '\n');
     process.exitCode = 1;
   });
 }
