@@ -47,7 +47,7 @@ function loadConfig() {
   if (relay.username || relay.password || relay.search || relay.hash || relay.pathname !== '/') {
     throw new Error('relayUrl must be an origin only, without credentials or a path.');
   }
-  if (local.protocol !== 'http:' || !localHosts.has(local.hostname) || local.pathname !== '/' || local.search || local.hash) {
+  if (local.protocol !== 'http:' || !localHosts.has(local.hostname) || local.port !== '10767' || local.pathname !== '/' || local.search || local.hash) {
     throw new Error('ciderApiUrl must point only to the local Cider API at 127.0.0.1:10767.');
   }
   if (!/^[A-Za-z0-9_-]{43}$/.test(String(config.relayKey || ''))) {
