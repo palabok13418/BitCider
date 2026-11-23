@@ -12,7 +12,7 @@ Both static frontends use the same Deplexo backend and persistent store. Each br
 
 ## 1. Deploy the backend on Deplexo
 
-Connect the private `palabok13418/BitCider` repository and deploy its `main` branch. The root `deplexo.yaml` configures the Vite build and Node.js server on port 3000.
+Connect the private `palabok13418/BitCider` repository and deploy its `main` branch. The root `deplexo.yaml` configures the Vite build and Node.js server on port 3000. `server.mjs` now defaults to port 3000 as well; a hosting-provided `PORT` value still takes precedence.
 
 In Deplexo's environment settings, configure:
 
@@ -55,10 +55,13 @@ Create a Worker connected to this repository. Use the checked-in `wrangler.jsonc
 - Static assets directory: `dist`
 - Worker-first paths: `/api/*`, addon `manifest.json`, `search`, and `stream` routes.
 
-Add these Worker secrets/variables:
+Add `BITCIDER_BACKEND_ORIGIN` as a regular Worker variable (it is already declared in `wrangler.jsonc`). Add `BITCIDER_PROXY_SECRET` separately as a **Worker Secret**, never as a checked-in plaintext variable. With Wrangler, set it using:
 
-- `BITCIDER_BACKEND_ORIGIN`: the Deplexo app HTTPS origin.
-- `BITCIDER_PROXY_SECRET`: the exact shared gateway secret configured on Deplexo.
+```sh
+npx wrangler secret put BITCIDER_PROXY_SECRET
+```
+
+Paste the exact shared secret configured on Deplexo when prompted. The secret must be available to the deployed Worker at runtime.
 
 Build the frontend with `npm run build` before deploying the Worker. Cloudflare serves ordinary frontend assets directly and invokes the Worker for API/addon paths.
 
