@@ -4,6 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  normalizeQuality,
+  supportsDolbyAtmos,
+  atmosphereTrackId,
+  parseAddonTrackId,
+  streamMetadata
+} from './audio-quality.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
@@ -281,26 +288,58 @@ function artworkUrl(attributes) {
     .replaceAll('{f}', 'jpg');
 }
 
-function normalizeSong(song) {
+function normalizeSong(song, { quality = 'high', preferAtmos = false } = {}) {
   const attributes = song?.attributes || song || {};
   // Apple Music library rows may carry an "i." library id as their row id.
   // The play-item route needs the underlying catalog id when playParams exists.
   const id = attributes?.playParams?.id || song?.id || attributes?.id || attributes?.catalogId;
-  if (!id) return null;
+  if (!id) return [];
   const durationMs = Number(attributes.durationInMillis || attributes.durationMs || 0);
-  return {
-    id: String(id),
+  const common = {
     title: attributes.name || attributes.title || 'Unknown track',
     artist: attributes.artistName || attributes.artist || 'Unknown artist',
     album: attributes.albumName || attributes.album || '',
     duration: durationMs > 0 ? Math.round(durationMs / 1000) : Number(attributes.duration || 0),
-    ...(artworkUrl(attributes) ? { artworkURL: artworkUrl(attributes) } : {}),
-    format: 'm3u8',
-    audioQuality: 'HIGH'
+    ...(artworkUrl(attributes) ? { artworkURL: artworkUrl(attributes) } : {})
   };
+  const rows = [];
+  const hasAtmos = supportsDolbyAtmos(attributes);
+
+  if (quality === 'atmos') {
+    if (!hasAtmos) return [];
+    return [{
+      ...common,
+      id: atmosphereTrackId(id),
+      format: 'dash',
+      audioQuality: 'Dolby Atmos',
+      audioModes: ['DOLBY_ATMOS'],
+      atmos: true
+    }];
+  }
+
+  // Atmos is a distinct rendition row. Only expose it when Apple's catalogue
+  // metadata explicitly says the track has a Dolby Atmos variant.
+  if (preferAtmos && hasAtmos) {
+    rows.push({
+      ...common,
+      id: atmosphereTrackId(id),
+      format: 'dash',
+      audioQuality: 'Dolby Atmos',
+      audioModes: ['DOLBY_ATMOS'],
+      atmos: true
+    });
+  }
+
+  rows.push({
+    ...common,
+    id: String(id),
+    format: 'aac',
+    audioQuality: quality === 'low' ? 'AAC 64 kbps' : 'AAC 256 kbps'
+  });
+  return rows;
 }
 
-async function searchCiderSongs(term, token) {
+async function searchCiderSongs(term, token, { quality = 'high', preferAtmos = false } = {}) {
   // Cider's scoped library API exposes paginated library songs, not an
   // Apple Music-wide catalogue search. Search those library entries locally.
   const needle = term.toLocaleLowerCase();
@@ -321,13 +360,17 @@ async function searchCiderSongs(term, token) {
     if (!rows.length) break;
 
     for (const row of rows) {
-      const track = normalizeSong(row);
-      if (!track || seen.has(track.id)) continue;
-      seen.add(track.id);
+      const attributes = row?.attributes || row || {};
+      const catalogId = attributes?.playParams?.id || row?.id || attributes?.id || attributes?.catalogId;
+      if (!catalogId || seen.has(String(catalogId))) continue;
+      const normalizedTracks = normalizeSong(row, { quality, preferAtmos });
+      if (!normalizedTracks.length) continue;
+      seen.add(String(catalogId));
+      const track = normalizedTracks[0];
       const haystack = [track.title, track.artist, track.album].join(' ').toLocaleLowerCase();
       if (haystack.includes(needle)) {
-        matches.push(track);
-        if (matches.length >= 25) return matches;
+        matches.push(...normalizedTracks);
+        if (matches.length >= 25) return matches.slice(0, 25);
       }
     }
 
@@ -352,26 +395,14 @@ function findAssetUrl(queue, trackId) {
   return match?.assetURL || match?.attributes?.assetURL || match?.url || match?.attributes?.url || null;
 }
 
-function streamDetails(url, queueItem) {
-  const lower = url.toLowerCase();
-  const hls = lower.includes('.m3u8') || lower.includes('m3u8');
-  const attributes = queueItem?.attributes || queueItem || {};
-  const codec = attributes.codec || attributes.audioCodec || (hls ? 'aac' : 'unknown');
-  return {
-    url,
-    format: hls ? 'm3u8' : (attributes.container || 'audio'),
-    quality: attributes.audioQuality || 'Cider stream',
-    codec,
-    container: hls ? 'mpegts' : (attributes.container || 'unknown'),
-    manifest: hls ? 'hls' : 'none',
-    encrypted: false,
-    ...(Number(attributes.sampleRate) > 0 ? { sampleRate: Number(attributes.sampleRate) } : {}),
-    ...(Number(attributes.bitDepth) > 0 ? { bitDepth: Number(attributes.bitDepth) } : {}),
-    ...(Number(attributes.bitrate) > 0 ? { bitrate: Number(attributes.bitrate) } : {})
-  };
+function streamDetails(url, queueItem, quality = 'high') {
+  return streamMetadata(url, queueItem, quality);
 }
 
-async function resolveCiderStream(trackId, token) {
+async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high') {
+  const parsedTrack = parseAddonTrackId(addonTrackId);
+  const trackId = parsedTrack.trackId;
+  const quality = parsedTrack.atmos ? 'atmos' : normalizeQuality(requestedQuality);
   // Cider resolves the selected catalog item using the linked account.
   // Its legacy queue response includes the playable assetURL used by Cider.
   await ciderRequest('/api/v2/playback/play-item', {
@@ -403,7 +434,7 @@ async function resolveCiderStream(trackId, token) {
           console.warn('Could not pause Cider after resolving the stream:', error.message);
         }
       }
-      return streamDetails(url, item || queueRows[0]);
+      return streamDetails(url, item || queueRows[0], quality);
     }
     await new Promise(resolve => setTimeout(resolve, 350));
   }
@@ -504,9 +535,21 @@ app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   res.json({
     id: 'com.bitcider.personal.' + req.params.addonKey.slice(0, 12).replace(/[^a-zA-Z0-9]/g, ''),
     name: 'BitCider',
-    version: '1.0.0',
-    description: 'Your linked Cider account as a personal BitChord source.',
-    resources: ['search', 'stream']
+    version: '1.1.0',
+    description: 'AAC 256 kbps, AAC 64 kbps, and Dolby Atmos where available. No lossless or Hi-Res streams.',
+    resources: ['search', 'stream'],
+    checkValidLossless: 0,
+    settings: [{
+      key: 'quality',
+      type: 'select',
+      label: 'Audio quality',
+      default: 'high',
+      options: [
+        { value: 'high', label: 'AAC 256 kbps' },
+        { value: 'low', label: 'AAC 64 kbps' },
+        { value: 'atmos', label: 'Dolby Atmos' }
+      ]
+    }]
   });
 });
 
@@ -515,7 +558,9 @@ app.get('/:addonKey/search', validAddonKey, async (req, res) => {
   if (!query) return res.json({ tracks: [] });
   if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
   try {
-    const tracks = await searchCiderSongs(query, req.bitciderUser.token);
+    const quality = normalizeQuality(req.query.quality);
+    const preferAtmos = String(req.query.atmos || '').toLowerCase() === 'auto';
+    const tracks = await searchCiderSongs(query, req.bitciderUser.token, { quality, preferAtmos });
     res.set('Cache-Control', 'no-store');
     res.json({ tracks });
   } catch (error) {
@@ -531,7 +576,7 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
   const trackId = String(req.params.trackId || '');
   if (!trackId || trackId.length > 180) return res.status(400).json({ error: 'Invalid track id.' });
   try {
-    const stream = await resolveCiderStream(trackId, req.bitciderUser.token);
+    const stream = await resolveCiderStream(trackId, req.bitciderUser.token, req.query.quality);
     res.set('Cache-Control', 'no-store');
     res.json(stream);
   } catch (error) {
