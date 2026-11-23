@@ -304,7 +304,7 @@ const link = (gl, fragmentSource) => {
 
 const Lightfall = ({
   colors = ['#ffffff'],
-  backgroundColor = '#94a3b8',
+  backgroundColor = '#ff9bac',
   speed = 0.3,
   streakCount = 2,
   streakWidth = 0.8,
