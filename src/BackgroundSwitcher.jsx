@@ -3,6 +3,8 @@ import Lightfall from './Lightfall.jsx';
 import LineWaves from './LineWaves.jsx';
 import AcidSquares from './AcidSquares.jsx';
 
+const Balatro = lazy(() => import('./Balatro.jsx'));
+
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
 const LAST_BACKGROUND_KEY = 'bitcider.background.last.v1';
@@ -142,6 +144,36 @@ const BACKGROUND_REGISTRY = [
         />
       </Suspense>
     )
+  },
+  {
+    id: 'balatro',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <Balatro
+          className="site-waves"
+          color1="#fd3f57"
+          color2="#ff9bac"
+          color3="#210b12"
+          contrast={3.6}
+          lighting={0.42}
+          swirl={0.32}
+          speed={0.8}
+          rotationSpeed={0.035}
+          scale={1}
+          detail={5}
+          pixelSize={1.4}
+          crt={0}
+          mouseInteraction
+          mouseStrength={0.85}
+          clickSwirl
+          intro
+          lightMode={false}
+          opacity={0.86}
+          maxDevicePixelRatio={1.5}
+          onError={onError}
+        />
+      </Suspense>
+    )
   }
 ];
 
@@ -170,10 +202,10 @@ export default function BackgroundSwitcher({ warping = false }) {
   }, [backgroundId]);
 
   const selected = BACKGROUND_REGISTRY.find(item => item.id === backgroundId) || BACKGROUND_REGISTRY[0];
-  const handleAeroError = error => {
-    console.warn('[BitCider] AeroShards is unavailable. Falling back to Lightfall.', error);
+  const handleBackgroundError = error => {
+    console.warn('[BitCider] The selected animated background is unavailable. Falling back to Lightfall.', error);
     setBackgroundId('lightfall');
   };
 
-  return selected.render({ warping, onError: handleAeroError });
+  return selected.render({ warping, onError: handleBackgroundError });
 }
