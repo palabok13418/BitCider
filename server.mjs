@@ -1,6 +1,12 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse
+} from '@simplewebauthn/server';
+import {
   createPasswordRecord,
   verifyPassword,
   validateUsername,
@@ -8,7 +14,10 @@ import {
   createRecoveryCodes,
   consumeRecoveryCode,
   hashSessionId,
-  SESSION_TTL_MS
+  SESSION_TTL_MS,
+  MAX_ACCOUNT_DEVICES,
+  MAX_PASSKEYS_PER_ACCOUNT,
+  WEBAUTHN_CHALLENGE_TTL_MS
 } from './account-security.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -30,7 +39,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-22-secure-accounts-v3';
+const API_VERSION = '2026-11-22-passkeys-devices-v4';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
@@ -132,19 +141,20 @@ function readStore() {
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
     if (parsed?.addonKey || parsed?.ciderToken) {
-      return { sessions: { legacy: parsed }, accounts: {}, authSessions: {} };
+      return { sessions: { legacy: parsed }, accounts: {}, authSessions: {}, webauthnChallenges: {} };
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { sessions: {}, accounts: {}, authSessions: {} };
+      return { sessions: {}, accounts: {}, authSessions: {}, webauthnChallenges: {} };
     }
     return {
       ...parsed,
       sessions: parsed.sessions && typeof parsed.sessions === 'object' ? parsed.sessions : {},
       accounts: parsed.accounts && typeof parsed.accounts === 'object' ? parsed.accounts : {},
-      authSessions: parsed.authSessions && typeof parsed.authSessions === 'object' ? parsed.authSessions : {}
+      authSessions: parsed.authSessions && typeof parsed.authSessions === 'object' ? parsed.authSessions : {},
+      webauthnChallenges: parsed.webauthnChallenges && typeof parsed.webauthnChallenges === 'object' ? parsed.webauthnChallenges : {}
     };
   } catch {
-    return { sessions: {}, accounts: {}, authSessions: {} };
+    return { sessions: {}, accounts: {}, authSessions: {}, webauthnChallenges: {} };
   }
 }
 
@@ -234,24 +244,79 @@ function requireDedicatedTokenEncryption(_req, res, next) {
   }
 }
 
-function createAuthenticatedSession(store, accountId, res) {
+function deviceNameFromUserAgent(userAgent) {
+  const ua = String(userAgent || '').slice(0, 512);
+  const platform = /Windows NT/i.test(ua) ? 'Windows'
+    : /iPhone/i.test(ua) ? 'iPhone'
+      : /iPad/i.test(ua) ? 'iPad'
+        : /Android/i.test(ua) ? 'Android'
+          : /Macintosh|Mac OS X/i.test(ua) ? 'Mac'
+            : /CrOS/i.test(ua) ? 'Chromebook'
+              : /Linux/i.test(ua) ? 'Linux'
+                : 'Unknown device';
+  const browser = /Edg\//i.test(ua) ? 'Edge'
+    : /CriOS\//i.test(ua) ? 'Chrome'
+      : /Chrome\//i.test(ua) ? 'Chrome'
+        : /Firefox\//i.test(ua) ? 'Firefox'
+          : /Safari\//i.test(ua) ? 'Safari'
+            : 'Browser';
+  return browser + ' on ' + platform;
+}
+
+function activeAccountDevices(store, accountId, currentSessionId) {
+  const now = Date.now();
+  return Object.entries(store.authSessions)
+    .filter(([, entry]) => entry?.accountId === accountId && Date.parse(entry.expiresAt || 0) > now)
+    .sort((a, b) => Date.parse(b[1].lastSeenAt || b[1].createdAt || 0) - Date.parse(a[1].lastSeenAt || a[1].createdAt || 0))
+    .map(([id, entry]) => ({
+      id,
+      name: entry.deviceName || 'Previously signed-in device',
+      createdAt: entry.createdAt || null,
+      lastSeenAt: entry.lastSeenAt || entry.createdAt || null,
+      isCurrent: id === hashSessionId(currentSessionId)
+    }));
+}
+
+function publicPasskeys(account) {
+  return (Array.isArray(account?.passkeys) ? account.passkeys : []).map(passkey => ({
+    id: passkey.id,
+    name: passkey.name || 'Passkey',
+    rpID: passkey.rpID,
+    createdAt: passkey.createdAt || null,
+    lastUsedAt: passkey.lastUsedAt || null,
+    deviceType: passkey.deviceType || 'unknown',
+    backedUp: Boolean(passkey.backedUp)
+  }));
+}
+
+function normalizePasskeyName(value, fallback) {
+  const name = String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+  return name || fallback;
+}
+
+function createAuthenticatedSession(store, accountId, res, req) {
   const now = Date.now();
   const active = Object.entries(store.authSessions)
-    .filter(([, entry]) => entry?.accountId === accountId)
-    .sort((a, b) => Date.parse(a[1].createdAt || 0) - Date.parse(b[1].createdAt || 0));
-  while (active.length >= 8) {
-    const [oldHash] = active.shift();
+    .filter(([, entry]) => entry?.accountId === accountId && Date.parse(entry.expiresAt || 0) > now)
+    .sort((a, b) => Date.parse(a[1].lastSeenAt || a[1].createdAt || 0) - Date.parse(b[1].lastSeenAt || b[1].createdAt || 0));
+  let evictedDevice = null;
+  while (active.length >= MAX_ACCOUNT_DEVICES) {
+    const [oldHash, oldest] = active.shift();
     delete store.authSessions[oldHash];
+    evictedDevice = oldest.deviceName || 'the oldest signed-in device';
   }
 
   const sessionId = crypto.randomBytes(32).toString('base64url');
+  const nowIso = new Date(now).toISOString();
   store.authSessions[hashSessionId(sessionId)] = {
     accountId,
-    createdAt: new Date(now).toISOString(),
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+    deviceName: deviceNameFromUserAgent(req?.get?.('user-agent')),
     expiresAt: new Date(now + SESSION_TTL_MS).toISOString()
   };
   setSessionCookie(res, sessionId);
-  return sessionId;
+  return { sessionId, evictedDevice };
 }
 
 function getUserSession(req, res) {
@@ -425,6 +490,58 @@ function localOnly(req, res, next) {
     });
   }
   next();
+}
+
+function webAuthnContext(req) {
+  const throughGateway = trustedProxy(req);
+  const rawOrigin = (throughGateway ? req.get('x-bitcider-public-origin') : '')
+    || req.get('origin')
+    || PUBLIC_URL;
+  if (!rawOrigin || (!throughGateway && !trustedFrontend(req))) {
+    throw new Error('Use the official BitCider website to manage passkeys.');
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawOrigin);
+  } catch {
+    throw new Error('The BitCider website origin is invalid.');
+  }
+  const localHttp = parsed.protocol === 'http:'
+    && (isLoopback(parsed.hostname) || parsed.hostname === 'localhost');
+  if ((parsed.protocol !== 'https:' && !localHttp) || parsed.username || parsed.password
+    || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error('Passkeys require the official HTTPS BitCider website.');
+  }
+  return { origin: parsed.origin, rpID: parsed.hostname.toLowerCase() };
+}
+
+async function saveWebAuthnChallenge(sessionId, record) {
+  return updateStore(store => {
+    const now = Date.now();
+    for (const [key, entry] of Object.entries(store.webauthnChallenges)) {
+      if (!entry || Number(entry.expiresAt) <= now) delete store.webauthnChallenges[key];
+    }
+    store.webauthnChallenges[hashSessionId(sessionId)] = {
+      ...record,
+      expiresAt: now + WEBAUTHN_CHALLENGE_TTL_MS
+    };
+    return { ok: true };
+  });
+}
+
+async function consumeWebAuthnChallenge(sessionId, purpose, accountId = null) {
+  return updateStore(store => {
+    const key = hashSessionId(sessionId);
+    const challenge = store.webauthnChallenges[key];
+    if (!challenge) return { challenge: null, write: false };
+    delete store.webauthnChallenges[key];
+    if (challenge.purpose !== purpose || Number(challenge.expiresAt) <= Date.now()
+      || (accountId && challenge.accountId !== accountId)) {
+      return { challenge: null };
+    }
+    return { challenge };
+  }).then(result => result.challenge);
 }
 
 async function ciderRequest(apiPath, { method = 'GET', body, token } = {}) {
@@ -687,11 +804,24 @@ app.use('/api/account', (_req, res, next) => {
   next();
 });
 
-app.get('/api/status', localOnly, (req, res) => {
-  const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
+app.get('/api/status', localOnly, async (req, res) => {
+  let session = getUserSession(req, res);
+  if (session.authenticated) {
+    await updateStore(store => {
+      const entry = store.authSessions[hashSessionId(session.sessionId)];
+      if (entry?.accountId === session.accountId) {
+        entry.lastSeenAt = new Date().toISOString();
+      }
+      return { ok: true };
+    });
+    session = getUserSession(req, res);
+  }
+  const { sessionId, user, accountId, authenticated, store } = session;
   const token = tokenForUser(user);
   const base = addonBaseUrl();
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
+  const devices = authenticated ? activeAccountDevices(store, accountId, sessionId) : [];
+  const passkeys = authenticated ? publicPasskeys(user) : [];
   res.set('Cache-Control', 'no-store');
   res.json({
     apiVersion: API_VERSION,
@@ -701,6 +831,12 @@ app.get('/api/status', localOnly, (req, res) => {
     sessionReady: Boolean(sessionId),
     csrfToken: csrfTokenForSession(sessionId),
     tokenEncryptionConfigured: Boolean(dedicatedTokenEncryptionKey()),
+    deviceLimit: MAX_ACCOUNT_DEVICES,
+    passkeyLimit: MAX_PASSKEYS_PER_ACCOUNT,
+    deviceCount: devices.length,
+    passkeyCount: passkeys.length,
+    devices,
+    passkeys,
     account: authenticated ? {
       authenticated: true,
       username: user.username,
@@ -737,13 +873,15 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
         username,
         password: passwordRecord,
         recoveryCodeHashes: recovery.hashes,
+        webAuthnUserId: crypto.randomBytes(32).toString('base64url'),
+        passkeys: [],
         createdAt: new Date().toISOString(),
         ...accountConnection(pending)
       };
       store.accounts[accountId] = account;
       delete store.sessions[sessionId];
       delete store.authSessions[hashSessionId(sessionId)];
-      createAuthenticatedSession(store, accountId, res);
+      createAuthenticatedSession(store, accountId, res, req);
       return { ok: true, accountId };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
@@ -789,12 +927,12 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
       if (pendingConnection && !savedConnection) Object.assign(account, pendingConnection);
       delete store.sessions[sessionId];
       delete store.authSessions[hashSessionId(sessionId)];
-      createAuthenticatedSession(store, accountId, res);
-      return { ok: true };
+      const sessionInfo = createAuthenticatedSession(store, accountId, res, req);
+      return { ok: true, evictedDevice: sessionInfo.evictedDevice };
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     res.set('Cache-Control', 'no-store');
-    return res.json({ ok: true, username });
+    return res.json({ ok: true, username, evictedDevice: result.evictedDevice || null });
   } catch (error) {
     console.error('BitCider sign-in failed:', error.message);
     return res.status(500).json({ error: 'SIGN_IN_FAILED', message: 'Could not sign in. Try again.' });
@@ -846,6 +984,300 @@ app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, requi
     console.error('BitCider password recovery failed:', error.message);
     return res.status(500).json({ error: 'RECOVERY_FAILED', message: 'Could not recover this account. Try again.' });
   }
+});
+
+
+app.post('/api/account/passkeys/register/options', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before adding a passkey.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitCider passphrase to add a passkey.' });
+  }
+
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+
+  const currentPasskeys = Array.isArray(user.passkeys) ? user.passkeys : [];
+  if (currentPasskeys.length >= MAX_PASSKEYS_PER_ACCOUNT) {
+    return res.status(409).json({ error: 'PASSKEY_LIMIT_REACHED', message: 'This account already has five passkeys. Remove one before adding another.' });
+  }
+
+  const webAuthnUserId = user.webAuthnUserId || crypto.randomBytes(32).toString('base64url');
+  try {
+    const options = await generateRegistrationOptions({
+      rpName: 'BitCider',
+      rpID: context.rpID,
+      userID: Buffer.from(webAuthnUserId, 'base64url'),
+      userName: user.username,
+      userDisplayName: user.username,
+      attestationType: 'none',
+      authenticatorSelection: {
+        residentKey: 'required',
+        userVerification: 'required'
+      },
+      excludeCredentials: currentPasskeys
+        .filter(passkey => passkey.rpID === context.rpID)
+        .map(passkey => ({ id: passkey.id, transports: passkey.transports || [] }))
+    });
+
+    const saved = await updateStore(store => {
+      const account = store.accounts[accountId];
+      if (!account) return { status: 401, error: 'SIGN_IN_REQUIRED', message: 'Sign in again before adding a passkey.' };
+      account.passkeys ||= [];
+      if (account.passkeys.length >= MAX_PASSKEYS_PER_ACCOUNT) {
+        return { status: 409, error: 'PASSKEY_LIMIT_REACHED', message: 'This account already has five passkeys. Remove one before adding another.' };
+      }
+      account.webAuthnUserId ||= webAuthnUserId;
+      store.webauthnChallenges[hashSessionId(sessionId)] = {
+        purpose: 'register',
+        accountId,
+        challenge: options.challenge,
+        origin: context.origin,
+        rpID: context.rpID,
+        expiresAt: Date.now() + WEBAUTHN_CHALLENGE_TTL_MS
+      };
+      return { ok: true };
+    });
+    if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json(options);
+  } catch (error) {
+    console.error('BitCider passkey registration options failed:', error.message);
+    return res.status(500).json({ error: 'PASSKEY_SETUP_FAILED', message: 'Could not prepare passkey registration. Try again.' });
+  }
+});
+
+app.post('/api/account/passkeys/register/verify', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { sessionId, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before adding a passkey.' });
+  }
+  const challenge = await consumeWebAuthnChallenge(sessionId, 'register', accountId);
+  if (!challenge) {
+    return res.status(400).json({ error: 'PASSKEY_CHALLENGE_EXPIRED', message: 'Passkey setup expired. Start again.' });
+  }
+
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+  if (context.origin !== challenge.origin || context.rpID !== challenge.rpID) {
+    return res.status(400).json({ error: 'PASSKEY_ORIGIN_MISMATCH', message: 'Passkey setup must finish on the same BitCider website where it started.' });
+  }
+
+  try {
+    const verification = await verifyRegistrationResponse({
+      response: req.body,
+      expectedChallenge: challenge.challenge,
+      expectedOrigin: challenge.origin,
+      expectedRPID: challenge.rpID,
+      requireUserVerification: true
+    });
+    const info = verification.registrationInfo;
+    if (!verification.verified || !info?.credential) {
+      return res.status(400).json({ error: 'PASSKEY_NOT_VERIFIED', message: 'The authenticator did not verify this passkey. Try again.' });
+    }
+
+    const credential = info.credential;
+    const nameFallback = 'Passkey ' + ((readStore().accounts[accountId]?.passkeys || []).length + 1);
+    const name = normalizePasskeyName(req.body?.deviceName, nameFallback);
+    const saved = await updateStore(store => {
+      const account = store.accounts[accountId];
+      if (!account) return { status: 401, error: 'SIGN_IN_REQUIRED', message: 'Sign in again before adding a passkey.' };
+      account.passkeys ||= [];
+      if (account.passkeys.length >= MAX_PASSKEYS_PER_ACCOUNT) {
+        return { status: 409, error: 'PASSKEY_LIMIT_REACHED', message: 'This account already has five passkeys. Remove one before adding another.' };
+      }
+      if (Object.values(store.accounts).some(owner => (owner.passkeys || []).some(passkey => passkey.id === credential.id))) {
+        return { status: 409, error: 'PASSKEY_ALREADY_REGISTERED', message: 'That passkey is already registered to a BitCider account.' };
+      }
+      account.passkeys.push({
+        id: credential.id,
+        publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+        counter: Number(credential.counter || 0),
+        transports: Array.isArray(credential.transports) ? credential.transports : [],
+        deviceType: info.credentialDeviceType || 'singleDevice',
+        backedUp: Boolean(info.credentialBackedUp),
+        rpID: challenge.rpID,
+        name,
+        createdAt: new Date().toISOString(),
+        lastUsedAt: null
+      });
+      return { ok: true, count: account.passkeys.length };
+    });
+    if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({ ok: true, passkeyCount: saved.count });
+  } catch (error) {
+    console.error('BitCider passkey registration verification failed:', error.message);
+    return res.status(400).json({ error: 'PASSKEY_VERIFICATION_FAILED', message: 'BitCider could not verify that passkey. Start again and retry.' });
+  }
+});
+
+app.post('/api/account/passkeys/auth/options', localOnly, authRateLimit(6), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { sessionId, authenticated } = getUserSession(req, res);
+  if (authenticated) {
+    return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'You are already signed in.' });
+  }
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+
+  try {
+    const options = await generateAuthenticationOptions({
+      rpID: context.rpID,
+      allowCredentials: [],
+      userVerification: 'required'
+    });
+    await saveWebAuthnChallenge(sessionId, {
+      purpose: 'authenticate',
+      challenge: options.challenge,
+      origin: context.origin,
+      rpID: context.rpID
+    });
+    res.set('Cache-Control', 'no-store');
+    return res.json(options);
+  } catch (error) {
+    console.error('BitCider passkey authentication options failed:', error.message);
+    return res.status(500).json({ error: 'PASSKEY_SIGN_IN_FAILED', message: 'Could not start passkey sign-in. Try again.' });
+  }
+});
+
+app.post('/api/account/passkeys/auth/verify', localOnly, authRateLimit(6), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { sessionId, authenticated } = getUserSession(req, res);
+  if (authenticated) {
+    return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'You are already signed in.' });
+  }
+  const challenge = await consumeWebAuthnChallenge(sessionId, 'authenticate');
+  if (!challenge) {
+    return res.status(400).json({ error: 'PASSKEY_CHALLENGE_EXPIRED', message: 'Passkey sign-in expired. Start again.' });
+  }
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+  if (context.origin !== challenge.origin || context.rpID !== challenge.rpID) {
+    return res.status(400).json({ error: 'PASSKEY_ORIGIN_MISMATCH', message: 'Passkey sign-in must finish on the same BitCider website where it started.' });
+  }
+
+  const credentialId = typeof req.body?.id === 'string' ? req.body.id : '';
+  const userHandle = typeof req.body?.response?.userHandle === 'string' ? req.body.response.userHandle : '';
+  const snapshot = readStore();
+  let matchedAccountId = null;
+  let matchedAccount = null;
+  let matchedPasskey = null;
+  for (const [candidateAccountId, account] of Object.entries(snapshot.accounts)) {
+    const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
+    if (passkey && account.webAuthnUserId && secureStringEqual(userHandle, account.webAuthnUserId)) {
+      matchedAccountId = candidateAccountId;
+      matchedAccount = account;
+      matchedPasskey = passkey;
+      break;
+    }
+  }
+  if (!matchedAccountId || !matchedAccount || !matchedPasskey) {
+    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.' });
+  }
+
+  try {
+    const verification = await verifyAuthenticationResponse({
+      response: req.body,
+      expectedChallenge: challenge.challenge,
+      expectedOrigin: challenge.origin,
+      expectedRPID: challenge.rpID,
+      credential: {
+        id: matchedPasskey.id,
+        publicKey: new Uint8Array(Buffer.from(matchedPasskey.publicKey, 'base64url')),
+        counter: Number(matchedPasskey.counter || 0),
+        transports: matchedPasskey.transports || []
+      },
+      requireUserVerification: true
+    });
+    if (!verification.verified || verification.authenticationInfo?.userVerified !== true) {
+      return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.' });
+    }
+
+    const result = await updateStore(store => {
+      const account = store.accounts[matchedAccountId];
+      if (!account || account.webAuthnUserId !== matchedAccount.webAuthnUserId) {
+        return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.', write: false };
+      }
+      const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
+      if (!passkey || Number(passkey.counter || 0) !== Number(matchedPasskey.counter || 0)) {
+        return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.', write: false };
+      }
+      const pending = store.sessions[sessionId];
+      const pendingConnection = accountConnection(pending);
+      const savedConnection = accountConnection(account);
+      if (pendingConnection && savedConnection && pendingConnection.addonKey !== savedConnection.addonKey) {
+        return { status: 409, error: 'ANOTHER_CONNECTION_SAVED', message: 'This browser already has a different unsaved Cider connection. Disconnect it before signing in.', write: false };
+      }
+      if (pendingConnection && !savedConnection) Object.assign(account, pendingConnection);
+      passkey.counter = Number(verification.authenticationInfo.newCounter || 0);
+      passkey.lastUsedAt = new Date().toISOString();
+      delete store.sessions[sessionId];
+      delete store.authSessions[hashSessionId(sessionId)];
+      const sessionInfo = createAuthenticatedSession(store, matchedAccountId, res, req);
+      return { ok: true, username: account.username, evictedDevice: sessionInfo.evictedDevice };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, username: result.username, evictedDevice: result.evictedDevice || null });
+  } catch (error) {
+    console.error('BitCider passkey sign-in verification failed:', error.message);
+    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitCider account.' });
+  }
+});
+
+app.post('/api/account/passkeys/remove', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { user, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before managing passkeys.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitCider passphrase to remove a passkey.' });
+  }
+  const credentialId = typeof req.body?.credentialId === 'string' ? req.body.credentialId : '';
+  const result = await updateStore(store => {
+    const account = store.accounts[accountId];
+    if (!account) return { status: 401, error: 'SIGN_IN_REQUIRED', message: 'Sign in again.' };
+    const before = (account.passkeys || []).length;
+    account.passkeys = (account.passkeys || []).filter(passkey => passkey.id !== credentialId);
+    if (account.passkeys.length === before) {
+      return { status: 404, error: 'PASSKEY_NOT_FOUND', message: 'That passkey is no longer registered.' };
+    }
+    return { ok: true, count: account.passkeys.length };
+  });
+  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+  res.set('Cache-Control', 'no-store');
+  return res.json({ ok: true, passkeyCount: result.count });
+});
+
+app.post('/api/account/devices/revoke', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
+  const { user, sessionId, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before managing devices.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitCider passphrase to revoke a device.' });
+  }
+  const targetHash = typeof req.body?.sessionIdHash === 'string' ? req.body.sessionIdHash : '';
+  if (!/^[a-f0-9]{64}$/.test(targetHash)) {
+    return res.status(400).json({ error: 'INVALID_DEVICE', message: 'Select a valid signed-in device.' });
+  }
+  const result = await updateStore(store => {
+    const target = store.authSessions[targetHash];
+    if (!target || target.accountId !== accountId) {
+      return { status: 404, error: 'DEVICE_NOT_FOUND', message: 'That device is no longer signed in.' };
+    }
+    delete store.authSessions[targetHash];
+    return { ok: true, wasCurrent: targetHash === hashSessionId(sessionId) };
+  });
+  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+  if (result.wasCurrent) clearSessionCookie(res);
+  res.set('Cache-Control', 'no-store');
+  return res.json({ ok: true });
 });
 
 app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
