@@ -103,7 +103,7 @@ async function probeLocalCider(signal, token) {
   } catch (cause) {
     if (cause?.name === 'TypeError') {
       const error = new Error(
-        'The browser could not read Cider’s basic local API response from this BitCider website. Make sure Cider is running, Chrome allows Loopback network access for this site, and Cider allows this website origin. Reconnect and approve Cider’s origin prompt if it appears. BitCider cannot add CORS permission headers to Cider.'
+        'BitCider can’t connect to Cider. Make sure Cider is open, allow this website to access your local network in Chrome, and approve the connection in Cider if asked. If it still doesn’t work, Cider may be blocking the connection.'
       );
       error.code = 'LOCAL_CIDER_CORS_BLOCKED';
       error.corsStage = 'origin-or-loopback';
