@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import Lightfall from './Lightfall.jsx';
+import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-23-account-key-v9';
@@ -1086,30 +1086,7 @@ export default function App() {
 
   return (
     <main className="site-shell">
-      <Lightfall
-        className="site-waves"
-        colors={['#fd3f57', '#ff2b5e', '#ff9bac']}
-        backgroundColor="#ff2b5e"
-        speed={0.23}
-        streakCount={3}
-        streakWidth={1}
-        streakLength={1.2}
-        glow={0.9}
-        density={0.72}
-        twinkle={0.3}
-        zoom={3}
-        backgroundGlow={0.1}
-        headGlow={0.65}
-        depth={0.5}
-        bloom={0.35}
-        opacity={0.68}
-        mouseInteraction={false}
-        holdToWarp={false}
-        warping={addonUrlGenerating}
-        intro={false}
-        fade={0.35}
-        dpr={1.5}
-      />
+      <BackgroundSwitcher warping={addonUrlGenerating} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
