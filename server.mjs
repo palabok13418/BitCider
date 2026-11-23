@@ -2220,7 +2220,77 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
     }))
   });
 
-  return tracks;
+  if (tracks.length) return tracks;
+  let fallbackTracks = await fetchBitMonoDeezerFallback(query, requestId, requestContext);
+  if (!fallbackTracks.length && titleHint && titleHint.normalize('NFKC').toLowerCase() !== normalizedQuery) {
+    bitMonoLog('info', 'fallback.deezer.title_retry', { requestId, titleQuery: bitMonoLogText(titleHint) });
+    fallbackTracks = await fetchBitMonoDeezerFallback(titleHint, requestId, requestContext);
+  }
+  if (fallbackTracks.length) {
+    bitMonoLog('info', 'search.fallback_selected', { requestId, provider: 'deezer', resultCount: fallbackTracks.length });
+    return fallbackTracks;
+  }
+  bitMonoLog('warn', 'search.all_providers_empty', { requestId, providers: ['monochrome', 'deezer'] });
+  return [];
+}
+
+const BITMONO_DEEZER_API_BASE = String(process.env.BITMONO_DEEZER_API_BASE || 'https://dzr.tabs-vs-spaces.wtf').replace(/\\/+$/, '');
+
+async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {}) {
+  const url = new URL('/search', BITMONO_DEEZER_API_BASE);
+  url.searchParams.set('q', query);
+  url.searchParams.set('quality', 'LOSSLESS');
+  bitMonoLog('info', 'fallback.deezer.request', { requestId, query: bitMonoLogText(query), title: bitMonoLogText(requestContext.title, 120), artist: bitMonoLogText(requestContext.artist, 120) });
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
+    if (!response.ok) {
+      bitMonoLog('warn', 'fallback.deezer.http_error', { requestId, status: response.status });
+      return [];
+    }
+    const payload = await response.json();
+    const candidates = extractBitMonoTrackCandidates(payload);
+    const tracks = [];
+    for (const candidate of candidates) {
+      const item = candidate.item?.track && typeof candidate.item.track === 'object' ? candidate.item.track : candidate.item;
+      const rawId = bitMonoRawTrackId(item);
+      const title = String(item?.title || item?.name || '').trim();
+      if (!rawId || !title) continue;
+      const artistValue = item.artist ?? item.artistName ?? item.artistNames ?? item.artists ?? '';
+      const artist = (Array.isArray(artistValue) ? artistValue : [artistValue]).map(value => typeof value === 'string' ? value : String(value?.name || value?.title || '')).filter(Boolean).join(', ');
+      const album = String(item.album?.title || item.albumTitle || item.album || '').trim();
+      const durationRaw = Number(item.duration ?? item.durationMs ?? 0);
+      const duration = Number.isFinite(durationRaw) && durationRaw > 1000 ? Math.round(durationRaw / 10) / 100 : Number.isFinite(durationRaw) ? durationRaw : 0;
+      const artworkURL = item.artworkURL || item.artwork || item.cover || item.album?.cover || item.image || null;
+      const id = 'dzr_' + rawId;
+      bitMonoRememberTrack(id, { source: 'deezer', upstreamId: rawId, title, artist, album, artworkURL, duration, streamURL: item.streamURL || item.url || null });
+      tracks.push({ id, title, artist, album, duration, artworkURL, format: item.format || 'mp3', audioQuality: item.audioQuality || item.quality || 'HIGH', audioMode: item.audioMode || 'STEREO', audioModes: Array.isArray(item.audioModes) ? item.audioModes : ['STEREO'] });
+    }
+    bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'fallback.deezer.complete' : 'fallback.deezer.empty', { requestId, candidateCount: candidates.length, resultCount: tracks.length });
+    return tracks.slice(0, 60);
+  } catch (error) {
+    bitMonoLog('warn', 'fallback.deezer.failed', { requestId, error: bitMonoLogText(error?.message || error, 180) });
+    return [];
+  }
+}
+
+async function resolveBitMonoDeezerStream(trackId, quality, requestId) {
+  const metadata = bitMonoTrackMetadata.get(trackId) || {};
+  if (typeof metadata.streamURL === 'string' && metadata.streamURL.startsWith('https://')) return { url: metadata.streamURL };
+  const url = new URL('/stream/' + encodeURIComponent(metadata.upstreamId || trackId), BITMONO_DEEZER_API_BASE);
+  url.searchParams.set('quality', quality === 'auto' ? 'LOSSLESS' : quality.toUpperCase());
+  const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
+  if (!response.ok) {
+    bitMonoLog('warn', 'fallback.deezer.stream_http_error', { requestId, status: response.status, trackId: bitMonoLogText(trackId, 100) });
+    return null;
+  }
+  const payload = await response.json();
+  const streamUrl = payload?.url || payload?.streamURL || payload?.stream_url || payload?.data?.url;
+  if (typeof streamUrl !== 'string' || !streamUrl.startsWith('https://')) {
+    bitMonoLog('warn', 'fallback.deezer.stream_invalid', { requestId, trackId: bitMonoLogText(trackId, 100), payloadKeys: Object.keys(payload || {}).slice(0, 16) });
+    return null;
+  }
+  bitMonoLog('info', 'fallback.deezer.stream_resolved', { requestId, trackId: bitMonoLogText(trackId, 100) });
+  return payload;
 }
 
 // BitMono is an intentionally free, public BitChord source. It does not
@@ -2353,8 +2423,21 @@ app.get('/bitmono/search', async (req, res) => {
   }
 });
 
-app.get('/bitmono/stream/:trackId', (req, res) => {
+app.get('/bitmono/stream/:trackId', async (req, res) => {
+  const requestId = crypto.randomUUID();
   const suppliedId = String(req.params.trackId || '').trim();
+  if (suppliedId.startsWith('dzr_')) {
+    const deezerId = suppliedId.slice(4);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(deezerId)) return res.status(400).json({ error: 'INVALID_TRACK_ID' });
+    try {
+      const resolved = await resolveBitMonoDeezerStream(suppliedId, String(req.query.quality || 'auto'), requestId);
+      if (!resolved?.url) return res.status(404).json({ error: 'DEEZER_STREAM_UNAVAILABLE' });
+      return res.json({ ...resolved, url: resolved.url, format: resolved.format || 'mp3', quality: resolved.quality || resolved.audioQuality || 'HIGH', codec: resolved.codec || resolved.format || 'mp3', manifest: resolved.manifest || 'none', encrypted: resolved.encrypted === true });
+    } catch (error) {
+      bitMonoLog('warn', 'fallback.deezer.stream_failed', { requestId, trackId: bitMonoLogText(suppliedId, 100), error: bitMonoLogText(error?.message || error, 180) });
+      return res.status(502).json({ error: 'DEEZER_STREAM_FAILED', requestId });
+    }
+  }
   const trackId = suppliedId.startsWith('mono_') ? suppliedId.slice(5) : suppliedId;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(trackId)) {
     return res.status(400).json({ error: 'INVALID_TRACK_ID', message: 'The Monochrome track ID is invalid.' });
