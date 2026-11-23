@@ -310,7 +310,7 @@ function validAddonKey(req, res, next) {
 // BitChord can call addons from a different app origin. The random addon
 // key is the endpoint's bearer-like locator, so public addon routes need CORS.
 app.use((req, res, next) => {
-  const isAddonRoute = /^\\/[A-Za-z0-9_-]+\\/(?:manifest\\.json|search|stream\\/)/.test(req.path);
+  const isAddonRoute = /^\/[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/)/.test(req.path);
   if (!isAddonRoute) return next();
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
