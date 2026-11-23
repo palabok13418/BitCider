@@ -1,5 +1,15 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import {
+  createPasswordRecord,
+  verifyPassword,
+  validateUsername,
+  validatePassword,
+  createRecoveryCodes,
+  consumeRecoveryCode,
+  hashSessionId,
+  SESSION_TTL_MS
+} from './account-security.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,7 +30,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-23-cider-auth-v2';
+const API_VERSION = '2026-11-22-secure-accounts-v1';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
@@ -68,14 +78,20 @@ const SESSION_COOKIE = 'bitcider_session';
 function readStore() {
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
-    if (parsed && parsed.sessions && typeof parsed.sessions === 'object') return parsed;
-    // Upgrade the original single-user file format without discarding its data.
     if (parsed?.addonKey || parsed?.ciderToken) {
-      return { sessions: { legacy: parsed } };
+      return { sessions: { legacy: parsed }, accounts: {}, authSessions: {} };
     }
-    return { sessions: {} };
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { sessions: {}, accounts: {}, authSessions: {} };
+    }
+    return {
+      ...parsed,
+      sessions: parsed.sessions && typeof parsed.sessions === 'object' ? parsed.sessions : {},
+      accounts: parsed.accounts && typeof parsed.accounts === 'object' ? parsed.accounts : {},
+      authSessions: parsed.authSessions && typeof parsed.authSessions === 'object' ? parsed.authSessions : {}
+    };
   } catch {
-    return { sessions: {} };
+    return { sessions: {}, accounts: {}, authSessions: {} };
   }
 }
 
@@ -86,29 +102,137 @@ function writeStore(store) {
   fs.renameSync(temp, STORE_FILE);
 }
 
-function ensureSessionId(req, res) {
-  const cookies = String(req.headers.cookie || '').split(';');
-  let existing = '';
-  for (const part of cookies) {
+let storeWriteQueue = Promise.resolve();
+function updateStore(mutator) {
+  const operation = storeWriteQueue.then(async () => {
+    const store = readStore();
+    const result = await mutator(store);
+    if (result?.write !== false) writeStore(store);
+    return result;
+  });
+  storeWriteQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
     const separator = part.indexOf('=');
-    if (separator < 0 || part.slice(0, separator).trim() !== SESSION_COOKIE) continue;
-    try { existing = decodeURIComponent(part.slice(separator + 1).trim()); } catch { existing = ''; }
-    break;
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return ''; }
+  }
+  return '';
+}
+
+function setSessionCookie(res, sessionId) {
+  res.append('Set-Cookie', SESSION_COOKIE + '=' + encodeURIComponent(sessionId)
+    + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000');
+}
+
+function clearSessionCookie(res) {
+  res.append('Set-Cookie', SESSION_COOKIE + '=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+}
+
+function ensureSessionId(req, res) {
+  const existing = readCookie(req, SESSION_COOKIE);
+  if (/^[A-Za-z0-9_-]{40,50}$/.test(existing)) return existing;
+  const created = crypto.randomBytes(32).toString('base64url');
+  setSessionCookie(res, created);
+  return created;
+}
+
+function csrfTokenForSession(sessionId) {
+  return crypto.createHmac('sha256', ensureSecret())
+    .update('bitcider-csrf-v1:' + sessionId)
+    .digest('base64url');
+}
+
+function secureStringEqual(leftValue, rightValue) {
+  const left = Buffer.from(String(leftValue || ''));
+  const right = Buffer.from(String(rightValue || ''));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+
+function requireCsrf(req, res, next) {
+  const sessionId = ensureSessionId(req, res);
+  const expected = csrfTokenForSession(sessionId);
+  const supplied = req.get('x-bitcider-csrf') || '';
+  if (!secureStringEqual(expected, supplied)) {
+    return res.status(403).json({ error: 'CSRF_REJECTED', message: 'Refresh BitCider and try again.' });
+  }
+  req.bitciderSessionId = sessionId;
+  next();
+}
+
+function createAuthenticatedSession(store, accountId, res) {
+  const now = Date.now();
+  const active = Object.entries(store.authSessions)
+    .filter(([, entry]) => entry?.accountId === accountId)
+    .sort((a, b) => Date.parse(a[1].createdAt || 0) - Date.parse(b[1].createdAt || 0));
+  while (active.length >= 8) {
+    const [oldHash] = active.shift();
+    delete store.authSessions[oldHash];
   }
 
-  if (/^[A-Za-z0-9_-]{40,50}$/.test(existing)) return existing;
-
-  const created = crypto.randomBytes(32).toString('base64url');
-  // Secure is appropriate for the three deployed HTTPS hosts; localhost is
-  // also treated as a trustworthy origin by modern browsers.
-  res.append('Set-Cookie', SESSION_COOKIE + '=' + created + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000');
-  return created;
+  const sessionId = crypto.randomBytes(32).toString('base64url');
+  store.authSessions[hashSessionId(sessionId)] = {
+    accountId,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + SESSION_TTL_MS).toISOString()
+  };
+  setSessionCookie(res, sessionId);
+  return sessionId;
 }
 
 function getUserSession(req, res) {
   const store = readStore();
   const sessionId = ensureSessionId(req, res);
-  return { store, sessionId, user: store.sessions[sessionId] || null };
+  const authSession = store.authSessions[hashSessionId(sessionId)];
+  if (authSession && Date.parse(authSession.expiresAt) > Date.now()) {
+    const account = store.accounts[authSession.accountId];
+    if (account) {
+      return {
+        store, sessionId, user: account,
+        accountId: authSession.accountId, authenticated: true
+      };
+    }
+  }
+  return { store, sessionId, user: store.sessions[sessionId] || null, accountId: null, authenticated: false };
+}
+
+const authRateBuckets = new Map();
+function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const ip = String(req.ip || req.socket.remoteAddress || 'unknown');
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    const usernameKey = username ? crypto.createHash('sha256').update(username).digest('hex').slice(0, 16) : '';
+    const key = ip + (usernameKey ? ':' + usernameKey : '');
+    let bucket = authRateBuckets.get(key);
+    if (!bucket || now - bucket.startedAt >= windowMs) bucket = { count: 0, startedAt: now };
+    bucket.count += 1;
+    authRateBuckets.set(key, bucket);
+    if (authRateBuckets.size > 5000) {
+      for (const [entryKey, entry] of authRateBuckets) {
+        if (now - entry.startedAt >= windowMs) authRateBuckets.delete(entryKey);
+      }
+    }
+    if (bucket.count > maxAttempts) {
+      res.set('Retry-After', String(Math.ceil((windowMs - (now - bucket.startedAt)) / 1000)));
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many account attempts. Try again later.' });
+    }
+    next();
+  };
+}
+
+function accountConnection(user) {
+  if (!user?.ciderToken || !user?.addonKey) return null;
+  return {
+    addonKey: user.addonKey,
+    ciderToken: user.ciderToken,
+    authMethod: user.authMethod || 'cider-api-auth-request',
+    scopes: Array.isArray(user.scopes) ? user.scopes : [],
+    connectedAt: user.connectedAt || null
+  };
 }
 
 function tokenForUser(user) {
@@ -443,7 +567,11 @@ async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high'
 
 function validAddonKey(req, res, next) {
   const store = readStore();
-  const user = Object.values(store.sessions || {}).find(entry =>
+  const allOwners = [
+    ...Object.values(store.sessions || {}),
+    ...Object.values(store.accounts || {})
+  ];
+  const user = allOwners.find(entry =>
     entry?.addonKey === req.params.addonKey && entry?.ciderToken
   );
   const token = tokenForUser(user);
@@ -469,7 +597,7 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider', apiVersion: API_VERSION }));
 
 app.get('/api/status', localOnly, (req, res) => {
-  const { store, sessionId, user } = getUserSession(req, res);
+  const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
   const token = tokenForUser(user);
   const base = addonBaseUrl();
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
@@ -480,12 +608,154 @@ app.get('/api/status', localOnly, (req, res) => {
     addonUrl,
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
+    csrfToken: csrfTokenForSession(sessionId),
+    account: authenticated ? {
+      authenticated: true,
+      username: user.username,
+      createdAt: user.createdAt
+    } : { authenticated: false },
     error: null
   });
 });
 
-app.post('/api/connect', localOnly, async (req, res) => {
-  const { store, sessionId, user: previous } = getUserSession(req, res);
+app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, async (req, res) => {
+  const username = validateUsername(req.body?.username);
+  const password = req.body?.password;
+  if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Use 3–24 characters: letters, numbers, dots, underscores, or hyphens.' });
+  if (!validatePassword(password)) return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Use a passphrase between 14 and 128 characters.' });
+
+  let passwordRecord;
+  try { passwordRecord = await createPasswordRecord(password); }
+  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Use a passphrase between 14 and 128 characters.' }); }
+  const recovery = createRecoveryCodes();
+  const sessionId = req.bitciderSessionId;
+
+  try {
+    const result = await updateStore(store => {
+      const activeSession = store.authSessions[hashSessionId(sessionId)];
+      if (activeSession && Date.parse(activeSession.expiresAt) > Date.now()) {
+        return { status: 409, error: 'ALREADY_SIGNED_IN', message: 'Sign out before creating another account.' , write: false };
+      }
+      const taken = Object.values(store.accounts).some(account => account?.username === username);
+      if (taken) return { status: 409, error: 'USERNAME_TAKEN', message: 'That BitCider username is already taken.', write: false };
+
+      const pending = store.sessions[sessionId];
+      const accountId = crypto.randomBytes(24).toString('base64url');
+      const account = {
+        username,
+        password: passwordRecord,
+        recoveryCodeHashes: recovery.hashes,
+        createdAt: new Date().toISOString(),
+        ...accountConnection(pending)
+      };
+      store.accounts[accountId] = account;
+      delete store.sessions[sessionId];
+      delete store.authSessions[hashSessionId(sessionId)];
+      createAuthenticatedSession(store, accountId, res);
+      return { ok: true, accountId };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({ ok: true, username, recoveryCodes: recovery.codes });
+  } catch (error) {
+    console.error('BitCider account registration failed:', error.message);
+    return res.status(500).json({ error: 'ACCOUNT_CREATE_FAILED', message: 'Could not create your account. Try again.' });
+  }
+});
+
+app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, async (req, res) => {
+  const username = validateUsername(req.body?.username);
+  const password = req.body?.password;
+  if (!username || typeof password !== 'string' || password.length > 128) {
+    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
+  }
+
+  const sessionId = req.bitciderSessionId;
+  const initialStore = readStore();
+  const match = Object.entries(initialStore.accounts).find(([, account]) => account?.username === username);
+  const accountId = match?.[0];
+  const accountSnapshot = match?.[1];
+  const valid = await verifyPassword(password, accountSnapshot?.password);
+  if (!accountId || !valid) {
+    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
+  }
+
+  try {
+    const result = await updateStore(store => {
+      const account = store.accounts[accountId];
+      if (!account || account.password?.hash !== accountSnapshot.password.hash) {
+        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.', write: false };
+      }
+      const pending = store.sessions[sessionId];
+      const pendingConnection = accountConnection(pending);
+      const savedConnection = accountConnection(account);
+      if (pendingConnection && savedConnection && pendingConnection.addonKey !== savedConnection.addonKey) {
+        return { status: 409, error: 'ANOTHER_CONNECTION_SAVED', message: 'This browser already has a different unsaved Cider connection. Disconnect it before signing in.', write: false };
+      }
+      if (pendingConnection && !savedConnection) Object.assign(account, pendingConnection);
+      delete store.sessions[sessionId];
+      delete store.authSessions[hashSessionId(sessionId)];
+      createAuthenticatedSession(store, accountId, res);
+      return { ok: true };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, username });
+  } catch (error) {
+    console.error('BitCider sign-in failed:', error.message);
+    return res.status(500).json({ error: 'SIGN_IN_FAILED', message: 'Could not sign in. Try again.' });
+  }
+});
+
+app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
+  const sessionId = req.bitciderSessionId;
+  await updateStore(store => {
+    delete store.authSessions[hashSessionId(sessionId)];
+    return { ok: true };
+  });
+  clearSessionCookie(res);
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true });
+});
+
+app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const username = validateUsername(req.body?.username);
+  const recoveryCode = req.body?.recoveryCode;
+  const newPassword = req.body?.newPassword;
+  if (!username || !validatePassword(newPassword)) {
+    return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'Enter a valid username and a passphrase between 14 and 128 characters.' });
+  }
+
+  try {
+    const passwordRecord = await createPasswordRecord(newPassword);
+    const recovery = createRecoveryCodes();
+    const result = await updateStore(store => {
+      const entry = Object.entries(store.accounts).find(([, account]) => account?.username === username);
+      if (!entry) return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.' };
+      const [accountId, account] = entry;
+      const consumed = consumeRecoveryCode(recoveryCode, account.recoveryCodeHashes || []);
+      if (!consumed.valid) return { status: 400, error: 'INVALID_RECOVERY', message: 'The recovery details could not be verified.' };
+      account.password = passwordRecord;
+      // Replace the recovery set after one is used, and revoke every existing
+      // account session so a lost device cannot stay signed in.
+      account.recoveryCodeHashes = recovery.hashes;
+      for (const [sessionHash, session] of Object.entries(store.authSessions)) {
+        if (session?.accountId === accountId) delete store.authSessions[sessionHash];
+      }
+      return { ok: true };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    clearSessionCookie(res);
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, recoveryCodes: recovery.codes });
+  } catch (error) {
+    console.error('BitCider password recovery failed:', error.message);
+    return res.status(500).json({ error: 'RECOVERY_FAILED', message: 'Could not recover this account. Try again.' });
+  }
+});
+
+app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
+  const { sessionId, user: previous, accountId, authenticated } = getUserSession(req, res);
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
   if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))){
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Cider returned an invalid app token. Please authorize BitCider again.' });
@@ -496,21 +766,22 @@ app.post('/api/connect', localOnly, async (req, res) => {
   // a user's 127.0.0.1 API endpoint, so do not attempt a cloud-side loopback
   // check here. Cider only returns the token after the user approves the
   // requested app permissions in its native consent dialog.
-  const latestStore = readStore();
-  latestStore.sessions[sessionId] = {
-    addonKey: previous?.addonKey || crypto.randomBytes(18).toString('base64url'),
-    ciderToken: encryptToken(token),
-    authMethod: 'cider-api-auth-request',
-    scopes: Array.isArray(req.body?.scopes)
+  const saved = await updateStore(latestStore => {
+    const target = authenticated ? latestStore.accounts[accountId] : (latestStore.sessions[sessionId] ||= {});
+    if (!target) throw new Error('The signed-in account is no longer available.');
+    target.addonKey = previous?.addonKey || crypto.randomBytes(32).toString('base64url');
+    target.ciderToken = encryptToken(token);
+    target.authMethod = 'cider-api-auth-request';
+    target.scopes = Array.isArray(req.body?.scopes)
       ? req.body.scopes.filter(scope => ['playback', 'queue', 'library', 'audio'].includes(scope))
-      : [],
-    connectedAt: new Date().toISOString()
-  };
-  writeStore(latestStore);
+      : [];
+    target.connectedAt = new Date().toISOString();
+    return { addonKey: target.addonKey };
+  });
   res.set('Cache-Control', 'no-store');
   res.json({
     ok: true,
-    addonUrl: addonBaseUrl() + '/' + latestStore.sessions[sessionId].addonKey + '/manifest.json'
+    addonUrl: addonBaseUrl() + '/' + saved.addonKey + '/manifest.json'
   });
 });
 
@@ -522,10 +793,23 @@ app.get('/api/connect', localOnly, (_req, res) => {
   });
 });
 
-app.post('/api/disconnect', localOnly, (req, res) => {
-  const { store, sessionId } = getUserSession(req, res);
-  delete store.sessions[sessionId];
-  writeStore(store);
+app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
+  const { sessionId, accountId, authenticated } = getUserSession(req, res);
+  await updateStore(store => {
+    if (authenticated) {
+      const account = store.accounts[accountId];
+      if (account) {
+        delete account.addonKey;
+        delete account.ciderToken;
+        delete account.authMethod;
+        delete account.scopes;
+        delete account.connectedAt;
+      }
+    } else {
+      delete store.sessions[sessionId];
+    }
+    return { ok: true };
+  });
   res.set('Cache-Control', 'no-store');
   res.json({ ok: true });
 });
