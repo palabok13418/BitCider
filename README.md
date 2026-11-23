@@ -23,6 +23,21 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
 - Allows exact same-origin Deplexo HTTPS requests to manage a session directly, while Netlify/Cloudflare use a private gateway secret.
 
+## BitCider accounts and cloud-saved links
+
+Users can create a BitCider account with a unique username and a passphrase, then sign in on another device to restore the same saved Cider connection and personal BitChord addon URL.
+
+- Usernames are 3–24 characters and case-insensitive.
+- Passphrases must be 14–128 characters and are stored as scrypt password hashes (N=32768, r=8, p=1, 64-byte output). Plaintext passphrases are never stored.
+- Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to 8 active devices per account.
+- Cookie-authenticated state-changing requests require a session-bound HMAC CSRF token in the `X-BitCider-CSRF` header. Account endpoints are rate-limited.
+- Cider app tokens remain encrypted using AES-256-GCM in the Deplexo persistent data store. The addon URL is a bearer-style secret; it is not written to localStorage and is returned only to the matching anonymous browser session or signed-in account.
+- Creating an account while a Cider connection is already linked in that browser transfers the encrypted connection and existing addon key into the new account. Signing in on a second device restores the account's existing link instead of creating a new one.
+- Account recovery uses 10 one-time recovery codes. Only their SHA-256 hashes are stored. They are displayed once at registration or password recovery; save them offline. Using one code resets the passphrase, replaces the entire recovery-code set, and revokes all active sessions.
+- There is no email-based recovery or email identity matching. If the passphrase and all unused recovery codes are lost, the account cannot be recovered. Keep the recovery codes in a password manager or another private offline location.
+
+BitCider account identity is separate from the Apple Music/Cider login. The integration deliberately does not request Cider's sensitive `account` scope, which can expose Apple Music developer and user tokens. Users sign in to the same BitCider account on each device to recover the Cider link they previously saved.
+
 ## Cider authorization
 
 BitCider uses Cider's documented interactive Auth API directly from the user's browser:
