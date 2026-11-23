@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import Lightfall from './Lightfall.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-23-account-key-v7';
+const API_VERSION = '2026-11-23-account-key-v8';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -484,6 +484,8 @@ export default function App() {
       return false;
     }
   });
+  const [relayConfigBusy, setRelayConfigBusy] = useState(false);
+  const [relayAgentUrl, setRelayAgentUrl] = useState('');
   const [syncNotificationPermission, setSyncNotificationPermission] = useState(() => {
     try {
       return typeof window !== 'undefined' && 'Notification' in window
@@ -552,7 +554,7 @@ export default function App() {
     refreshStatus();
     // Keep last-active timestamps meaningful for the five-device limit while
     // this account page remains open, even when the user is just listening.
-    const heartbeat = window.setInterval(refreshStatus, 5 * 60 * 1000);
+    const heartbeat = window.setInterval(refreshStatus, 30000);
     return () => window.clearInterval(heartbeat);
   }, []);
 
@@ -1001,6 +1003,50 @@ export default function App() {
     }
   }
 
+  async function downloadRelayConfig() {
+    if (!csrfToken || !status.account?.authenticated || relayConfigBusy) return;
+    setRelayConfigBusy(true);
+    setNotice('Creating your private desktop relay credentials…');
+    setNoticeType('info');
+    try {
+      const response = await fetch('/api/relay/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BitCider-CSRF': csrfToken
+        },
+        cache: 'no-store',
+        body: '{}'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.config) {
+        throw new Error(getErrorMessage(result, 'Could not create the local Cider relay config.'));
+      }
+      const blob = new Blob([JSON.stringify(result.config, null, 2)], { type: 'application/json' });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = 'bitcider-relay.json';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      setRelayAgentUrl(result.agentUrl || '');
+      setStatus(current => ({
+        ...current,
+        ciderBridgeConfigured: true,
+        ciderRelay: { provisioned: true, online: false, lastSeenAt: null }
+      }));
+      setNotice('Your relay config was downloaded. It contains your Cider app token and a private relay key, so keep it in a secure folder and never share it. Download the relay runner too, save both files in the same folder, then run: node bitcider-relay.mjs');
+      setNoticeType('success');
+    } catch (error) {
+      setNotice(error?.message || 'Could not download the local Cider relay config.');
+      setNoticeType('warning');
+    } finally {
+      setRelayConfigBusy(false);
+    }
+  }
+
   async function copyAddonUrl() {
     if (!status.addonUrl) return;
     try {
@@ -1158,6 +1204,43 @@ export default function App() {
                   </div>
                 </div>
               )}
+              {status.account?.authenticated === true && (
+                <section className="cider-relay-panel" aria-label="Local Cider relay setup">
+                  <div className="cider-relay-panel-head">
+                    <div>
+                      <div className="scope-title">DESKTOP CIDER RELAY</div>
+                      <p>Connect this BitCider account to Cider on the computer where you listen.</p>
+                    </div>
+                    <span className={`cider-relay-state ${status.ciderRelay?.online ? 'is-online' : 'is-offline'}`}>
+                      <i />
+                      {status.ciderRelay?.online ? 'ONLINE' : 'OFFLINE'}
+                    </span>
+                  </div>
+                  <p className="cider-relay-copy">
+                    Search and playback requests are sent through your own encrypted outbound relay. Cider’s API port stays on your computer and is never exposed to the internet.
+                  </p>
+                  <button
+                    className="primary-button relay-config-button"
+                    type="button"
+                    onClick={downloadRelayConfig}
+                    disabled={relayConfigBusy || !status.tokenEncryptionConfigured}
+                  >
+                    <span>{relayConfigBusy ? 'PREPARING CONFIG…' : status.ciderRelay?.provisioned ? 'REISSUE RELAY CONFIG' : 'DOWNLOAD RELAY CONFIG'}</span>
+                    <span className="button-icon"><Icon name="arrow" /></span>
+                  </button>
+                  {relayAgentUrl && (
+                    <a className="relay-agent-link" href={relayAgentUrl} download="bitcider-relay.mjs">
+                      Download the desktop relay runner
+                    </a>
+                  )}
+                  <p className="cider-relay-instructions">
+                    Save <code>bitcider-relay.json</code> and <code>bitcider-relay.mjs</code> in the same folder. With Cider open, run <code>node bitcider-relay.mjs</code> from that folder. Keep the relay running while using the BitChord addon.
+                  </p>
+                  {status.ciderRelay?.provisioned && !status.ciderRelay?.online && (
+                    <p className="cider-relay-offline-note">The relay key is registered, but no desktop relay has checked in yet. Starting the runner should change this to ONLINE.</p>
+                  )}
+                </section>
+              )}
               <div className={`connected-actions ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}>
                 {connectPhase === 'promoting' && (
                   <button className="primary-button copy-addon-cta" type="button" disabled aria-hidden="true" tabIndex={-1}>
@@ -1178,8 +1261,7 @@ export default function App() {
 
           {connected && status.ciderBridgeConfigured === false && (
             <div className="notice notice-warning addon-bridge-notice">
-              Your Cider connection and BitChord addon URL are saved, but the hosted Cider relay is not configured. BitChord search and stream resolution cannot reach Cider on your computer until a secure per-user relay is online. Do not set the Deplexo CIDER_API_URL to http://127.0.0.1:10767.
-              {status.ciderBridgeConfigurationError && <span> {status.ciderBridgeConfigurationError}</span>}
+              Your Cider connection is saved, but this account has no desktop relay configured yet. Download the relay config above to reconnect addon search and playback.
             </div>
           )}
           {status.backendCompatible === false && (
