@@ -318,7 +318,7 @@ async function resolveCiderStream(trackId, token) {
   let queuePayload;
   let queueRows = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    queuePayload = await ciderRequest('/api/v1/playback/queue', { token });
+    queuePayload = await ciderRequest('/api/v2/queue', { token });
     queueRows = findQueueRows(queuePayload);
     const item = queueRows.find(row => String(
       row?.id || row?.attributes?.playParams?.id || row?.attributes?.id || ''
