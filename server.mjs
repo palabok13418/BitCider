@@ -1143,7 +1143,16 @@ app.post('/api/bridge/poll', async (req, res) => {
   const job = await takeBrowserBridgeJob(registration.bridgeId, waitMs);
   const current = browserBridges.get(registration.bridgeId);
   if (!current || browserBridgeByOwner.get(registration.ownerKey) !== registration.bridgeId) {
-    return res.status(409).json({ error: 'BROWSER_BRIDGE_REPLACED', message: 'Another BitCider tab has taken over the browser bridge.' });
+    // A replacement is a normal tab handoff (for example, after a page
+    // refresh). Return it as a control message rather than an HTTP error so
+    // DevTools does not report an expected handoff as a failed request.
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      job: null,
+      replaced: true,
+      error: 'BROWSER_BRIDGE_REPLACED',
+      message: 'Another BitCider tab has taken over the browser bridge. Use the most recently opened BitCider tab.'
+    });
   }
   current.lastSeenAt = Date.now();
   res.set('Cache-Control', 'no-store');
