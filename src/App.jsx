@@ -29,20 +29,27 @@ export default function App() {
   async function refreshStatus() {
     try {
       const response = await fetch('/api/status', { cache: 'no-store' });
-      const data = await response.json();
-      setStatus({ loading: false, ...data });
-    } catch {
-      setStatus({ loading: false, connected: false, error: 'The BitCider service is not responding.' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'BitCider status check failed (HTTP ' + response.status + ').'));
+      }
+      setStatus({ loading: false, ...payload });
+    } catch (error) {
+      setStatus({
+        loading: false,
+        connected: false,
+        error: error?.message || 'The BitCider service could not return a readable status response.'
+      });
     }
   }
 
   useEffect(() => { refreshStatus(); }, []);
 
-  async function saveToken(token) {
+  async function saveToken(token, grantedScopes = SCOPES) {
     const response = await fetch('/api/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, scopes: SCOPES, authMethod: 'cider-api-auth-request' })
+      body: JSON.stringify({ token, scopes: grantedScopes, authMethod: 'cider-api-auth-request' })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not save the Cider connection.'));
@@ -52,51 +59,78 @@ export default function App() {
   }
 
   async function requestCiderToken() {
+    // Chrome 142+ gates HTTPS-to-loopback requests behind its Loopback network
+    // permission. Check the state first, then make the request from this click.
+    if (navigator.permissions?.query) {
+      try {
+        const permission = await navigator.permissions.query({ name: 'loopback-network' });
+        if (permission.state === 'denied') {
+          throw new Error('Chrome is blocking BitCider from reaching Cider on this computer. Open this site’s permissions, set Loopback network access to Allow, reload BitCider, and try again.');
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Loopback network access')) throw error;
+        // Older browsers do not recognize the granular permission name.
+      }
+    }
+
     let response;
     try {
       response = await fetch('http://127.0.0.1:10767/api/v2/auth/request', {
         method: 'POST',
+        mode: 'cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ app_name: 'BitCider', scopes: SCOPES }),
         cache: 'no-store',
         credentials: 'omit',
+        targetAddressSpace: 'loopback',
         signal: AbortSignal.timeout(125000)
       });
     } catch (error) {
       if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-        throw new Error('Cider authorization timed out. Make sure Cider is open, then try again.');
+        throw new Error('Cider authorization timed out. Make sure Cider is open, allow BitCider to access your local network when Chrome asks, then try again.');
       }
-      throw new Error('Could not reach Cider’s local API. Open Cider and allow this website under Settings → Connections → Extension security, then try again.');
+      throw new Error('Could not reach Cider’s local API. Make sure Cider is open and allow **Loopback network** access for this BitCider website in Chrome Site settings.');
     }
 
     const payload = await response.json().catch(() => ({}));
     const apiError = payload?.error;
-    const errorCode = typeof apiError === 'object' ? apiError?.code : '';
+    const errorCode = typeof apiError === 'object'
+      ? apiError?.code
+      : (typeof apiError === 'string' && /^[A-Z0-9_]+$/.test(apiError) ? apiError : payload?.code || '');
     const apiMessage = typeof apiError === 'object'
       ? apiError?.message
-      : (typeof apiError === 'string' ? apiError : '');
+      : (typeof apiError === 'string' && errorCode !== apiError ? apiError : payload?.message || '');
 
     const knownErrors = {
-      AUTH_REQUEST_DENIED: 'Cider authorization was denied. You can try again whenever you’re ready.',
-      AUTH_REQUEST_TIMEOUT: 'Cider’s approval dialog timed out. Try connecting again.',
-      AUTH_REQUEST_BUSY: 'Cider already has an approval dialog open. Finish or dismiss it before trying again.',
-      AUTH_REQUEST_COOLDOWN: 'Cider is briefly limiting authorization requests. Wait a few seconds and try again.',
-      AUTH_REQUEST_BANNED: 'Cider temporarily blocked authorization after repeated denied requests. Try again later.'
+      AUTH_REQUEST_DENIED: 'The BitCider permission request was denied in Cider. Click Connect Cider again and approve the request in Cider’s consent dialog.',
+      AUTH_REQUEST_TIMEOUT: 'Cider’s approval dialog timed out. Keep Cider open and try connecting again.',
+      AUTH_REQUEST_BUSY: 'Cider already has an approval dialog open. Finish or dismiss that dialog before trying again.',
+      AUTH_REQUEST_COOLDOWN: 'Cider is limiting new authorization requests. Wait at least 5 seconds, then try again.',
+      AUTH_REQUEST_BANNED: 'Cider temporarily blocked new authorization requests after repeated denials. Wait 15 minutes before trying again.',
+      AUTH_RESPONSE_MALFORMED: 'Cider returned an unexpected authorization response. Update or restart Cider, then try again.'
     };
 
     if (!response.ok) {
       if (response.status === 404 || response.status === 405) {
-        throw new Error('This Cider version does not support the current authorization API. Update Cider and try again.');
+        throw new Error('This Cider version does not support the authorization API. Update Cider and try again.');
       }
-      throw new Error(knownErrors[errorCode] || apiMessage || 'Cider could not authorize BitCider. Check the Cider app and try again.');
+      throw new Error(knownErrors[errorCode] || apiMessage || 'Cider could not authorize BitCider (HTTP ' + response.status + '). Check Cider and try again.');
     }
 
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
     const token = typeof data?.token === 'string' ? data.token.trim() : '';
+    // Match only actual CR/LF characters. Escaping these twice would reject
+    // ordinary token characters such as "r" and "n".
     if (token.length < 12 || token.length > 8192 || /[\\r\\n]/.test(token)) {
       throw new Error('Cider returned an invalid authorization response. Please try again.');
     }
-    return token;
+    const grantedScopes = Array.isArray(data?.scopes)
+      ? data.scopes.filter(scope => SCOPES.includes(scope))
+      : SCOPES;
+    if (!grantedScopes.length) {
+      throw new Error('Cider approved BitCider without any of the requested permissions. Please authorize at least one requested scope.');
+    }
+    return { token, scopes: grantedScopes };
   }
 
   async function connectCider() {
@@ -104,9 +138,9 @@ export default function App() {
     setNotice('Requesting access from Cider. Approve the BitCider dialog in the Cider app.');
     setNoticeType('info');
     try {
-      const token = await requestCiderToken();
+      const authorization = await requestCiderToken();
       setNotice('Cider approved BitCider. Saving your encrypted connection…');
-      await saveToken(token);
+      await saveToken(authorization.token, authorization.scopes);
     } catch (error) {
       setNotice(error.message || 'Could not complete Cider authorization.');
       setNoticeType('warning');
@@ -225,7 +259,7 @@ export default function App() {
                 <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
                 <span className="button-icon"><Icon name="arrow" /></span>
               </button>
-              <p className="auth-help">Keep this page open while Cider displays the permission prompt. Approve the requested playback, queue, library, and audio access to finish linking.</p>
+              <p className="auth-help">Keep this page open while Cider displays its consent prompt. Approve the requested scopes in Cider, and allow Chrome’s Loopback network permission so BitCider can reach Cider on this device.</p>
             </>
           ) : (
             <>
