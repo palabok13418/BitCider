@@ -437,8 +437,9 @@ test('main App owns the browser bridge state used by its relay effect and panel'
   assert.ok(accountSetupStart >= 0 && appStart > accountSetupStart, 'expected both React component boundaries');
   const accountSetupSource = source.slice(accountSetupStart, appStart);
   const appSource = source.slice(appStart);
-  assert.doesNotMatch(accountSetupSource, /const \\[browserBridge,\\s*setBrowserBridge\\]\\s*=\\s*useState/);
-  assert.match(appSource, /const \\[browserBridge,\\s*setBrowserBridge\\]\\s*=\\s*useState/);
-  assert.match(appSource, /runCiderBrowserRelay\\(/);
-  assert.match(appSource, /setBrowserBridge\\(/);
+  const browserBridgeState = "const [browserBridge, setBrowserBridge] = useState";
+  assert.equal(accountSetupSource.includes(browserBridgeState), false);
+  assert.equal(appSource.includes(browserBridgeState), true);
+  assert.equal(appSource.includes('runCiderBrowserRelay({'), true);
+  assert.equal(appSource.includes('setBrowserBridge('), true);
 });
