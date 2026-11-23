@@ -128,15 +128,41 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!syncNotificationWatch || status.backendCompatible === true) return undefined;
+    if (!syncNotificationWatch) return undefined;
+
+    let stopped = false;
+    let checking = false;
+
+    function finishSyncNotification() {
+      if (stopped || !('Notification' in window) || Notification.permission !== 'granted') return;
+      // Clear the opt-in before displaying so a refresh or overlapping check
+      // cannot produce a duplicate notification.
+      try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
+      setSyncNotificationWatch(false);
+      setSyncNotificationPermission(Notification.permission);
+      try {
+        new Notification('BitCider', {
+          body: 'Both ends are now in Sync',
+          tag: 'bitcider-frontend-backend-synced',
+          renotify: false
+        });
+      } catch (error) {
+        console.warn('BitCider sync notification could not be displayed:', error);
+      }
+    }
+
     if (!('Notification' in window) || Notification.permission !== 'granted') {
       setSyncNotificationWatch(false);
       try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
       return undefined;
     }
 
-    let stopped = false;
-    let checking = false;
+    // refreshStatus can discover the matching API version before the polling
+    // request does. Handle that transition here too, without missing the alert.
+    if (status.backendCompatible === true) {
+      finishSyncNotification();
+      return undefined;
+    }
 
     async function checkForSync() {
       if (stopped || checking) return;
@@ -146,21 +172,7 @@ export default function App() {
         if (!response.ok) return;
         const payload = await response.json().catch(() => ({}));
         if (stopped || payload?.apiVersion !== API_VERSION) return;
-
-        // Remove the opt-in before showing the notification so repeated
-        // polling, reloads, or overlapping status updates cannot notify twice.
-        try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
-        setSyncNotificationWatch(false);
-        setSyncNotificationPermission(Notification.permission);
-        try {
-          new Notification('BitCider', {
-            body: 'Both ends are now in Sync',
-            tag: 'bitcider-frontend-backend-synced',
-            renotify: false
-          });
-        } catch (error) {
-          console.warn('BitCider sync notification could not be displayed:', error);
-        }
+        finishSyncNotification();
       } catch {
         // A temporary network/backend failure is not a sync event. Keep polling.
       } finally {
@@ -693,26 +705,32 @@ export default function App() {
             </>
           )}
 
+          {status.backendCompatible === false && (
+            <div className="notice notice-warning sync-mismatch-notice">
+              <span className="sync-mismatch-copy">{status.deploymentWarning}</span>
+              <button
+                type="button"
+                className="sync-notification-button"
+                onClick={enableSyncNotification}
+                disabled={syncNotificationWatch || syncNotificationPermission === 'denied' || syncNotificationPermission === 'unsupported'}
+              >
+                {syncNotificationWatch
+                  ? 'NOTIFICATION ENABLED · WAITING FOR SYNC'
+                  : syncNotificationPermission === 'denied'
+                    ? 'NOTIFICATIONS BLOCKED IN BROWSER SETTINGS'
+                    : syncNotificationPermission === 'unsupported'
+                      ? 'BROWSER NOTIFICATIONS NOT SUPPORTED'
+                      : 'NOTIFY ME WHEN BOTH ENDS SYNC'}
+              </button>
+              {syncNotificationWatch && (
+                <span className="sync-notification-hint">Keep this page open. BitCider checks for sync every 15 seconds.</span>
+              )}
+            </div>
+          )}
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
-          {!notice && (status.message || status.error || status.deploymentWarning) && <div className="notice notice-warning">{status.backendCompatible === false ? (
-              <>
-                <span className="sync-mismatch-copy">{status.deploymentWarning}</span>
-                <button
-                  type="button"
-                  className="sync-notification-button"
-                  onClick={enableSyncNotification}
-                  disabled={syncNotificationWatch || syncNotificationPermission === 'denied' || syncNotificationPermission === 'unsupported'}
-                >
-                  {syncNotificationWatch
-                    ? 'NOTIFICATION ENABLED · WAITING FOR SYNC'
-                    : syncNotificationPermission === 'denied'
-                      ? 'NOTIFICATIONS BLOCKED IN BROWSER SETTINGS'
-                      : syncNotificationPermission === 'unsupported'
-                        ? 'BROWSER NOTIFICATIONS NOT SUPPORTED'
-                        : 'NOTIFY ME WHEN BOTH ENDS SYNC'}
-                </button>
-              </>
-            ) : status.message || status.error || status.deploymentWarning}</div>}
+          {!notice && status.backendCompatible !== false && (status.message || status.error || status.deploymentWarning) && (
+            <div className="notice notice-warning">{status.message || status.error || status.deploymentWarning}</div>
+          )}
         </section>
       </section>
 
