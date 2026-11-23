@@ -605,22 +605,26 @@ const Grainient = ({
 
     const frame = now => {
       raf = 0;
-      if (!visible || document.hidden || gl.isContextLost()) return;
+      if (!visible || document.hidden) return;
+      if (gl.isContextLost()) {
+        reportError(new Error('The Grainient WebGL context was lost. Falling back to Lightfall.'));
+        return;
+      }
       try {
         const s = settingsRef.current;
-      const dt = last ? clamp((now - last) / 1000, 0.001, 0.05) : 1 / 60;
-      last = now;
-      if (!reduce) time += dt * s.speed * 0.16;
-      if (introClock < 1) introClock = Math.min(1, introClock + dt / INTRO_SECONDS);
-      grainClock += dt;
-      if (s.grainAnimated && !reduce && grainClock > 1 / 24) {
-        grainClock = 0;
-        frameSeed = (frameSeed + 1) % 97;
-      }
-      updateTouches(dt, view.width / view.height);
-      draw();
-      const busy =
-        (!reduce && (s.speed > 0 || s.grainAnimated)) || introClock < 1 || trail.length > 0 || spins.length > 0;
+        const dt = last ? clamp((now - last) / 1000, 0.001, 0.05) : 1 / 60;
+        last = now;
+        if (!reduce) time += dt * s.speed * 0.16;
+        if (introClock < 1) introClock = Math.min(1, introClock + dt / INTRO_SECONDS);
+        grainClock += dt;
+        if (s.grainAnimated && !reduce && grainClock > 1 / 24) {
+          grainClock = 0;
+          frameSeed = (frameSeed + 1) % 97;
+        }
+        updateTouches(dt, view.width / view.height);
+        draw();
+        const busy =
+          (!reduce && (s.speed > 0 || s.grainAnimated)) || introClock < 1 || trail.length > 0 || spins.length > 0;
         if (busy) raf = requestAnimationFrame(frame);
         else last = 0;
       } catch (error) {
