@@ -84,18 +84,17 @@ export function allowedLocalCiderJob(job) {
   return null;
 }
 
-async function probeLocalCider(signal) {
-  // Keep this a CORS-simple GET. Sending the custom apptoken header here
-  // forces an OPTIONS preflight before Cider can return its auth error. The
-  // documented flat UNAUTHORIZED_APP_TOKEN response is enough to establish
-  // that Cider is running and that the saved token needs reauthorization.
+async function probeLocalCider(signal, token) {
   const response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
     method: 'GET',
     mode: 'cors',
     credentials: 'omit',
     cache: 'no-store',
     redirect: 'error',
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+      apptoken: token
+    },
     targetAddressSpace: 'loopback',
     signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
   });
@@ -110,7 +109,7 @@ async function probeLocalCider(signal) {
 
   if (!response.ok) {
     const message = ciderCode === 'UNAUTHORIZED_APP_TOKEN'
-      ? 'Cider is running, but its authorization for BitCider needs to be refreshed. Reconnect Cider on this device and approve the authorization request again.'
+      ? 'Cider rejected BitCider’s saved app token. Reconnect Cider on this device and approve access from this BitCider website again.'
       : 'Cider responded with HTTP ' + response.status + (ciderMessage ? ': ' + ciderMessage : '.');
     const error = new Error(message);
     error.status = response.status;
@@ -163,14 +162,17 @@ async function executeLocalCiderJob(job, token) {
     return { status: response.status, body };
   } catch (error) {
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    const corsBlocked = error?.name === 'TypeError';
     return {
       status: timedOut ? 504 : 503,
       body: {
         error: {
-          code: timedOut ? 'LOCAL_CIDER_TIMEOUT' : 'LOCAL_CIDER_UNREACHABLE',
+          code: timedOut ? 'LOCAL_CIDER_TIMEOUT' : (corsBlocked ? 'LOCAL_CIDER_CORS_BLOCKED' : 'LOCAL_CIDER_UNREACHABLE'),
           message: timedOut
             ? 'Cider did not answer the local API request within 12 seconds.'
-            : 'The BitCider tab cannot reach Cider at 127.0.0.1:10767. Open Cider and allow the browser’s local-network permission for this BitCider site.'
+            : (corsBlocked
+              ? 'The browser blocked Cider’s cross-origin API request. Reconnect Cider from this BitCider website and approve the access prompt. If it still fails, this Cider build is not allowing the BitCider origin and apptoken header through CORS.'
+              : 'The BitCider tab cannot reach Cider at 127.0.0.1:10767. Open Cider and allow local-network access for this BitCider site.')
         }
       }
     };
@@ -231,7 +233,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
 
       if (!localCiderAvailable && !localCiderAuthFailed && Date.now() >= nextProbeAt) {
         try {
-          await probeLocalCider(signal);
+          await probeLocalCider(signal, ciderToken);
           localCiderAvailable = true;
           setState('connected', 'This BitCider tab is connected to Cider on this computer.');
         } catch (error) {
