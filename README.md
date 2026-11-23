@@ -17,7 +17,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup and environment variables.
 - Opens Cider's `cider://request-auth` authorization flow as **BitCider**.
 - Requests `playback`, `queue`, `library`, and `audio` scopes.
 - Includes the supplied LineWaves WebGL background.
-- Creates a unique personal BitChord addon URL.
+- Gives each browser session its own encrypted Cider connection record and unique personal BitChord addon URL.
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Encrypts saved Cider app tokens with AES-256-GCM.
 - Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
@@ -39,7 +39,7 @@ Cider's API normally listens on the user's own computer (commonly `127.0.0.1:107
 
 A per-user outbound bridge/relay is still required for remote BitChord playback. It must keep the Cider app token on the user's device and relay only authenticated Cider API operations to Deplexo over an encrypted outbound connection. Do not expose Cider's local port directly to the public internet.
 
-The current Cider API adapter is retained as an initial reference implementation, but a cloud deployment alone does not yet complete the remote playback path. This is deliberately documented rather than represented as working before it has been implemented and tested.
+The Deplexo store is isolated by an HttpOnly browser session cookie, so users do not overwrite one another's Cider tokens or personal addon keys. The current Cider API adapter is retained as an initial reference implementation, but a cloud deployment alone does not yet complete the remote playback path. This is deliberately documented rather than represented as working before it has been implemented and tested.
 
 ## Local development
 
