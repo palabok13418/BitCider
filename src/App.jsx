@@ -78,14 +78,8 @@ export default function App() {
     setNotice('Opening Cider authorization…');
     setNoticeType('info');
 
-    // The scheme is the official user-facing hand-off. The browser API request
-    // below lets Cider return the approved app token directly to this page.
-    try {
-      window.open(authUri, '_blank', 'noopener,noreferrer');
-    } catch {
-      // Some browsers do not expose custom-protocol launch errors.
-    }
-
+    // Request the token through Cider's local browser-auth endpoint. The
+    // cider:// link below remains available as a manual fallback.
     try {
       const response = await fetch(CIDER_API + '/api/v2/auth/request', {
         method: 'POST',
