@@ -429,3 +429,16 @@ test('browser relay accepts only bounded Cider catalog search and playback route
     body: { url: 'https://example.com/plugin.zip' }
   }), null);
 });
+
+test('main App owns the browser bridge state used by its relay effect and panel', async () => {
+  const source = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
+  const accountSetupStart = source.indexOf('function AccountSetupWindow(');
+  const appStart = source.indexOf('export default function App()');
+  assert.ok(accountSetupStart >= 0 && appStart > accountSetupStart, 'expected both React component boundaries');
+  const accountSetupSource = source.slice(accountSetupStart, appStart);
+  const appSource = source.slice(appStart);
+  assert.doesNotMatch(accountSetupSource, /const \\[browserBridge,\\s*setBrowserBridge\\]\\s*=\\s*useState/);
+  assert.match(appSource, /const \\[browserBridge,\\s*setBrowserBridge\\]\\s*=\\s*useState/);
+  assert.match(appSource, /runCiderBrowserRelay\\(/);
+  assert.match(appSource, /setBrowserBridge\\(/);
+});
