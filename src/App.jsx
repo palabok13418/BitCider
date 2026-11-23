@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
+const API_VERSION = '2026-11-23-cider-auth-v2';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   if (name === 'arrow') return <svg {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
@@ -33,7 +34,15 @@ export default function App() {
       if (!response.ok) {
         throw new Error(getErrorMessage(payload, 'BitCider status check failed (HTTP ' + response.status + ').'));
       }
-      setStatus({ loading: false, ...payload });
+      const backendCompatible = payload?.apiVersion === API_VERSION;
+      setStatus({
+        loading: false,
+        ...payload,
+        backendCompatible,
+        deploymentWarning: backendCompatible
+          ? null
+          : 'This website is newer than its Deplexo backend. Redeploy the latest BitCider main branch to Deplexo, then reload this page before linking Cider.'
+      });
     } catch (error) {
       setStatus({
         loading: false,
@@ -134,6 +143,11 @@ export default function App() {
   }
 
   async function connectCider() {
+    if (status.backendCompatible !== true) {
+      setNotice('The Deplexo backend needs to be updated before Cider can be linked. Redeploy BitCider main and reload this page.');
+      setNoticeType('warning');
+      return;
+    }
     setBusy(true);
     setNotice('Requesting access from Cider. Approve the BitCider dialog in the Cider app.');
     setNoticeType('info');
@@ -255,7 +269,7 @@ export default function App() {
                 </div>
                 <p>Search your Cider library, read the queue and control playback.</p>
               </div>
-              <button className="primary-button" onClick={connectCider} disabled={busy || status.loading}>
+              <button className="primary-button" onClick={connectCider} disabled={busy || status.loading || status.backendCompatible !== true}>
                 <span>{busy ? 'WAITING FOR CIDER' : 'CONNECT CIDER'}</span>
                 <span className="button-icon"><Icon name="arrow" /></span>
               </button>
@@ -301,7 +315,7 @@ export default function App() {
           )}
 
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
-          {!notice && (status.message || status.error) && <div className="notice notice-warning">{status.message || status.error}</div>}
+          {!notice && (status.message || status.error || status.deploymentWarning) && <div className="notice notice-warning">{status.message || status.error || status.deploymentWarning}</div>}
         </section>
       </section>
 
