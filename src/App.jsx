@@ -1194,9 +1194,13 @@ export default function App() {
                         ? 'ONLINE'
                         : browserBridge.state === 'cider-auth-required'
                           ? 'RECONNECT CIDER'
+                          : browserBridge.state === 'cider-access-blocked'
+                          ? 'CIDER ACCESS BLOCKED'
                           : browserBridge.state === 'cider-unavailable'
                             ? 'CIDER OFFLINE'
-                            : browserBridge.state === 'connecting' || browserBridge.state === 'reconnecting'
+                            : browserBridge.state === 'replaced'
+                              ? 'ACTIVE IN ANOTHER TAB'
+                              : browserBridge.state === 'connecting' || browserBridge.state === 'reconnecting'
                               ? 'CONNECTING'
                               : 'OFFLINE'}
                     </span>
@@ -1204,10 +1208,10 @@ export default function App() {
                   <p className="cider-relay-copy">
                     No downloads, scripts, or installers. Keep this BitCider tab open on the computer where Cider is running while using the BitChord addon.
                   </p>
-                  <p className={`cider-relay-instructions ${browserBridge.state === 'cider-unavailable' || browserBridge.state === 'cider-auth-required' || browserBridge.state === 'reconnecting' ? 'cider-relay-offline-note' : ''}`}>
+                  <p className={`cider-relay-instructions ${browserBridge.state === 'cider-unavailable' || browserBridge.state === 'cider-auth-required' || browserBridge.state === 'cider-access-blocked' || browserBridge.state === 'reconnecting' || browserBridge.state === 'replaced' ? 'cider-relay-offline-note' : ''}`}>
                     {browserBridge.message || 'Starting the local Cider connection…'}
                   </p>
-                  {(browserBridge.state === 'cider-auth-required' || browserBridge.state === 'cider-unavailable') && (
+                  {browserBridge.state === 'cider-auth-required' && (
                     <button
                       className="primary-button relay-reconnect-button"
                       type="button"
