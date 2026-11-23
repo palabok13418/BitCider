@@ -56,13 +56,15 @@ Cider displays its native approval dialog. Once the user approves, Cider returns
 
 Cider must be running on the same device as the browser. Current Chrome releases gate HTTPS-to-`127.0.0.1` requests behind the **Loopback network** permission. Choose Allow when Chrome prompts; if access was previously denied, change the BitCider site's Loopback network permission to Allow in Chrome Site settings, reload, and retry. Cider's `403 AUTH_REQUEST_DENIED` means the user denied the native consent dialog.
 
-## Critical Cider bridge limitation
+## Per-account Cider desktop relay
 
-Cider's API normally listens on the user's own computer (commonly `127.0.0.1:10767`). A Deplexo container cannot reach the user's computer by calling its own `127.0.0.1`, and a Cider app token by itself does not make that local API remotely reachable.
+Remote addon search and playback use a per-account outbound desktop relay. The user's computer runs `bitcider-relay.mjs`, which calls Cider at `127.0.0.1:10767` locally and exchanges only the approved BitCider requests with Deplexo over HTTPS. It does not expose a public port on the desktop.
 
-A per-user outbound bridge/relay is still required for remote BitChord playback. It must keep the Cider app token on the user's device and relay only authenticated Cider API operations to Deplexo over an encrypted outbound connection. Do not expose Cider's local port directly to the public internet.
+To set it up, sign in to BitCider on the computer where Cider is running, open the **Desktop Cider Relay** panel, download the private relay config and the runner script, save both files in the same private folder, then run `node bitcider-relay.mjs`. Keep the process running while using the BitCider source in BitChord. Full instructions and the security model are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-The Deplexo store is isolated by authenticated HttpOnly browser sessions mapped to BitCider accounts, with anonymous browser sessions retained until users save their connection to an account. Users do not overwrite one another's Cider tokens or personal addon keys. The current Cider API adapter is retained as an initial reference implementation, but a cloud deployment alone does not yet complete the remote playback path. This is deliberately documented rather than represented as working before it has been implemented and tested.
+The relay config contains a local copy of the user's Cider app token and a per-account relay key in plaintext. Protect this file like a password; do not commit or share it. Deplexo stores only a hash of the relay key and keeps the Cider app token encrypted at rest. Reissuing the config rotates the relay key, and disconnecting Cider revokes it.
+
+The relay currently forwards only Cider library song search, play-item, queue read, and playback pause operations. Search is scoped to the linked Cider library, not the full Apple Music catalog. A relay that is not running will appear OFFLINE and addon requests will return an actionable bridge error rather than attempting to connect Deplexo's localhost to the desktop.
 
 ## Local development
 
