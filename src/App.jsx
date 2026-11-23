@@ -221,8 +221,8 @@ export default function App() {
 
       <header className="topbar">
         <a className="brand" href="/" aria-label="BitCider home">
-          <img className="brand-logo" src="/favicon.svg" alt="" />
-          <span className="brand-word">bit<span>cider</span></span>
+          <img className="brand-logo" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
+          <span className="brand-word">Bit<span>Cider</span></span>
         </a>
       </header>
 
