@@ -1125,10 +1125,10 @@ app.post('/api/bridge/poll', async (req, res) => {
     return res.status(401).json({ error: 'BROWSER_BRIDGE_UNAUTHORIZED', message: 'This browser bridge has expired. Refresh BitCider to reconnect.' });
   }
   registration.lastSeenAt = Date.now();
-  const requestedWait = Number(req.body?.waitMs || 20000);
+  const requestedWait = Number(req.body?.waitMs || 5000);
   const waitMs = Number.isFinite(requestedWait)
-    ? Math.max(500, Math.min(Math.floor(requestedWait), 20000))
-    : 20000;
+    ? Math.max(500, Math.min(Math.floor(requestedWait), 5000))
+    : 5000;
   const job = await takeBrowserBridgeJob(registration.bridgeId, waitMs);
   const current = browserBridges.get(registration.bridgeId);
   if (!current || browserBridgeByOwner.get(registration.ownerKey) !== registration.bridgeId) {
