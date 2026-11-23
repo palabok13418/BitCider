@@ -683,7 +683,7 @@ test('BitMono refuses to return a playback URL when the upstream audio transfer 
   assert.equal(payload.error, 'BITMONO_AUDIO_PRELOAD_FAILED');
   assert.equal(typeof payload.requestId, 'string');
   assert.equal(Object.hasOwn(payload, 'url'), false);
-  assert.match(backend.output(), /audio\\.download_failed/);
+  assert.match(backend.output(), /audio\.download_failed/);
 });
 test('BitMono uses unified top results and does not cache empty upstream searches', async t => {
   const upstreamRequests = [];
