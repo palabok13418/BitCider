@@ -162,7 +162,7 @@ export default function App() {
       setConnectPhase('promoting');
       window.setTimeout(() => {
         setConnectPhase(current => current === 'promoting' ? 'idle' : current);
-      }, 900);
+      }, 1050);
     } catch (error) {
       setNotice(error.message || 'Could not complete Cider authorization.');
       setNoticeType('warning');
@@ -292,7 +292,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className="card-heading connected-heading">
+              <div className={`card-heading connected-heading ${connectPhase === 'promoting' ? 'is-entering' : ''}`}>
                 <div className="success-icon"><Icon name="check" size={24} /></div>
                 <div>
                   <h2>Cider is linked</h2>
