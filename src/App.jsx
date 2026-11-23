@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-22-passkeys-devices-v4';
+const API_VERSION = '2026-11-22-cider-link-onboarding-v5';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -22,7 +22,355 @@ function getErrorMessage(payload, fallback) {
   return payload?.error?.message || payload?.message || payload?.error || fallback;
 }
 
+
+function passwordStrength(value) {
+  if (!value) return { level: 0, label: 'Start typing', note: 'No character-count limit. Strength is guidance, not a gate.' };
+  const classes = [
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /[0-9]/.test(value),
+    /[^A-Za-z0-9]/.test(value),
+    /[^\x00-\x7F]/.test(value)
+  ].filter(Boolean).length;
+  const predictable = /(.)\1{3,}|0123|1234|2345|abcd|bcde|qwer|asdf|password|letmein|welcome/i.test(value);
+  if (value.length < 8 || (classes === 1 && value.length < 12)) {
+    return { level: 1, label: 'Simple', note: 'Add more length or variety to make it harder to guess.' };
+  }
+  if (value.length < 14 || classes < 3 || predictable) {
+    return { level: 2, label: 'Mid · Try adding something', note: 'A longer passphrase or another character type can make this stronger.' };
+  }
+  return { level: 3, label: 'Hard · Good', note: 'Looks harder to guess. Keep it unique to BitCider.' };
+}
+
+function AccountSetupWindow({
+  inline = false,
+  initialFlow = null,
+  initialUsername = '',
+  initialHasPasskeys = false,
+  onComplete,
+  onClose
+}) {
+  const [flow, setFlow] = useState(initialFlow);
+  const [stage, setStage] = useState(initialFlow === 'existing' ? 'login' : initialFlow === 'new' ? 'create' : 'waiting');
+  const [username, setUsername] = useState(initialUsername);
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [csrfToken, setCsrfToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [hasPasskeys, setHasPasskeys] = useState(initialHasPasskeys);
+  const [passkeyState, setPasskeyState] = useState('idle');
+  const [passkeyCount, setPasskeyCount] = useState(0);
+  const [passkeyLimit, setPasskeyLimit] = useState(5);
+  const [tokenEncryptionConfigured, setTokenEncryptionConfigured] = useState(false);
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [recoverySaved, setRecoverySaved] = useState(false);
+  const [enrollmentPassword, setEnrollmentPassword] = useState('');
+  const strength = passwordStrength(password);
+
+  async function post(path, payload = {}) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
+      cache: 'no-store',
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.error?.message || result?.message || result?.error || 'The account request could not be completed.');
+    return result;
+  }
+
+  async function loadStatus() {
+    const response = await fetch('/api/status', { cache: 'no-store' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.message || 'Could not load account status.');
+    setCsrfToken(result.csrfToken || '');
+    setPasskeyCount(Number(result.passkeyCount || 0));
+    setPasskeyLimit(Number(result.passkeyLimit || 5));
+    setTokenEncryptionConfigured(result.tokenEncryptionConfigured === true);
+    if (result.account?.username && !username) setUsername(result.account.username);
+    return result;
+  }
+
+  function finish() {
+    setEnrollmentPassword('');
+    setPassword('');
+    setPasswordConfirm('');
+    if (inline) {
+      onComplete?.();
+      return;
+    }
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'BITCIDER_ACCOUNT_SETUP_COMPLETE' }, window.location.origin);
+      }
+    } catch {}
+    window.setTimeout(() => window.close(), 220);
+  }
+
+  useEffect(() => {
+    loadStatus().catch(err => setError(err.message || 'Could not prepare account setup.'));
+  }, []);
+
+  useEffect(() => {
+    if (inline) return undefined;
+    function onParentMessage(event) {
+      if (event.origin !== window.location.origin || event.source !== window.opener) return;
+      if (event.data?.type !== 'BITCIDER_ACCOUNT_FLOW') return;
+      const nextFlow = event.data.flow === 'existing' ? 'existing' : 'new';
+      setFlow(nextFlow);
+      setUsername(event.data.username || '');
+      setHasPasskeys(event.data.hasPasskeys === true);
+      setStage(nextFlow === 'existing' ? 'login' : 'create');
+      setError('');
+      setInfo('');
+    }
+    window.addEventListener('message', onParentMessage);
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'BITCIDER_ACCOUNT_POPUP_READY' }, window.location.origin);
+      }
+    } catch {}
+    return () => window.removeEventListener('message', onParentMessage);
+  }, [inline]);
+
+  useEffect(() => {
+    if (inline || flow !== 'existing' || !hasPasskeys || !csrfToken || stage !== 'login') return undefined;
+    let cancelled = false;
+    setPasskeyState('looking');
+    (async () => {
+      try {
+        const optionsJSON = await post('/api/account/passkeys/auth/options');
+        const authentication = await startAuthentication({ optionsJSON, useBrowserAutofill: true });
+        const result = await post('/api/account/passkeys/auth/verify', authentication);
+        if (!cancelled) {
+          setInfo(result.evictedDevice
+            ? 'Passkey verified. ' + result.evictedDevice + ' was signed out to stay within the five-device limit.'
+            : 'Passkey verified. Your saved Cider connection is restored.');
+          finish();
+        }
+      } catch (err) {
+        if (!cancelled) setPasskeyState('fallback');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [inline, flow, hasPasskeys, csrfToken, stage]);
+
+  async function signInWithPasskey() {
+    setBusy(true);
+    setError('');
+    try {
+      const optionsJSON = await post('/api/account/passkeys/auth/options');
+      const authentication = await startAuthentication({ optionsJSON });
+      const result = await post('/api/account/passkeys/auth/verify', authentication);
+      setInfo(result.evictedDevice
+        ? 'Passkey verified. ' + result.evictedDevice + ' was signed out to stay within the five-device limit.'
+        : 'Passkey verified. Your saved Cider connection is restored.');
+      finish();
+    } catch (err) {
+      setError(err.message || 'Passkey sign-in was cancelled or could not be completed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithPassword(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await post('/api/account/login', { username, password });
+      finish();
+    } catch (err) {
+      setError(err.message || 'Username or passphrase is incorrect.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createAccount(event) {
+    event.preventDefault();
+    if (password !== passwordConfirm) {
+      setError('The passphrases do not match.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await post('/api/account/register', { username, password });
+      setEnrollmentPassword(password);
+      setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+      setPassword('');
+      setPasswordConfirm('');
+      setStage('recovery');
+      setInfo('Your account is created. Save these recovery codes before continuing.');
+      await loadStatus();
+    } catch (err) {
+      setError(err.message || 'Could not create your BitCider account.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyRecoveryCodes() {
+    try {
+      await navigator.clipboard.writeText(recoveryCodes.join('\n'));
+      setInfo('Recovery codes copied. Store them somewhere private and offline.');
+    } catch {
+      setError('Clipboard access was blocked. Select and copy the codes manually.');
+    }
+  }
+
+  async function addOnboardingPasskey() {
+    if (!enrollmentPassword) {
+      setError('Your passphrase is no longer available in this window. Finish setup and add passkeys from account recovery or sign in again.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setInfo('Opening your device’s passkey setup…');
+    try {
+      const deviceName = 'Passkey ' + (passkeyCount + 1);
+      const optionsJSON = await post('/api/account/passkeys/register/options', { password: enrollmentPassword });
+      const registration = await startRegistration({ optionsJSON });
+      const result = await post('/api/account/passkeys/register/verify', { ...registration, deviceName });
+      setPasskeyCount(Number(result.passkeyCount || passkeyCount + 1));
+      setHasPasskeys(true);
+      setPasskeyState('ready');
+      setInfo('Passkey ' + (result.passkeyCount || passkeyCount + 1) + ' of ' + passkeyLimit + ' added.');
+    } catch (err) {
+      setError(err.message || 'Could not add this passkey. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canSubmitCreate = Boolean(username.trim() && password.length > 0 && passwordConfirm.length > 0 && csrfToken && !busy);
+  const canSubmitLogin = Boolean(username.trim() && password.length > 0 && csrfToken && !busy);
+  const strengthClass = strength.level ? 'password-strength level-' + strength.level : 'password-strength';
+
+  return (
+    <div className={inline ? 'account-popup-overlay' : 'account-popup-page'}>
+      <section className="account-popup-card" aria-live="polite">
+        <div className="account-popup-top">
+          <div className="account-popup-brand">
+            <img src="/favicon.svg" alt="" />
+            <span>Bit<span>Cider</span></span>
+          </div>
+          {inline && <button className="account-popup-close" type="button" onClick={onClose} aria-label="Close account setup">×</button>}
+        </div>
+
+        <div className="account-popup-content">
+          {stage === 'waiting' && (
+            <div className="account-popup-state">
+              <div className="card-label">CIDER CONNECTION APPROVED</div>
+              <h1>Preparing your account…</h1>
+              <p>This window is waiting for BitCider to securely check whether this Cider token is already linked.</p>
+            </div>
+          )}
+
+          {stage === 'create' && (
+            <div className="account-popup-state">
+              <div className="card-label">NEW CIDER LINK</div>
+              <h1>Create your BitCider account.</h1>
+              <p>Your Cider connection is ready. Create a password so this link can be restored when you sign in on another device.</p>
+              {!tokenEncryptionConfigured && (
+                <div className="account-popup-warning">Secure cloud storage is not configured on the BitCider backend yet. Account setup is unavailable until Deplexo has the encryption secret.</div>
+              )}
+              <form className="account-popup-form" onSubmit={createAccount}>
+                <label>
+                  <span>BITCIDER USERNAME</span>
+                  <input autoComplete="username" minLength={3} maxLength={24} value={username} onChange={event => setUsername(event.target.value)} placeholder="your-username" required />
+                </label>
+                <label>
+                  <span>CREATE A PASSWORD</span>
+                  <input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose any password" required />
+                </label>
+                <div className={strengthClass} aria-live="polite">
+                  <div className="password-strength-bars"><i /><i /><i /></div>
+                  <strong>{strength.label}</strong>
+                  <span>{strength.note}</span>
+                </div>
+                <label>
+                  <span>CONFIRM PASSWORD</span>
+                  <input type="password" autoComplete="new-password" value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} placeholder="Type it again" required />
+                </label>
+                <p className="account-popup-footnote">There is no password character-count rule. The strength indicator is only a live estimate and will never block a password by itself.</p>
+                <button className="account-submit-button" type="submit" disabled={!canSubmitCreate || !tokenEncryptionConfigured}>{busy ? 'CREATING ACCOUNT…' : 'CREATE ACCOUNT'}</button>
+              </form>
+            </div>
+          )}
+
+          {stage === 'recovery' && (
+            <div className="account-popup-state">
+              <div className="card-label">ACCOUNT SECURITY</div>
+              <h1>Save your recovery codes.</h1>
+              <p>These codes are shown once. Each code can recover your account one time, so save them somewhere private.</p>
+              <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
+              <div className="account-popup-actions">
+                <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
+                <button className="account-submit-button" type="button" onClick={() => { setRecoverySaved(true); setStage('passkeys'); }} disabled={!recoveryCodes.length}>I SAVED MY CODES</button>
+              </div>
+            </div>
+          )}
+
+          {stage === 'passkeys' && (
+            <div className="account-popup-state">
+              <div className="card-label">PASSKEY SETUP · {Math.min(passkeyCount, passkeyLimit)}/{passkeyLimit}</div>
+              <h1>Add up to five passkeys.</h1>
+              <p>Set up separate passkeys on devices or password managers you use. Each passkey is added with its own secure browser prompt.</p>
+              <div className="passkey-progress" aria-label={passkeyCount + ' of ' + passkeyLimit + ' passkeys added'}>
+                {Array.from({ length: passkeyLimit }, (_, index) => <i className={index < passkeyCount ? 'is-complete' : ''} key={index} />)}
+              </div>
+              <div className="account-popup-actions">
+                <button className="account-submit-button" type="button" onClick={addOnboardingPasskey} disabled={busy || passkeyCount >= passkeyLimit}>
+                  {busy ? 'WAITING FOR AUTHENTICATOR…' : passkeyCount === 0 ? 'ADD FIRST PASSKEY' : passkeyCount < passkeyLimit ? 'ADD ANOTHER PASSKEY' : 'FIVE PASSKEYS ADDED'}
+                </button>
+                <button className="account-secondary-button" type="button" onClick={finish} disabled={busy}>FINISH SETUP</button>
+              </div>
+              <p className="account-popup-footnote">You can finish with one passkey or add more, up to the five-passkey limit. You can skip this step and return later.</p>
+            </div>
+          )}
+
+          {stage === 'login' && (
+            <div className="account-popup-state">
+              <div className="card-label">CIDER LINK ALREADY SAVED</div>
+              <h1>Welcome back.</h1>
+              <p>This Cider token is already linked to <strong>@{username}</strong>. Use a passkey first, or enter your password as a fallback.</p>
+              {hasPasskeys && (
+                <div className="account-passkey-prompt">
+                  <div className="passkey-prompt-indicator">{passkeyState === 'looking' ? 'PASSKEY READY' : 'PASSKEY SIGN-IN'}</div>
+                  <p>{passkeyState === 'looking' ? 'Choose your BitCider passkey from the browser’s credential suggestions.' : 'Choose a passkey to sign in without typing your password.'}</p>
+                  <button className="account-passkey-button" type="button" onClick={signInWithPasskey} disabled={busy || !csrfToken}>{busy ? 'WAITING FOR PASSKEY…' : 'CONTINUE WITH PASSKEY'}</button>
+                </div>
+              )}
+              <div className="account-popup-divider"><span>OR USE YOUR PASSWORD</span></div>
+              <form className="account-popup-form" onSubmit={signInWithPassword}>
+                <label>
+                  <span>BITCIDER USERNAME</span>
+                  <input autoComplete={hasPasskeys ? 'username webauthn' : 'username'} value={username} onChange={event => setUsername(event.target.value)} required />
+                </label>
+                <label>
+                  <span>PASSWORD</span>
+                  <input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Your BitCider password" required />
+                </label>
+                <button className="account-submit-button" type="submit" disabled={!canSubmitLogin}>{busy ? 'SIGNING IN…' : 'SIGN IN'}</button>
+              </form>
+            </div>
+          )}
+
+          {error && <div className="notice notice-warning">{error}</div>}
+          {info && stage !== 'recovery' && <div className="notice notice-info">{info}</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
+  const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
+  const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [status, setStatus] = useState({ loading: true, connected: false });
   const [busy, setBusy] = useState(false);
   const [connectPhase, setConnectPhase] = useState('idle');
@@ -85,6 +433,34 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (isAccountPopup) return undefined;
+    function onAccountPopupMessage(event) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'BITCIDER_ACCOUNT_POPUP_READY' && event.source === window.__bitciderAccountPopup) {
+        if (window.__bitciderAccountPopupPending) {
+          event.source.postMessage(window.__bitciderAccountPopupPending, window.location.origin);
+        }
+        return;
+      }
+      if (event.data?.type === 'BITCIDER_ACCOUNT_SETUP_COMPLETE' && event.source === window.__bitciderAccountPopup) {
+        const popup = window.__bitciderAccountPopup;
+        window.__bitciderAccountPopup = null;
+        window.__bitciderAccountPopupPending = null;
+        try { if (popup && !popup.closed) popup.close(); } catch {}
+        setInlineAccountFlow(null);
+        setNotice('Your BitCider account is ready. Your saved Cider connection has been restored.');
+        setNoticeType('success');
+        refreshStatus();
+        setConnectPhase('promoting');
+        window.setTimeout(() => setConnectPhase(current => current === 'promoting' ? 'idle' : current), 2300);
+      }
+    }
+    window.addEventListener('message', onAccountPopupMessage);
+    refreshStatus();
+    return () => window.removeEventListener('message', onAccountPopupMessage);
+  }, [isAccountPopup]);
+  
   useEffect(() => {
     refreshStatus();
     // Keep last-active timestamps meaningful for the five-device limit while
@@ -415,17 +791,53 @@ export default function App() {
     }
   }
 
+  function openAccountPopup() {
+    try {
+      const popup = window.open(
+        '/?account=setup',
+        'BitCiderAccountSetup',
+        'popup=yes,width=560,height=780,resizable=yes,scrollbars=yes'
+      );
+      if (popup) {
+        window.__bitciderAccountPopup = popup;
+        window.__bitciderAccountPopupPending = null;
+        popup.focus();
+        return popup;
+      }
+    } catch {}
+    return null;
+  }
+
+  function sendAccountFlow(popup, flow) {
+    const message = {
+      type: 'BITCIDER_ACCOUNT_FLOW',
+      flow: flow.flow,
+      username: flow.username || '',
+      hasPasskeys: flow.hasPasskeys === true
+    };
+    if (popup && !popup.closed) {
+      window.__bitciderAccountPopupPending = message;
+      try { popup.postMessage(message, window.location.origin); } catch {}
+      return;
+    }
+    setInlineAccountFlow(message);
+  }
+
+  function continuePendingAccountSetup() {
+    const popup = openAccountPopup();
+    sendAccountFlow(popup, { flow: 'new' });
+  }
+
   async function saveToken(token, grantedScopes = SCOPES) {
     const response = await fetch('/api/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
+      cache: 'no-store',
       body: JSON.stringify({ token, scopes: grantedScopes, authMethod: 'cider-api-auth-request' })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(getErrorMessage(payload, 'Could not save the Cider connection.'));
-    setNotice('Cider is linked. Your personal BitChord source has been created.');
-    setNoticeType('success');
-    await refreshStatus();
+    return payload;
   }
 
   async function requestCiderToken() {
@@ -510,39 +922,71 @@ export default function App() {
       setNoticeType('warning');
       return;
     }
+    if (status.tokenEncryptionConfigured !== true) {
+      setNotice('Secure account storage is not configured on the BitCider backend yet. Add the Deplexo encryption secret before linking Cider.');
+      setNoticeType('warning');
+      return;
+    }
+    // Open synchronously from the Connect click so the browser does not block
+    // the compact account window after Cider's native consent flow completes.
+    const popup = openAccountPopup();
     setBusy(true);
     setConnectPhase('connecting');
     setNotice('Requesting access from Cider. Approve the BitCider dialog in the Cider app.');
     setNoticeType('info');
     try {
       const authorization = await requestCiderToken();
-      setNotice('Cider approved BitCider. Saving your encrypted connection…');
-      await saveToken(authorization.token, authorization.scopes);
-      setConnectPhase('promoting');
-      // Keep the staged success choreography alive until the final
-      // Disconnect action has finished rising into the shared button slot.
-      window.setTimeout(() => {
-        setConnectPhase(current => current === 'promoting' ? 'idle' : current);
-      }, 2300);
+      setNotice('Cider approved BitCider. Checking whether this token is already linked…');
+      const result = await saveToken(authorization.token, authorization.scopes);
+
+      if (result.accountLinked) {
+        if (result.alreadyAuthenticated) {
+          if (popup && !popup.closed) popup.close();
+          window.__bitciderAccountPopup = null;
+          window.__bitciderAccountPopupPending = null;
+          setNotice('This Cider connection is already saved to your signed-in BitCider account.');
+          setNoticeType('success');
+          await refreshStatus();
+          setConnectPhase('promoting');
+          window.setTimeout(() => setConnectPhase(current => current === 'promoting' ? 'idle' : current), 2300);
+        } else {
+          setNotice('This Cider connection already belongs to a BitCider account. Sign in to restore it.');
+          setNoticeType('info');
+          sendAccountFlow(popup, {
+            flow: 'existing',
+            username: result.username,
+            hasPasskeys: result.hasPasskeys
+          });
+        }
+      } else if (result.savedToCurrentAccount) {
+        if (popup && !popup.closed) popup.close();
+        window.__bitciderAccountPopup = null;
+        window.__bitciderAccountPopupPending = null;
+        setNotice('Cider is now linked to your BitCider account.');
+        setNoticeType('success');
+        await refreshStatus();
+        setConnectPhase('promoting');
+        window.setTimeout(() => setConnectPhase(current => current === 'promoting' ? 'idle' : current), 2300);
+      } else {
+        setNotice('Cider is linked on this device. Finish creating your BitCider account in the account window.');
+        setNoticeType('info');
+        sendAccountFlow(popup, { flow: 'new' });
+      }
     } catch (error) {
+      if (popup && !popup.closed) popup.close();
+      window.__bitciderAccountPopup = null;
+      window.__bitciderAccountPopupPending = null;
       if (error?.code === 'AUTH_REQUEST_DENIED') {
-        // The red Denied animation is the only denial feedback.
         setNotice('');
         setConnectPhase('denied');
         try {
           if (window.matchMedia?.('(pointer: coarse)').matches && typeof navigator.vibrate === 'function') {
             navigator.vibrate([85, 45, 85]);
           }
-        } catch {
-          // The visual shake remains available when device vibration is unsupported.
-        }
-        // Hold the contracted red state briefly, then expand the button
-        // and bring the normal label back into its original left-aligned place.
+        } catch {}
         window.setTimeout(() => {
           setConnectPhase(current => current === 'denied' ? 'denied-return' : current);
-          window.setTimeout(() => {
-            setConnectPhase(current => current === 'denied-return' ? 'idle' : current);
-          }, 660);
+          window.setTimeout(() => setConnectPhase(current => current === 'denied-return' ? 'idle' : current), 660);
         }, 1160);
       } else {
         setNotice(error.message || 'Could not complete Cider authorization.');
@@ -588,6 +1032,8 @@ export default function App() {
   }
 
   const connected = Boolean(status.connected);
+
+  if (isAccountPopup) return <AccountSetupWindow />;
 
   return (
     <main className="site-shell">
@@ -652,7 +1098,7 @@ export default function App() {
               <button
                 className={`primary-button connect-button connect-phase-${connectPhase}`}
                 onClick={connectCider}
-                disabled={busy || connectPhase !== 'idle' || status.loading || status.backendCompatible !== true}
+                disabled={busy || connectPhase !== 'idle' || status.loading || status.backendCompatible !== true || status.tokenEncryptionConfigured !== true}
                 aria-busy={connectPhase === 'connecting'}
               >
                 <span className="connect-button-label">{connectPhase === 'denied' ? 'DENIED' : 'CONNECT TO CIDER'}</span>
@@ -667,26 +1113,37 @@ export default function App() {
                 <div className="success-icon"><Icon name="check" size={24} /></div>
                 <div>
                   <h2>Cider is linked</h2>
-                  <p>Your personal source is ready to add.</p>
+                  <p>{status.pendingAccountSetup ? 'Finish securing this Cider link with a BitCider account.' : 'Your personal source is ready to add.'}</p>
                 </div>
               </div>
-              <div className={`addon-url-panel ${connectPhase === 'promoting' ? 'is-entering' : ''}`}>
-                <div className="scope-title">YOUR BITCHORD ADDON URL</div>
-                <div className="url-row">
-                  <code>{status.addonUrl}</code>
-                  <button
-                    className={`copy-button ${connectPhase === 'promoting' ? 'copy-button-entering' : ''} ${copied ? 'is-copied' : ''}`}
-                    onClick={copyAddonUrl}
-                    aria-label="Copy addon URL"
-                  >
-                    {copied ? <Icon name="check" /> : <Icon name="copy" />}
+              {status.pendingAccountSetup ? (
+                <div className="pending-account-panel">
+                  <div className="scope-title">SAVE THIS CONNECTION</div>
+                  <p>Your Cider token is safely staged on this device. Create your BitCider account to keep it available when you sign in elsewhere.</p>
+                  <button className="primary-button pending-account-button" type="button" onClick={continuePendingAccountSetup}>
+                    <span>CONTINUE ACCOUNT SETUP</span>
+                    <span className="button-icon"><Icon name="arrow" /></span>
                   </button>
                 </div>
-                <div className="url-hint">
-                  <span className="tiny-dot" />
-                  {status.publicUrlConfigured ? 'Public endpoint configured' : 'Local network endpoint'}
+              ) : (
+                <div className={\`addon-url-panel \${connectPhase === 'promoting' ? 'is-entering' : ''}\`}>
+                  <div className="scope-title">YOUR BITCHORD ADDON URL</div>
+                  <div className="url-row">
+                    <code>{status.addonUrl}</code>
+                    <button
+                      className={\`copy-button \${connectPhase === 'promoting' ? 'copy-button-entering' : ''} \${copied ? 'is-copied' : ''}\`}
+                      onClick={copyAddonUrl}
+                      aria-label="Copy addon URL"
+                    >
+                      {copied ? <Icon name="check" /> : <Icon name="copy" />}
+                    </button>
+                  </div>
+                  <div className="url-hint">
+                    <span className="tiny-dot" />
+                    {status.publicUrlConfigured ? 'Public endpoint configured' : 'Local network endpoint'}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className={`connected-actions ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}>
                 {connectPhase === 'promoting' && (
                   <button className="primary-button copy-addon-cta" type="button" disabled aria-hidden="true" tabIndex={-1}>
@@ -734,206 +1191,25 @@ export default function App() {
         </section>
       </section>
 
-      <section className="account-card" aria-label="BitCider account">
-        {status.backendCompatible === true && status.tokenEncryptionConfigured !== true && (
-          <div className="account-security-warning">
-            <strong>Extra storage protection is not configured yet.</strong>
-            Add a stable 32-byte base64url <code>BITCIDER_ENCRYPTION_KEY</code> secret to Deplexo. Existing Cider tokens will be upgraded automatically on the next backend start. Account creation, sign-in, and recovery stay locked until this is configured.
-          </div>
-        )}
-        {status.account?.authenticated ? (
-          <>
-            <div className="account-card-header">
-              <div>
-                <div className="card-label">BITCIDER ACCOUNT</div>
-                <h2>Saved to your account</h2>
-                <p>Signed in as <strong>@{status.account.username}</strong>. Your Cider connection and personal addon URL are stored securely in your BitCider account.</p>
-              </div>
-              <button className="account-secondary-button" type="button" onClick={logoutAccount} disabled={accountBusy || status.backendCompatible !== true}>
-                {accountBusy ? 'PLEASE WAIT…' : 'SIGN OUT'}
-              </button>
-            </div>
-            <div className="account-saved-row">
-              <span className="account-saved-indicator" />
-              <span>{status.connected ? 'Cider connection and addon URL saved in the cloud' : 'Account saved. Connect Cider to create your personal addon URL.'}</span>
-            </div>
-            <div className="account-security-management">
-              <div className="security-management-header">
-                <div>
-                  <div className="card-label">SIGN-IN SECURITY</div>
-                  <h3>Passkeys <span>{status.passkeyCount || 0}/{status.passkeyLimit || 5}</span></h3>
-                  <p>Use Face ID, Touch ID, Windows Hello, a password manager, or a security key. Up to five passkeys can be registered.</p>
-                </div>
-              </div>
-              <div className="security-management-form">
-                <label>
-                  <span>PASSKEY NAME</span>
-                  <input
-                    type="text"
-                    maxLength={40}
-                    value={passkeyName}
-                    onChange={event => setPasskeyName(event.target.value)}
-                    placeholder="e.g. Windows laptop"
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  <span>CURRENT BITCIDER PASSPHRASE</span>
-                  <input
-                    type="password"
-                    maxLength={128}
-                    value={securityPassword}
-                    onChange={event => setSecurityPassword(event.target.value)}
-                    placeholder="Confirm it to change security settings"
-                    autoComplete="current-password"
-                  />
-                </label>
-                <button className="account-submit-button" type="button" onClick={addPasskey} disabled={accountBusy || !securityPassword || !status.tokenEncryptionConfigured || (status.passkeyCount || 0) >= (status.passkeyLimit || 5)}>
-                  {accountBusy ? 'PLEASE WAIT…' : 'ADD PASSKEY'}
-                </button>
-              </div>
-              <div className="security-list">
-                {(status.passkeys || []).length === 0 ? (
-                  <p className="security-empty">No passkeys registered yet. Add one to enable passwordless sign-in.</p>
-                ) : (status.passkeys || []).map(passkey => (
-                  <div className="security-list-item" key={passkey.id}>
-                    <div className="security-list-copy">
-                      <strong>{passkey.name}</strong>
-                      <span>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device-bound credential'} · {passkey.rpID}</span>
-                      <small>Added {passkey.createdAt ? new Date(passkey.createdAt).toLocaleString() : 'recently'}{passkey.lastUsedAt ? ' · Last used ' + new Date(passkey.lastUsedAt).toLocaleString() : ''}</small>
-                    </div>
-                    <button type="button" className="account-secondary-button" onClick={() => removePasskey(passkey.id)} disabled={accountBusy || !securityPassword}>REMOVE</button>
-                  </div>
-                ))}
-              </div>
-              <div className="security-management-divider" />
-              <div className="security-management-header">
-                <div>
-                  <h3>Signed-in devices <span>{status.deviceCount || 0}/{status.deviceLimit || 5}</span></h3>
-                  <p>Up to five active BitCider sign-in sessions. A sixth sign-in automatically signs out the least-recently-active session.</p>
-                </div>
-              </div>
-              <div className="security-list">
-                {(status.devices || []).map(device => (
-                  <div className="security-list-item" key={device.id}>
-                    <div className="security-list-copy">
-                      <strong>{device.name}</strong>
-                      <span>{device.isCurrent ? 'This device' : 'Signed in device'} · Last active {device.lastSeenAt ? new Date(device.lastSeenAt).toLocaleString() : 'unknown'}</span>
-                    </div>
-                    {device.isCurrent ? (
-                      <span className="security-current-device">THIS DEVICE</span>
-                    ) : (
-                      <button type="button" className="account-secondary-button" onClick={() => revokeDevice(device.id)} disabled={accountBusy || !securityPassword}>REVOKE</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="account-security-note">Passkey changes and device revocations require your BitCider passphrase again. Passkeys are tied to the website domain where they were created. Synced passkeys may also work on other physical devices, while the five-device limit counts active BitCider sessions.</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="account-card-header">
-              <div>
-                <div className="card-label">SAVE YOUR CONNECTION</div>
-                <h2>Your BitCider account</h2>
-                <p>Create an account to keep your Cider connection and personal BitChord URL available when you sign in on another device.</p>
-              </div>
-            </div>
-            <div className="account-tabs" role="tablist" aria-label="Account actions">
-              <button type="button" className={accountMode === 'login' ? 'is-active' : ''} onClick={() => setAccountMode('login')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>SIGN IN</button>
-              <button type="button" className={accountMode === 'register' ? 'is-active' : ''} onClick={() => setAccountMode('register')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>CREATE ACCOUNT</button>
-              <button type="button" className={accountMode === 'recover' ? 'is-active' : ''} onClick={() => setAccountMode('recover')} disabled={accountBusy || !status.tokenEncryptionConfigured || status.backendCompatible !== true}>RECOVER</button>
-            </div>
-            <form className="account-form" onSubmit={submitAccount}>
-              <label>
-                <span>USERNAME</span>
-                <input
-                  autoComplete="username"
-                  maxLength={24}
-                  minLength={3}
-                  value={accountUsername}
-                  onChange={event => setAccountUsername(event.target.value)}
-                  placeholder="your-username"
-                  required
-                />
-              </label>
-              {accountMode === 'recover' && (
-                <label>
-                  <span>ONE-TIME RECOVERY CODE</span>
-                  <input
-                    autoComplete="off"
-                    value={recoveryCode}
-                    onChange={event => setRecoveryCode(event.target.value)}
-                    placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
-                    required
-                  />
-                </label>
-              )}
-              <label>
-                <span>{accountMode === 'recover' ? 'NEW PASSPHRASE' : 'PASSPHRASE'}</span>
-                <input
-                  autoComplete={accountMode === 'login' ? 'current-password' : 'new-password'}
-                  type="password"
-                  minLength={14}
-                  maxLength={128}
-                  value={accountPassword}
-                  onChange={event => setAccountPassword(event.target.value)}
-                  placeholder="At least 14 characters"
-                  required
-                />
-              </label>
-              {accountMode !== 'login' && (
-                <label>
-                  <span>CONFIRM PASSPHRASE</span>
-                  <input
-                    autoComplete="new-password"
-                    type="password"
-                    minLength={14}
-                    maxLength={128}
-                    value={accountPasswordConfirm}
-                    onChange={event => setAccountPasswordConfirm(event.target.value)}
-                    placeholder="Enter it again"
-                    required
-                  />
-                </label>
-              )}
-              <button className="account-submit-button" type="submit" disabled={accountBusy || !csrfToken || status.backendCompatible !== true || !status.tokenEncryptionConfigured}>
-                {accountBusy ? 'SECURING YOUR ACCOUNT…' : accountMode === 'register' ? 'CREATE SECURE ACCOUNT' : accountMode === 'recover' ? 'RESET PASSPHRASE' : 'SIGN IN'}
-              </button>
-            </form>
-            {accountMode === 'login' && (
-              <button
-                type="button"
-                className="account-passkey-button"
-                onClick={signInWithPasskey}
-                disabled={accountBusy || !csrfToken || status.backendCompatible !== true || !status.tokenEncryptionConfigured}
-              >
-                SIGN IN WITH A PASSKEY
-              </button>
-            )}
-            <p className="account-security-note">Your device keeps only a Secure, HttpOnly sign-in cookie, not your passphrase or addon URL. Passphrases use scrypt hashing; Cider tokens are encrypted on the server. Recovery codes are shown once and can each be used one time.</p>
-          </>
-        )}
-        {recoveryCodes.length > 0 && (
-          <div className="recovery-panel">
-            <div className="recovery-panel-heading">
-              <div>
-                <div className="scope-title">ONE-TIME RECOVERY CODES</div>
-                <h3>Save these before leaving</h3>
-              </div>
-              <button type="button" className="account-secondary-button" onClick={copyRecoveryCodes}>COPY CODES</button>
-            </div>
-            <p>Each code can reset your passphrase once. These codes are not stored in your browser and cannot be shown again.</p>
-            <div className="recovery-codes">
-              {recoveryCodes.map(code => <code key={code}>{code}</code>)}
-            </div>
-            <button type="button" className="account-submit-button" onClick={() => setRecoveryCodes([])}>I SAVED MY RECOVERY CODES</button>
-          </div>
-        )}
-      </section>
+      {inlineAccountFlow && (
+        <AccountSetupWindow
+          inline
+          initialFlow={inlineAccountFlow.flow}
+          initialUsername={inlineAccountFlow.username}
+          initialHasPasskeys={inlineAccountFlow.hasPasskeys}
+          onClose={() => setInlineAccountFlow(null)}
+          onComplete={() => {
+            setInlineAccountFlow(null);
+            setNotice('Your BitCider account is ready. Your saved Cider connection has been restored.');
+            setNoticeType('success');
+            refreshStatus();
+            setConnectPhase('promoting');
+            window.setTimeout(() => setConnectPhase(current => current === 'promoting' ? 'idle' : current), 2300);
+          }}
+        />
+      )}
 
-      {!status.publicUrlConfigured && connected && (
+      {!status.publicUrlConfigured && connected && !status.pendingAccountSetup && (
         <div className="network-note">
           <b>Network note</b>
           Your generated URL uses your local network address. BitChord must be able to reach this computer on the same network. For access outside your network, configure a public HTTPS tunnel and set <code>BITCIDER_PUBLIC_URL</code>.

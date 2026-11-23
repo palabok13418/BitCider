@@ -19,13 +19,13 @@ export function validateUsername(value) {
 }
 
 export function validatePassword(value) {
-  if (typeof value !== 'string') return false;
-  const bytes = Buffer.byteLength(value, 'utf8');
-  return value.length >= 14 && value.length <= 128 && bytes <= 512;
+  // Password length is deliberately unrestricted by character count. The API
+  // request body still has a finite transport limit to protect the service.
+  return typeof value === 'string' && value.length > 0;
 }
 
 export async function createPasswordRecord(password) {
-  if (!validatePassword(password)) throw new Error('Use a passphrase between 14 and 128 characters.');
+  if (!validatePassword(password)) throw new Error('Enter a passphrase.');
   const salt = crypto.randomBytes(16);
   const hash = await scrypt(password, salt, PASSWORD_SCRYPT.keylen, PASSWORD_SCRYPT);
   return {

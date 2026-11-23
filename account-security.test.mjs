@@ -22,11 +22,13 @@ test('username validation normalizes case and enforces a safe identifier format'
   assert.equal(validateUsername('not/an/account'), null);
 });
 
-test('passphrases require at least 14 characters and a bounded maximum', () => {
+test('passphrases have no character-count limit and must only be non-empty', () => {
+  assert.equal(validatePassword('x'), true);
   assert.equal(validatePassword('correct horse battery'), true);
-  assert.equal(validatePassword('short'), false);
-  assert.equal(validatePassword('x'.repeat(129)), false);
-  assert.equal(validatePassword('é'.repeat(300)), false);
+  assert.equal(validatePassword('x'.repeat(4096)), true);
+  assert.equal(validatePassword('é'.repeat(2048)), true);
+  assert.equal(validatePassword(''), false);
+  assert.equal(validatePassword(null), false);
 });
 
 test('password records use scrypt and verify without storing plaintext', async () => {
@@ -37,6 +39,9 @@ test('password records use scrypt and verify without storing plaintext', async (
   assert.equal(await verifyPassword(password, record), true);
   assert.equal(await verifyPassword(password + 'wrong', record), false);
   assert.equal(await verifyPassword(password, { ...record, N: 1024 }), false);
+  const longPassword = 'long-'.repeat(400);
+  const longRecord = await createPasswordRecord(longPassword);
+  assert.equal(await verifyPassword(longPassword, longRecord), true);
 });
 
 test('recovery codes are high entropy, formatted, and single use', () => {

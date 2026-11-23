@@ -39,7 +39,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-22-passkeys-devices-v4';
+const API_VERSION = '2026-11-22-cider-link-onboarding-v5';
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
@@ -52,7 +52,7 @@ const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
 app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
-app.use(express.json({ limit: '24kb' }));
+app.use(express.json({ limit: '256kb' }));
 app.use('/api', (_req, res, next) => {
   res.set('Cache-Control', 'no-store');
   res.set('Pragma', 'no-cache');
@@ -834,6 +834,7 @@ app.get('/api/status', localOnly, async (req, res) => {
     addonUrl,
     publicUrlConfigured: Boolean(PUBLIC_URL),
     sessionReady: Boolean(sessionId),
+    pendingAccountSetup: Boolean(token && !authenticated),
     csrfToken: csrfTokenForSession(sessionId),
     tokenEncryptionConfigured: Boolean(dedicatedTokenEncryptionKey()),
     deviceLimit: MAX_ACCOUNT_DEVICES,
@@ -855,11 +856,11 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
   const username = validateUsername(req.body?.username);
   const password = req.body?.password;
   if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Use 3–24 characters: letters, numbers, dots, underscores, or hyphens.' });
-  if (!validatePassword(password)) return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Use a passphrase between 14 and 128 characters.' });
+  if (!validatePassword(password)) return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' });
 
   let passwordRecord;
   try { passwordRecord = await createPasswordRecord(password); }
-  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Use a passphrase between 14 and 128 characters.' }); }
+  catch { return res.status(400).json({ error: 'WEAK_PASSWORD', message: 'Enter a passphrase.' });
   const recovery = createRecoveryCodes();
   const sessionId = req.bitciderSessionId;
 
@@ -901,7 +902,7 @@ app.post('/api/account/register', localOnly, authRateLimit(4), requireCsrf, requ
 app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
   const username = validateUsername(req.body?.username);
   const password = req.body?.password;
-  if (!username || typeof password !== 'string' || password.length > 128) {
+  if (!username || !validatePassword(password)) {
     return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Username or passphrase is incorrect.' });
   }
 
@@ -960,7 +961,7 @@ app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, requi
   const recoveryCode = req.body?.recoveryCode;
   const newPassword = req.body?.newPassword;
   if (!username || !validatePassword(newPassword)) {
-    return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'Enter a valid username and a passphrase between 14 and 128 characters.' });
+    return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'Enter a valid username and a passphrase.' });
   }
 
   try {
@@ -1294,31 +1295,81 @@ app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
     });
   }
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-  if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))){
+  if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))) {
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Cider returned an invalid app token. Please authorize BitCider again.' });
   }
 
-  // The browser obtains this token directly from the user's own Cider instance
-  // through POST /api/v2/auth/request. A hosted Deplexo process cannot verify
-  // a user's 127.0.0.1 API endpoint, so do not attempt a cloud-side loopback
-  // check here. Cider only returns the token after the user approves the
-  // requested app permissions in its native consent dialog.
-  const saved = await updateStore(latestStore => {
-    const target = authenticated ? latestStore.accounts[accountId] : (latestStore.sessions[sessionId] ||= {});
+  // The token is matched only on the trusted backend. Existing records hold
+  // AES-GCM ciphertext; decrypt one at a time and compare equal-length byte
+  // buffers with timingSafeEqual. No plaintext token is stored or returned.
+  function tokensMatch(left, right) {
+    if (typeof left !== 'string' || typeof right !== 'string') return false;
+    const a = Buffer.from(left, 'utf8');
+    const b = Buffer.from(right, 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  const outcome = await updateStore(latestStore => {
+    const match = Object.entries(latestStore.accounts || {}).find(([, account]) => {
+      if (!account?.ciderToken || !account?.addonKey) return false;
+      const savedToken = tokenForUser(account);
+      return savedToken && tokensMatch(savedToken, token);
+    });
+
+    if (match) {
+      const [matchedAccountId, matchedAccount] = match;
+      if (authenticated && matchedAccountId !== accountId) {
+        return {
+          status: 409,
+          error: 'DIFFERENT_ACCOUNT_ALREADY_SIGNED_IN',
+          message: 'This Cider token belongs to another BitCider account. Sign out of the current account, then connect again.',
+          write: false
+        };
+      }
+      return {
+        ok: true,
+        accountLinked: true,
+        alreadyAuthenticated: authenticated && matchedAccountId === accountId,
+        username: matchedAccount.username,
+        hasPasskeys: Array.isArray(matchedAccount.passkeys) && matchedAccount.passkeys.length > 0,
+        addonKey: matchedAccount.addonKey,
+        write: false
+      };
+    }
+
+    // If the visitor is already signed in, attach a new Cider token to that
+    // account. Otherwise stage it on this browser session until account setup.
+    const target = authenticated
+      ? latestStore.accounts[accountId]
+      : (latestStore.sessions[sessionId] ||= {});
     if (!target) throw new Error('The signed-in account is no longer available.');
-    target.addonKey = previous?.addonKey || crypto.randomBytes(32).toString('base64url');
+    target.addonKey = previous?.addonKey || target.addonKey || crypto.randomBytes(32).toString('base64url');
     target.ciderToken = encryptToken(token);
     target.authMethod = 'cider-api-auth-request';
     target.scopes = Array.isArray(req.body?.scopes)
       ? req.body.scopes.filter(scope => ['playback', 'queue', 'library', 'audio'].includes(scope))
       : [];
     target.connectedAt = new Date().toISOString();
-    return { addonKey: target.addonKey };
+    return {
+      ok: true,
+      accountLinked: false,
+      savedToCurrentAccount: authenticated,
+      addonKey: target.addonKey
+    };
   });
+
+  if (outcome.status) {
+    return res.status(outcome.status).json({ error: outcome.error, message: outcome.message });
+  }
   res.set('Cache-Control', 'no-store');
-  res.json({
+  return res.json({
     ok: true,
-    addonUrl: addonBaseUrl() + '/' + saved.addonKey + '/manifest.json'
+    accountLinked: outcome.accountLinked === true,
+    alreadyAuthenticated: outcome.alreadyAuthenticated === true,
+    savedToCurrentAccount: outcome.savedToCurrentAccount === true,
+    ...(outcome.username ? { username: outcome.username } : {}),
+    hasPasskeys: outcome.hasPasskeys === true,
+    ...(outcome.addonKey ? { addonUrl: addonBaseUrl() + '/' + outcome.addonKey + '/manifest.json' } : {})
   });
 });
 
