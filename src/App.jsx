@@ -968,6 +968,9 @@ export default function App() {
         setConnectPhase('promoting');
         window.setTimeout(() => setConnectPhase(current => current === 'promoting' ? 'idle' : current), 2300);
       } else {
+        // Reflect the newly staged token immediately. If the popup is closed,
+        // the main connection card can still offer a Continue Account Setup action.
+        await refreshStatus();
         setNotice('Cider is linked on this device. Finish creating your BitCider account in the account window.');
         setNoticeType('info');
         sendAccountFlow(popup, { flow: 'new' });
