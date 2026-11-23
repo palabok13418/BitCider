@@ -301,7 +301,7 @@ export default function App() {
           )}
 
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
-          {!notice && status.message && <div className="notice notice-warning">{status.message}</div>}
+          {!notice && (status.message || status.error) && <div className="notice notice-warning">{status.message || status.error}</div>}
         </section>
       </section>
 
