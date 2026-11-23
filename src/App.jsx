@@ -161,7 +161,7 @@ export default function App() {
       await saveToken(authorization.token, authorization.scopes);
       setConnectPhase('promoting');
       window.setTimeout(() => {
-        setConnectPhase(current => current === 'promoting' ? 'complete' : current);
+        setConnectPhase(current => current === 'promoting' ? 'idle' : current);
       }, 900);
     } catch (error) {
       setNotice(error.message || 'Could not complete Cider authorization.');
