@@ -75,6 +75,24 @@ Paste the exact shared secret configured on Deplexo when prompted. The secret mu
 
 Build the frontend with `npm run build` before deploying the Worker. Cloudflare serves ordinary frontend assets directly and invokes the Worker for API/addon paths.
 
+## 4. BitCider accounts, recovery, and stored data
+
+The current frontend/backend API version is `2026-11-22-secure-accounts-v1`. Deplexo must run the matching `main` revision before the account panel can be used.
+
+BitCider accounts use a separate username and passphrase. They do not ask for the Cider `account` permission and do not try to identify a user by reading Apple Music user tokens. Users must sign in to the same BitCider account on each device.
+
+Security controls:
+- Passwords are hashed with Node.js scrypt (N=32768, r=8, p=1, 64-byte output) using a fresh 16-byte random salt per account. Plaintext passwords are never persisted.
+- Authenticated session values are random 256-bit tokens in Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes are stored in `connection.json`. Sessions expire after 30 days, and an account may have up to 8 active devices.
+- State-changing account, connect, and disconnect requests require the session-bound `X-BitCider-CSRF` HMAC token returned by `GET /api/status`.
+- Login, registration, and recovery are rate-limited. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
+- Cider app tokens are encrypted with AES-256-GCM. The random encryption key is kept in the private persistent data directory as `encryption.key`; both it and `connection.json` are written with restrictive file permissions. Protect and back up the entire Deplexo `/data/bitcider` volume. Anyone who can read both the encrypted store and its key can decrypt stored Cider tokens.
+- The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
+- Registration creates 10 one-time recovery codes. They are shown once, while only their hashes are saved. Keep them in a password manager or offline safe location. Using a recovery code resets the passphrase, generates a fresh set of codes, and invalidates all active device sessions.
+- No email is collected or used for recovery. Losing both the passphrase and all unused recovery codes means the BitCider account cannot be recovered.
+
+When an anonymous browser already has a Cider connection, creating an account moves that encrypted Cider connection and its current addon key into the account. After sign-in on a different device, `GET /api/status` returns the already-saved addon URL for that account. Signing out revokes that browser session but does not delete the saved Cider connection. Disconnecting Cider deletes the account's saved token and addon key.
+
 ## 4. BitChord addon URL
 
 The personal addon URL is generated on the Deplexo backend after the browser receives Cider's approved token and saves it to the user's session. The same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:
