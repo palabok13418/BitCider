@@ -44,6 +44,11 @@ app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '24kb' }));
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  next();
+});
 
 function ensureSecret() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -211,7 +216,10 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
     const usernameKey = username ? crypto.createHash('sha256').update(username).digest('hex').slice(0, 16) : '';
     const keys = [
       { key: 'ip:' + ip, limit: maxAttempts * 4 },
-      ...(usernameKey ? [{ key: 'user:' + ip + ':' + usernameKey, limit: maxAttempts }] : [])
+      ...(usernameKey ? [
+        { key: 'user-ip:' + ip + ':' + usernameKey, limit: maxAttempts },
+        { key: 'user-global:' + usernameKey, limit: maxAttempts * 4 }
+      ] : [])
     ];
     let retryAfter = 0;
     for (const entry of keys) {
