@@ -9,6 +9,7 @@ const LaserFlow = lazy(() => import('./LaserFlow.jsx'));
 const LightTunnel = lazy(() => import('./LightTunnel.jsx'));
 const PrismaticBurst = lazy(() => import('./PrismaticBurst.jsx'));
 const SideRays = lazy(() => import('./SideRays.jsx'));
+const Silk = lazy(() => import('./Silk.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -354,6 +355,37 @@ const BACKGROUND_REGISTRY = [
           lightMode={false}
           opacity={0.86}
           maxDevicePixelRatio={1.35}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'silk',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <Silk
+          className="site-waves"
+          speed={2.35}
+          scale={1.05}
+          color="#fd3f57"
+          sheenColor="#ffb5c1"
+          noiseIntensity={0.72}
+          rotation={-0.16}
+          sheen={0.72}
+          depth={0.72}
+          glow={0.42}
+          ripple={0.85}
+          wave={0.82}
+          variation={11}
+          mouseInteraction
+          interactionStrength={0.62}
+          clickRipple
+          intro
+          fade={0.06}
+          lightMode={false}
+          paused={false}
+          dpr={1.3}
           onError={onError}
         />
       </Suspense>
