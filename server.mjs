@@ -179,11 +179,9 @@ function trustedFrontend(request) {
         || (parsed.protocol === 'http:' && isLoopback(parsed.hostname));
       if (!secure) return false;
 
-      // Deplexo assigns HTTPS app URLs on *.deplexo.com. Treat those as
-      // first-party deployments even if the dashboard's PUBLIC_URL value
-      // was not set or the reverse proxy rewrites the upstream Host header.
-      if (parsed.protocol === 'https:' && isDeplexoHost(parsed.hostname)) return true;
-
+      // Deplexo assigns HTTPS app URLs on *.deplexo.com. Accept the origin
+      // when it matches the public host forwarded to this service. For a
+      // rewritten upstream host, PUBLIC_URL / ALLOWED_ORIGINS must be exact.
       return parsed.host.toLowerCase() === requestHost;
     } catch {
       return false;
