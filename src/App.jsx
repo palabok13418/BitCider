@@ -600,7 +600,7 @@ export default function App() {
       active = false;
       controller.abort();
     };
-  }, [isAccountPopup, status.loading, status.connected, status.addonUrl, status.backendCompatible, status.tokenEncryptionConfigured, csrfToken]);
+  }, [isAccountPopup, status.loading, status.connected, status.addonUrl, status.backendCompatible, status.tokenEncryptionConfigured, status.account?.authenticated, csrfToken]);
 
   async function enableSyncNotification() {
     if (!('Notification' in window)) {
