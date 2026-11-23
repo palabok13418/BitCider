@@ -540,6 +540,7 @@ export default function App() {
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
   const [modeSwitcherOpen, setModeSwitcherOpen] = useState(false);
   const modeDragRef = useRef(null);
+  const modeSuppressClickUntilRef = useRef(0);
   const [modeDragProgress, setModeDragProgress] = useState(null);
   const [modeTransitionTarget, setModeTransitionTarget] = useState('');
   const [bitMonoCopied, setBitMonoCopied] = useState(false);
@@ -1185,7 +1186,13 @@ export default function App() {
 
   function beginModeDrag(event) {
     if (modeTransitionPhase !== 'idle' || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    if (!(event.target instanceof Element) || !event.target.closest('.mode-toggle-thumb')) return;
+    const dragTarget = event.target instanceof Element
+      ? event.target.closest('.mode-toggle-thumb, .mode-toggle-option')
+      : null;
+    if (!dragTarget) return;
+    const option = dragTarget.closest('.mode-toggle-option');
+    // The active half is also a grab surface; the other half remains a normal click target.
+    if (option && option.dataset.source !== pageMode) return;
     const thumb = event.currentTarget.querySelector('.mode-toggle-thumb');
     if (!thumb) return;
 
@@ -1209,6 +1216,7 @@ export default function App() {
     updateModeDrag(event);
     const shouldSwitch = drag.moved;
     const nextMode = drag.progress >= 0.5 ? 'mono' : 'cider';
+    if (shouldSwitch) modeSuppressClickUntilRef.current = Date.now() + 350;
     modeDragRef.current = null;
     setModeDragProgress(null);
     try {
@@ -1224,6 +1232,13 @@ export default function App() {
     if (!drag || (event?.pointerId != null && drag.pointerId !== event.pointerId)) return;
     modeDragRef.current = null;
     setModeDragProgress(null);
+  }
+
+  function handleSourceChoice(nextMode) {
+    // Pointer capture can generate a trailing click after a drag. Ignore that click
+    // so it cannot undo the mode selected by the drag.
+    if (Date.now() < modeSuppressClickUntilRef.current) return;
+    switchPageMode(nextMode);
   }
 
   function handleModeSliderKeyDown(event) {
@@ -1561,16 +1576,18 @@ export default function App() {
                 <button
                   className="mode-toggle-option"
                   type="button"
-                  onClick={() => switchPageMode('cider')}
+                  onClick={() => handleSourceChoice('cider')}
+                  data-source="cider"
                   aria-pressed={selectorMode === 'cider'}
-                  disabled={!modeSwitcherOpen || modeTransitionPhase !== 'idle'}
+                  disabled={!modeSwitcherOpen}
                 >Cider</button>
                 <button
                   className="mode-toggle-option"
                   type="button"
-                  onClick={() => switchPageMode('mono')}
+                  onClick={() => handleSourceChoice('mono')}
+                  data-source="mono"
                   aria-pressed={selectorMode === 'mono'}
-                  disabled={!modeSwitcherOpen || modeTransitionPhase !== 'idle'}
+                  disabled={!modeSwitcherOpen}
                 >Monochrome</button>
                 <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
                   <defs>
