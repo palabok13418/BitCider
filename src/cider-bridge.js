@@ -236,6 +236,12 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       await deliverJobResult(registration, job.requestId, result, signal);
     } catch (error) {
       if (signal.aborted) break;
+      if ([401, 403, 409].includes(Number(error?.status))) {
+        registration = null;
+        ciderToken = '';
+        setState('offline', error?.message || 'This BitCider tab is no longer the active Cider bridge. Refresh it to reconnect.');
+        break;
+      }
       registration = null;
       ciderToken = '';
       setState('reconnecting', error?.message || 'Reconnecting to Cider on this computer.');
