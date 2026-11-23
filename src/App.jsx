@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import BackgroundSwitcher from './BackgroundSwitcher.jsx';
+import { runCiderBrowserRelay } from './cider-bridge.js';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-23-account-key-v10';
+const API_VERSION = '2026-11-23-account-key-v11';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -57,6 +58,7 @@ function AccountSetupWindow({
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [csrfToken, setCsrfToken] = useState('');
+  const [browserBridge, setBrowserBridge] = useState({ state: 'offline', message: 'Waiting for the local Cider bridge.' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -484,7 +486,6 @@ export default function App() {
       return false;
     }
   });
-  const [relayConfigBusy, setRelayConfigBusy] = useState(false);
   const [syncNotificationPermission, setSyncNotificationPermission] = useState(() => {
     try {
       return typeof window !== 'undefined' && 'Notification' in window
@@ -556,6 +557,50 @@ export default function App() {
     const heartbeat = window.setInterval(refreshStatus, 30000);
     return () => window.clearInterval(heartbeat);
   }, []);
+
+  useEffect(() => {
+    if (isAccountPopup || status.loading || !status.connected || !status.addonUrl
+      || !csrfToken || status.backendCompatible !== true || status.tokenEncryptionConfigured !== true) {
+      if (!status.connected) setBrowserBridge({ state: 'offline', message: 'Link Cider to start the in-browser bridge.' });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setBrowserBridge({ state: 'connecting', message: 'Connecting this browser to Cider on this computer…' });
+
+    runCiderBrowserRelay({
+      addonUrl: status.addonUrl,
+      csrfToken,
+      signal: controller.signal,
+      onState: (state, message) => {
+        if (!active) return;
+        setBrowserBridge({ state, message });
+        setStatus(current => ({
+          ...current,
+          ciderBridgeConfigured: state === 'connected',
+          ciderRelay: {
+            ...(current.ciderRelay || {}),
+            provisioned: true,
+            online: state === 'connected',
+            lastSeenAt: state === 'connected' ? new Date().toISOString() : (current.ciderRelay?.lastSeenAt || null),
+            mode: 'browser'
+          }
+        }));
+      }
+    }).catch(error => {
+      if (!active || controller.signal.aborted) return;
+      setBrowserBridge({
+        state: 'reconnecting',
+        message: error?.message || 'The browser could not keep the local Cider connection open.'
+      });
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isAccountPopup, status.loading, status.connected, status.addonUrl, status.backendCompatible, status.tokenEncryptionConfigured, csrfToken]);
 
   async function enableSyncNotification() {
     if (!('Notification' in window)) {
@@ -1002,49 +1047,6 @@ export default function App() {
     }
   }
 
-  async function downloadRelayConfig() {
-    if (!csrfToken || !status.account?.authenticated || relayConfigBusy) return;
-    setRelayConfigBusy(true);
-    setNotice('Creating your private desktop relay credentials…');
-    setNoticeType('info');
-    try {
-      const response = await fetch('/api/relay/config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-BitCider-CSRF': csrfToken
-        },
-        cache: 'no-store',
-        body: '{}'
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.config) {
-        throw new Error(getErrorMessage(result, 'Could not create the local Cider relay config.'));
-      }
-      const blob = new Blob([JSON.stringify(result.config, null, 2)], { type: 'application/json' });
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = 'bitcider-relay.json';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-      setStatus(current => ({
-        ...current,
-        ciderBridgeConfigured: true,
-        ciderRelay: { provisioned: true, online: false, lastSeenAt: null }
-      }));
-      setNotice('Your relay config was downloaded. It contains only your private relay key, not your Cider app token. The runner retrieves your Cider token from your encrypted BitCider account over HTTPS at startup and keeps it in memory. Keep the config private and never share it. Download the relay runner too, save both files in the same folder, then run: node bitcider-relay.mjs');
-      setNoticeType('success');
-    } catch (error) {
-      setNotice(error?.message || 'Could not download the local Cider relay config.');
-      setNoticeType('warning');
-    } finally {
-      setRelayConfigBusy(false);
-    }
-  }
-
   async function copyAddonUrl() {
     if (!status.addonUrl) return;
     try {
@@ -1179,44 +1181,30 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {status.account?.authenticated === true && (
-                <section className="cider-relay-panel" aria-label="Local Cider relay setup">
+              {connected && (
+                <section className="cider-relay-panel" aria-label="In-browser Cider bridge">
                   <div className="cider-relay-panel-head">
                     <div>
-                      <div className="scope-title">DESKTOP CIDER RELAY</div>
-                      <p>Connect this BitCider account to Cider on the computer where you listen.</p>
+                      <div className="scope-title">IN-BROWSER CIDER BRIDGE</div>
+                      <p>BitCider connects to the Cider app through this browser tab.</p>
                     </div>
-                    <span className={`cider-relay-state ${status.ciderRelay?.online ? 'is-online' : 'is-offline'}`}>
+                    <span className={`cider-relay-state ${browserBridge.state === 'connected' ? 'is-online' : 'is-offline'}`}>
                       <i />
-                      {status.ciderRelay?.online ? 'ONLINE' : 'OFFLINE'}
+                      {browserBridge.state === 'connected'
+                        ? 'ONLINE'
+                        : browserBridge.state === 'cider-unavailable'
+                          ? 'CIDER OFFLINE'
+                          : browserBridge.state === 'connecting' || browserBridge.state === 'reconnecting'
+                            ? 'CONNECTING'
+                            : 'OFFLINE'}
                     </span>
                   </div>
                   <p className="cider-relay-copy">
-                    Search and playback requests are sent through your own authenticated HTTPS relay. Cider’s API port stays on your computer and is never exposed to the internet.
+                    No downloads, scripts, or installers. Keep this BitCider tab open on the computer where Cider is running while using the BitChord addon.
                   </p>
-                  <button
-                    className="primary-button relay-config-button"
-                    type="button"
-                    onClick={downloadRelayConfig}
-                    disabled={relayConfigBusy || !status.tokenEncryptionConfigured}
-                  >
-                    <span>{relayConfigBusy ? 'PREPARING CONFIG…' : status.ciderRelay?.provisioned ? 'REISSUE RELAY CONFIG' : 'DOWNLOAD RELAY CONFIG'}</span>
-                    <span className="button-icon"><Icon name="arrow" /></span>
-                  </button>
-                  <div className="relay-download-links">
-                    <a className="relay-agent-link" href="/bitcider-relay.mjs" download="bitcider-relay.mjs">
-                      Download the desktop relay runner
-                    </a>
-                    <a className="relay-agent-link" href="/start-bitcider-relay.bat" download="start-bitcider-relay.bat">
-                      Download Windows one-click launcher
-                    </a>
-                  </div>
-                  <p className="cider-relay-instructions">
-                    Save <code>bitcider-relay.json</code>, <code>bitcider-relay.mjs</code>, and the Windows launcher in the same folder. With Cider open, double-click <code>start-bitcider-relay.bat</code> on Windows, or run <code>node bitcider-relay.mjs</code> from that folder. Keep the relay running while using the BitChord addon.
+                  <p className={`cider-relay-instructions ${browserBridge.state === 'cider-unavailable' || browserBridge.state === 'reconnecting' ? 'cider-relay-offline-note' : ''}`}>
+                    {browserBridge.message || 'Starting the local Cider connection…'}
                   </p>
-                  {status.ciderRelay?.provisioned && !status.ciderRelay?.online && (
-                    <p className="cider-relay-offline-note">The relay key is registered, but no desktop relay has checked in yet. Starting the runner should change this to ONLINE.</p>
-                  )}
                 </section>
               )}
               <div className={`connected-actions ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}>
@@ -1237,13 +1225,7 @@ export default function App() {
             </>
           )}
 
-          {connected && status.ciderBridgeConfigured === false && (
-            <div className="notice notice-warning addon-bridge-notice">
-              {status.account?.authenticated === true
-                ? 'Your Cider connection is saved, but this account has no desktop relay configured yet. Download the relay config in the Desktop Cider Relay panel above to restore addon search and playback.'
-                : 'Create or sign in to a BitCider account to generate your private desktop Cider relay. Hosted addon search and playback cannot reach Cider on this computer until that relay is running.'}
-            </div>
-          )}
+
           {status.backendCompatible === false && (
             <div className="notice notice-warning sync-mismatch-notice">
               <span className="sync-mismatch-copy">{status.deploymentWarning}</span>
