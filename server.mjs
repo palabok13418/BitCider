@@ -643,6 +643,9 @@ function validAddonKey(req, res, next) {
   if (!user || !token) {
     return res.status(404).json({ error: 'ADDON_NOT_FOUND', message: 'This personal BitCider source is not available.' });
   }
+  // The addon key is a bearer-style secret in the URL. Never let shared
+  // proxies, browsers, or intermediate caches retain account-specific output.
+  res.set('Cache-Control', 'private, no-store');
   req.bitciderUser = { ...user, token };
   next();
 }
@@ -888,7 +891,7 @@ app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
 });
 
 app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
-  res.set('Cache-Control', 'public, max-age=300');
+  res.set('Cache-Control', 'private, no-store');
   res.json({
     id: 'com.bitcider.personal.' + req.params.addonKey.slice(0, 12).replace(/[^a-zA-Z0-9]/g, ''),
     name: 'BitCider',
