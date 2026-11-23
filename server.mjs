@@ -1883,7 +1883,7 @@ app.get('/bitmono/manifest.json', (_req, res) => {
     id: 'com.bitcider.bitmono',
     name: 'BitMono',
     version: '1.0.0',
-    description: 'Free Monochrome music source for BitChord, powered by tracks.monochrome.st. Audio metadata reflects the rendition actually supplied upstream.',
+    description: 'Free Monochrome music source for BitChord. The current upstream stream is FLAC/Lossless stereo; audio metadata reflects the rendition actually supplied.',
     icon: 'https://monochrome.st/favicon.ico',
     resources: ['search', 'stream'],
     types: ['track'],
@@ -1937,6 +1937,9 @@ app.get('/bitmono/stream/:trackId', (req, res) => {
   }
 
   const metadata = bitMonoTrackMetadata.get(trackId) || null;
+  const requestedQuality = String(req.query.quality || 'auto').trim().toLowerCase();
+  const supportedQualityPreferences = ['auto', 'lossless'];
+  const qualityFallback = !supportedQualityPreferences.includes(requestedQuality);
   const url = BITMONO_TRACKS_API_BASE + '/track/' + encodeURIComponent(trackId);
   res.set('Cache-Control', 'public, max-age=60');
   // The official Monochrome web client resolves its stream with /track/{id}
@@ -1953,6 +1956,8 @@ app.get('/bitmono/stream/:trackId', (req, res) => {
     encrypted: false,
     audioMode: 'STEREO',
     audioModes: ['STEREO'],
+    requestedQuality,
+    qualityFallback,
     ...(metadata?.duration ? { duration: metadata.duration } : {})
   });
 });

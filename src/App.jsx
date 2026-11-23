@@ -1198,6 +1198,7 @@ export default function App() {
                 </div>
               </div>
               <p className="bitmono-setup-hint">In BitChord, open Settings → Sources / Add-ons → Add custom source, then paste this URL.</p>
+              <p className="bitmono-quality-note">The current Monochrome stream endpoint supplies FLAC / Lossless stereo. The extra Atmos, Hi-Res, High, and Low choices stay available in BitChord, but BitMono reports Lossless stereo until Monochrome provides those renditions.</p>
             </div>
           ) : (
             <>
