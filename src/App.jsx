@@ -538,6 +538,7 @@ export default function App() {
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [pageMode, setPageMode] = useState('cider');
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
+  const [modeSwitcherOpen, setModeSwitcherOpen] = useState(false);
   const modeDragRef = useRef(null);
   const [modeDragProgress, setModeDragProgress] = useState(null);
   const [modeTransitionTarget, setModeTransitionTarget] = useState('');
@@ -1286,7 +1287,7 @@ export default function App() {
   }
 
   const selectorMode = modeDragProgress === null
-    ? pageMode
+    ? (modeTransitionTarget || pageMode)
     : (modeDragProgress >= 0.5 ? 'mono' : 'cider');
   const connected = Boolean(status.connected);
 
@@ -1524,44 +1525,68 @@ export default function App() {
           )}
             </>
           )}
+          <section className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`} aria-label="Switch source">
+            <button
+              className="mode-pull-tab"
+              type="button"
+              onClick={() => setModeSwitcherOpen(open => !open)}
+              aria-expanded={modeSwitcherOpen}
+              aria-controls="bitcider-mode-panel"
+            >
+              <span className="mode-pull-grip" aria-hidden="true"><i /><i /><i /></span>
+              <span className="mode-pull-label">SWITCH SOURCE</span>
+              <span className="mode-pull-chevron" aria-hidden="true">⌄</span>
+            </button>
+            <div
+              className="mode-switch-panel"
+              id="bitcider-mode-panel"
+              aria-hidden={!modeSwitcherOpen}
+            >
+              <div className="mode-switch-caption">DRAG THE HIGHLIGHT OR CHOOSE A SOURCE</div>
+              <div
+                className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''} ${modeTransitionPhase !== 'idle' ? 'is-switching' : ''}`}
+                role="group"
+                aria-label="Choose music source"
+                onPointerDown={beginModeDrag}
+                onPointerMove={updateModeDrag}
+                onPointerUp={finishModeDrag}
+                onPointerCancel={cancelModeDrag}
+                onLostPointerCapture={cancelModeDrag}
+              >
+                <span
+                  className="mode-toggle-thumb"
+                  style={modeDragProgress !== null ? { transform: `translateX(${modeDragProgress * 100}%)` } : undefined}
+                  aria-hidden="true"
+                />
+                <button
+                  className="mode-toggle-option"
+                  type="button"
+                  onClick={() => switchPageMode('cider')}
+                  aria-pressed={selectorMode === 'cider'}
+                  disabled={!modeSwitcherOpen || modeTransitionPhase !== 'idle'}
+                >Cider</button>
+                <button
+                  className="mode-toggle-option"
+                  type="button"
+                  onClick={() => switchPageMode('mono')}
+                  aria-pressed={selectorMode === 'mono'}
+                  disabled={!modeSwitcherOpen || modeTransitionPhase !== 'idle'}
+                >Monochrome</button>
+                <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
+                  <defs>
+                    <filter id="bitcider-source-warp" x="-20%" y="-30%" width="140%" height="160%">
+                      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.06" numOctaves="2" seed="8" result="warp-noise">
+                        <animate attributeName="baseFrequency" values="0.018 0.06;0.055 0.025;0.018 0.06" dur="0.65s" repeatCount="indefinite" />
+                      </feTurbulence>
+                      <feDisplacementMap in="SourceGraphic" in2="warp-noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+                    </filter>
+                  </defs>
+                </svg>
+              </div>
+            </div>
+          </section>
         </section>
-      <section className="mode-switcher" aria-label="Switch source">
-        <div
-          className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''}`}
-          role="slider"
-          aria-label="Source selector"
-          aria-orientation="horizontal"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round((modeDragProgress ?? (pageMode === 'mono' ? 1 : 0)) * 100)}
-          aria-valuetext={selectorMode === 'mono' ? 'Monochrome' : 'Cider'}
-          tabIndex={0}
-          onKeyDown={handleModeSliderKeyDown}
-          onPointerDown={beginModeDrag}
-          onPointerMove={updateModeDrag}
-          onPointerUp={finishModeDrag}
-          onPointerCancel={cancelModeDrag}
-          onLostPointerCapture={cancelModeDrag}
-        >
-          <span
-            className="mode-toggle-thumb"
-            style={modeDragProgress !== null ? { transform: `translateX(${modeDragProgress * 100}%)` } : undefined}
-            aria-hidden="true"
-          />
-          <span className="mode-toggle-label mode-toggle-label-cider">Cider</span>
-          <span className="mode-toggle-label mode-toggle-label-mono">Monochrome</span>
-          <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
-            <defs>
-              <filter id="bitcider-source-warp" x="-20%" y="-30%" width="140%" height="160%">
-                <feTurbulence type="fractalNoise" baseFrequency="0.018 0.06" numOctaves="2" seed="8" result="warp-noise">
-                  <animate attributeName="baseFrequency" values="0.018 0.06;0.055 0.025;0.018 0.06" dur="0.65s" repeatCount="indefinite" />
-                </feTurbulence>
-                <feDisplacementMap in="SourceGraphic" in2="warp-noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
-              </filter>
-            </defs>
-          </svg>
-        </div>
-      </section>
+
         </div>
       </section>
 
