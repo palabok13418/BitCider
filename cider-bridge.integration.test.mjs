@@ -32,7 +32,7 @@ async function listen(server) {
   return server.address().port;
 }
 
-async function startBackend(ciderApiUrl = '', { allowLoopbackCiderApi = false } = {}) {
+async function startBackend() {
   const port = await freePort();
   const origin = 'http://127.0.0.1:' + port;
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-bridge-test-'));
@@ -47,8 +47,6 @@ async function startBackend(ciderApiUrl = '', { allowLoopbackCiderApi = false } 
       BITCIDER_ALLOW_LOOPBACK_ADMIN: 'true',
       BITCIDER_ENCRYPTION_KEY: encryptionKey,
       BITCIDER_CIDER_REQUEST_TIMEOUT_MS: '1500',
-      CIDER_API_URL: ciderApiUrl,
-      BITCIDER_ALLOW_LOOPBACK_CIDER_API: allowLoopbackCiderApi ? 'true' : ''
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
