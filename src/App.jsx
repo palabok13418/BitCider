@@ -1350,6 +1350,7 @@ export default function App() {
 
         <div className="connection-column">
         <section className="connection-card" aria-live="polite">
+          <div className="source-mode-content">
           {pageMode === 'mono' ? (
             <div className="bitmono-card-content">
               <div className="card-heading bitmono-card-heading">
@@ -1540,6 +1541,7 @@ export default function App() {
           )}
             </>
           )}
+          </div>
           <section className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`} aria-label="Switch source">
             <button
               className="mode-pull-tab"
