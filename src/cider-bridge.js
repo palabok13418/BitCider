@@ -193,6 +193,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
   let retry = BRIDGE_RETRY_MS;
   let ciderToken = '';
   let localCiderAvailable = false;
+  let localCiderAuthFailed = false;
   let nextProbeAt = 0;
   const setState = (state, message = '') => onState?.(state, message);
 
@@ -203,11 +204,12 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
         registration = await registerBridge(csrfToken, signal);
         ciderToken = registration.ciderToken;
         localCiderAvailable = false;
+        localCiderAuthFailed = false;
         nextProbeAt = 0;
         retry = BRIDGE_RETRY_MS;
       }
 
-      if (!localCiderAvailable && Date.now() >= nextProbeAt) {
+      if (!localCiderAvailable && !localCiderAuthFailed && Date.now() >= nextProbeAt) {
         try {
           await probeLocalCider(signal);
           localCiderAvailable = true;
@@ -237,8 +239,26 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       const job = pollPayload.job;
       if (!job) continue;
 
-      const result = await executeLocalCiderJob(job, ciderToken);
-      if (result.status >= 500) {
+      const result = localCiderAuthFailed
+        ? {
+            status: 401,
+            body: {
+              error: {
+                code: 'CIDER_LOCAL_AUTH_REQUIRED',
+                message: 'Cider rejected the saved BitCider authorization on this computer. Reconnect Cider from this BitCider tab to authorize this device.'
+              }
+            }
+          }
+        : await executeLocalCiderJob(job, ciderToken);
+
+      if (result.status === 401 || result.status === 403) {
+        localCiderAvailable = false;
+        localCiderAuthFailed = true;
+        setState(
+          'cider-auth-required',
+          'Cider rejected the saved token or permissions on this computer. Use Reconnect Cider below and approve the Cider dialog.'
+        );
+      } else if (result.status >= 500) {
         localCiderAvailable = false;
         nextProbeAt = Date.now() + 10000;
         setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this computer.');
@@ -258,6 +278,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       registration = null;
       ciderToken = '';
       localCiderAvailable = false;
+      localCiderAuthFailed = false;
       setState('reconnecting', error?.message || 'Reconnecting to Cider on this computer.');
       await delay(retry, signal);
       retry = Math.min(retry * 1.7, 10000);
