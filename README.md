@@ -64,7 +64,7 @@ To set it up, sign in to BitCider on the computer where Cider is running, open t
 
 The relay config contains a local copy of the user's Cider app token and a per-account relay key in plaintext. Protect this file like a password; do not commit or share it. Deplexo stores only a hash of the relay key and keeps the Cider app token encrypted at rest. Reissuing the config rotates the relay key, and disconnecting Cider revokes it.
 
-The relay currently forwards only Cider library song search, play-item, queue read, and playback pause operations. Search is scoped to the linked Cider library, not the full Apple Music catalog. A relay that is not running will appear OFFLINE and addon requests will return an actionable bridge error rather than attempting to connect Deplexo's localhost to the desktop.
+The relay currently forwards Cider Apple Music catalog song search, play-item, queue read, and playback pause operations. Catalog search goes through Cider's `/api/v2/amapi/search` proxy, which uses the user's own storefront and does not require BitCider to hold Apple Music developer credentials. A relay that is not running will appear OFFLINE and addon requests will return an actionable bridge error rather than attempting to connect Deplexo's localhost to the desktop.
 
 ## Local development
 
