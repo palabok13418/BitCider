@@ -1192,19 +1192,32 @@ export default function App() {
                       <i />
                       {browserBridge.state === 'connected'
                         ? 'ONLINE'
-                        : browserBridge.state === 'cider-unavailable'
-                          ? 'CIDER OFFLINE'
-                          : browserBridge.state === 'connecting' || browserBridge.state === 'reconnecting'
-                            ? 'CONNECTING'
-                            : 'OFFLINE'}
+                        : browserBridge.state === 'cider-auth-required'
+                          ? 'RECONNECT CIDER'
+                          : browserBridge.state === 'cider-unavailable'
+                            ? 'CIDER OFFLINE'
+                            : browserBridge.state === 'connecting' || browserBridge.state === 'reconnecting'
+                              ? 'CONNECTING'
+                              : 'OFFLINE'}
                     </span>
                   </div>
                   <p className="cider-relay-copy">
                     No downloads, scripts, or installers. Keep this BitCider tab open on the computer where Cider is running while using the BitChord addon.
                   </p>
-                  <p className={`cider-relay-instructions ${browserBridge.state === 'cider-unavailable' || browserBridge.state === 'reconnecting' ? 'cider-relay-offline-note' : ''}`}>
+                  <p className={`cider-relay-instructions ${browserBridge.state === 'cider-unavailable' || browserBridge.state === 'cider-auth-required' || browserBridge.state === 'reconnecting' ? 'cider-relay-offline-note' : ''}`}>
                     {browserBridge.message || 'Starting the local Cider connection…'}
                   </p>
+                  {browserBridge.state === 'cider-auth-required' && (
+                    <button
+                      className="primary-button relay-reconnect-button"
+                      type="button"
+                      onClick={connectCider}
+                      disabled={busy || connectPhase !== 'idle'}
+                    >
+                      <span>RECONNECT CIDER ON THIS DEVICE</span>
+                      <span className="button-icon"><Icon name="arrow" /></span>
+                    </button>
+                  )}
                 </section>
               )}
               <div className={`connected-actions ${connectPhase === 'promoting' ? 'is-promoting' : ''}`}>
