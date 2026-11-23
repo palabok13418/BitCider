@@ -28,7 +28,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 Users can create a BitCider account with a unique username and a passphrase, then sign in on another device to restore the same saved Cider connection and personal BitChord addon URL.
 
 - Usernames are 3–24 characters and case-insensitive.
-- Passphrases must be 14–128 characters and are stored as scrypt password hashes (N=32768, r=8, p=1, 64-byte output). Plaintext passphrases are never stored.
+- Passwords have no character-count rule; the live strength meter is advisory and does not block entry. API requests retain a finite transport-size limit for service protection. Passwords are stored as scrypt hashes (N=32768, r=8, p=1, 64-byte output); plaintext passwords are never stored.
 - Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to five active device sessions; a sixth sign-in revokes the least-recently-active session.
 - Passkeys use WebAuthn through SimpleWebAuthn, require user verification, and store only credential IDs and public keys. Each BitCider account can register up to five passkeys. Adding or removing passkeys and revoking devices requires the current BitCider passphrase.
 - Passkey credentials are scoped to the website domain where they were created. Netlify, Cloudflare, and Deplexo hostnames are separate relying parties unless configured under one shared custom domain. Synced passkeys may be usable on multiple physical devices; the five-device cap applies to active BitCider sessions.
