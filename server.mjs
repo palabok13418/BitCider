@@ -50,11 +50,19 @@ function decryptToken(box) {
   ]).toString('utf8');
 }
 
+const SESSION_COOKIE = 'bitcider_session';
+
 function readStore() {
   try {
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    if (parsed && parsed.sessions && typeof parsed.sessions === 'object') return parsed;
+    // Upgrade the original single-user file format without discarding its data.
+    if (parsed?.addonKey || parsed?.ciderToken) {
+      return { sessions: { legacy: parsed } };
+    }
+    return { sessions: {} };
   } catch {
-    return {};
+    return { sessions: {} };
   }
 }
 
@@ -65,16 +73,40 @@ function writeStore(store) {
   fs.renameSync(temp, STORE_FILE);
 }
 
-function connectedToken() {
-  const store = readStore();
-  try {
-    return { store, token: decryptToken(store.ciderToken) };
-  } catch (error) {
-    console.error('Could not decrypt the saved Cider token:', error.message);
-    return { store, token: null };
+function ensureSessionId(req, res) {
+  const cookies = String(req.headers.cookie || '').split(';');
+  let existing = '';
+  for (const part of cookies) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== SESSION_COOKIE) continue;
+    try { existing = decodeURIComponent(part.slice(separator + 1).trim()); } catch { existing = ''; }
+    break;
   }
+
+  if (/^[A-Za-z0-9_-]{40,50}$/.test(existing)) return existing;
+
+  const created = crypto.randomBytes(32).toString('base64url');
+  // Secure is appropriate for the three deployed HTTPS hosts; localhost is
+  // also treated as a trustworthy origin by modern browsers.
+  res.append('Set-Cookie', SESSION_COOKIE + '=' + created + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000');
+  return created;
 }
 
+function getUserSession(req, res) {
+  const store = readStore();
+  const sessionId = ensureSessionId(req, res);
+  return { store, sessionId, user: store.sessions[sessionId] || null };
+}
+
+function tokenForUser(user) {
+  if (!user?.ciderToken) return null;
+  try {
+    return decryptToken(user.ciderToken);
+  } catch (error) {
+    console.error('Could not decrypt a saved Cider token:', error.message);
+    return null;
+  }
+}
 function localIPv4() {
   const interfaces = os.networkInterfaces();
   for (const addresses of Object.values(interfaces)) {
@@ -116,10 +148,9 @@ function localOnly(req, res, next) {
   next();
 }
 
-async function ciderRequest(apiPath, { method = 'GET', body } = {}) {
-  const { token } = connectedToken();
+async function ciderRequest(apiPath, { method = 'GET', body, token } = {}) {
   if (!token) {
-    const error = new Error('Cider is not connected to this BitCider instance.');
+    const error = new Error('This BitCider user has not linked a Cider account.');
     error.status = 401;
     throw error;
   }
@@ -149,7 +180,6 @@ async function ciderRequest(apiPath, { method = 'GET', body } = {}) {
   }
   return payload;
 }
-
 function asArray(value) {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
@@ -205,7 +235,7 @@ function normalizeSong(song) {
   };
 }
 
-async function searchCiderSongs(term) {
+async function searchCiderSongs(term, token) {
   // Cider's scoped library API exposes paginated library songs, not an
   // Apple Music-wide catalogue search. Search those library entries locally.
   const needle = term.toLocaleLowerCase();
@@ -219,7 +249,8 @@ async function searchCiderSongs(term) {
 
   for (let offset = 0; offset < maxLibrarySongs; offset += pageSize) {
     const result = await ciderRequest(
-      '/api/v2/library/songs?offset=' + offset + '&limit=' + pageSize
+      '/api/v2/library/songs?offset=' + offset + '&limit=' + pageSize,
+      { token }
     );
     const rows = songRows(result);
     if (!rows.length) break;
@@ -275,18 +306,19 @@ function streamDetails(url, queueItem) {
   };
 }
 
-async function resolveCiderStream(trackId) {
+async function resolveCiderStream(trackId, token) {
   // Cider resolves the selected catalog item using the linked account.
   // Its legacy queue response includes the playable assetURL used by Cider.
   await ciderRequest('/api/v2/playback/play-item', {
     method: 'POST',
-    body: { id: trackId, type: 'songs' }
+    body: { id: trackId, type: 'songs' },
+    token
   });
 
   let queuePayload;
   let queueRows = [];
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    queuePayload = await ciderRequest('/api/v1/playback/queue');
+    queuePayload = await ciderRequest('/api/v1/playback/queue', { token });
     queueRows = findQueueRows(queuePayload);
     const item = queueRows.find(row => String(
       row?.id || row?.attributes?.playParams?.id || row?.attributes?.id || ''
@@ -301,7 +333,7 @@ async function resolveCiderStream(trackId) {
       // output instead of leaving the desktop player playing in parallel.
       if (String(process.env.BITCIDER_PAUSE_CIDER_AFTER_RESOLVE || 'true').toLowerCase() !== 'false') {
         try {
-          await ciderRequest('/api/v2/playback/pause', { method: 'POST' });
+          await ciderRequest('/api/v2/playback/pause', { method: 'POST', token });
         } catch (error) {
           console.warn('Could not pause Cider after resolving the stream:', error.message);
         }
@@ -315,10 +347,14 @@ async function resolveCiderStream(trackId) {
 
 function validAddonKey(req, res, next) {
   const store = readStore();
-  if (!store.addonKey || req.params.addonKey !== store.addonKey || !store.ciderToken) {
+  const user = Object.values(store.sessions || {}).find(entry =>
+    entry?.addonKey === req.params.addonKey && entry?.ciderToken
+  );
+  const token = tokenForUser(user);
+  if (!user || !token) {
     return res.status(404).json({ error: 'ADDON_NOT_FOUND', message: 'This personal BitCider source is not available.' });
   }
-  req.bitciderStore = store;
+  req.bitciderUser = { ...user, token };
   next();
 }
 
@@ -336,29 +372,30 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'BitCider' }));
 
-app.get('/api/status', localOnly, (_req, res) => {
-  const { store, token } = connectedToken();
+app.get('/api/status', localOnly, (req, res) => {
+  const { store, sessionId, user } = getUserSession(req, res);
+  const token = tokenForUser(user);
   const base = addonBaseUrl();
-  const addonUrl = token && store.addonKey ? base + '/' + store.addonKey + '/manifest.json' : null;
+  const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
   res.set('Cache-Control', 'no-store');
   res.json({
-    connected: Boolean(token && store.addonKey),
+    connected: Boolean(token && user?.addonKey),
     addonUrl,
     publicUrlConfigured: Boolean(PUBLIC_URL),
-    localAddress: 'http://' + localIPv4() + ':' + PORT,
-    port: PORT,
+    sessionReady: Boolean(sessionId),
     error: null
   });
 });
 
 app.post('/api/connect', localOnly, async (req, res) => {
+  const { store, sessionId, user: previous } = getUserSession(req, res);
   const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
   if (token.length < 12 || token.length > 4096 || /[\\r\\n]/.test(token)) {
     return res.status(400).json({ error: 'INVALID_TOKEN', message: 'Paste the Cider app token exactly as Cider provided it.' });
   }
 
-  // Verify the token against Cider before persisting it. client/info is
-  // unscoped, so no Account permission is needed to validate a new token.
+  // Verify the token with Cider before storing it. This call must be performed
+  // by the per-user Cider bridge once that relay is deployed.
   try {
     const check = await fetch(CIDER_API + '/api/v2/client/info', {
       headers: { Accept: 'application/json', apptoken: token },
@@ -372,14 +409,13 @@ app.post('/api/connect', localOnly, async (req, res) => {
     }
   } catch {
     return res.status(502).json({
-      error: 'CIDER_UNREACHABLE',
-      message: 'Could not verify this token with Cider on this computer. Check that Cider is running, then try again.'
+      error: 'CIDER_BRIDGE_REQUIRED',
+      message: 'This hosted BitCider server cannot reach Cider on your computer yet. The per-user Cider bridge is required before linking can complete.'
     });
   }
 
-  const previous = readStore();
-  const store = {
-    addonKey: previous.addonKey || crypto.randomBytes(18).toString('base64url'),
+  store.sessions[sessionId] = {
+    addonKey: previous?.addonKey || crypto.randomBytes(18).toString('base64url'),
     ciderToken: encryptToken(token),
     connectedAt: new Date().toISOString()
   };
@@ -387,12 +423,14 @@ app.post('/api/connect', localOnly, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({
     ok: true,
-    addonUrl: addonBaseUrl() + '/' + store.addonKey + '/manifest.json'
+    addonUrl: addonBaseUrl() + '/' + store.sessions[sessionId].addonKey + '/manifest.json'
   });
 });
 
-app.post('/api/disconnect', localOnly, (_req, res) => {
-  writeStore({});
+app.post('/api/disconnect', localOnly, (req, res) => {
+  const { store, sessionId } = getUserSession(req, res);
+  delete store.sessions[sessionId];
+  writeStore(store);
   res.set('Cache-Control', 'no-store');
   res.json({ ok: true });
 });
@@ -413,7 +451,7 @@ app.get('/:addonKey/search', validAddonKey, async (req, res) => {
   if (!query) return res.json({ tracks: [] });
   if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
   try {
-    const tracks = await searchCiderSongs(query);
+    const tracks = await searchCiderSongs(query, req.bitciderUser.token);
     res.set('Cache-Control', 'no-store');
     res.json({ tracks });
   } catch (error) {
@@ -429,7 +467,7 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
   const trackId = String(req.params.trackId || '');
   if (!trackId || trackId.length > 180) return res.status(400).json({ error: 'Invalid track id.' });
   try {
-    const stream = await resolveCiderStream(trackId);
+    const stream = await resolveCiderStream(trackId, req.bitciderUser.token);
     res.set('Cache-Control', 'no-store');
     res.json(stream);
   } catch (error) {
