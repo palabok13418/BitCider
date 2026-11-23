@@ -8,7 +8,7 @@ The intended deployment is:
 - **Netlify:** the static React frontend and a Functions gateway to Deplexo.
 - **Cloudflare:** the static React frontend and a Worker gateway to Deplexo.
 
-Both static frontends use the same Deplexo backend. They do not create separate user databases or addon instances.
+Both static frontends use the same Deplexo backend and persistent store. Each browser session receives its own HttpOnly session cookie, encrypted Cider token record, and random personal addon key.
 
 ## 1. Deploy the backend on Deplexo
 
@@ -65,7 +65,7 @@ The personal addon URL is generated on the Deplexo backend, so the same URL work
 https://YOUR-DEPLEXO-APP/<personal-key>/manifest.json
 ```
 
-Do not manually invent or publish a user's personal key. The backend generates it after a successful account link.
+Do not manually invent or publish a user's personal key. The backend generates one per browser session after the Cider bridge verifies the account link.
 
 ## Critical Cider bridge requirement
 
