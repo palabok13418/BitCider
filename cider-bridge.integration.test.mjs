@@ -411,6 +411,14 @@ test('browser relay accepts only bounded Cider catalog search and playback route
     path: 'https://example.com/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0'
   }), null);
   assert.equal(allowedLocalCiderJob({
+    method: 'GET',
+    path: 'http://user@127.0.0.1:10767/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0'
+  }), null);
+  assert.equal(allowedLocalCiderJob({
+    method: 'GET',
+    path: '/api/v2/amapi/search?term=bridge&types=songs&limit=25&offset=0#other'
+  }), null);
+  assert.equal(allowedLocalCiderJob({
     method: 'POST',
     path: '/api/v2/playback/play-item',
     body: { id: 'catalog-track-123', type: 'songs' }
