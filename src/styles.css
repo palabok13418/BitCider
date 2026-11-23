@@ -1344,15 +1344,6 @@ h1 .bitchord-word {
 .cider-relay-state.is-online { color: #80d8a7; border-color: rgba(128,216,167,.25); }
 .cider-relay-state.is-online i { background: #80d8a7; }
 .cider-relay-state.is-offline { color: #e8ad75; }
-.relay-config-button { width: 100%; min-height: 48px; }
-.relay-agent-link {
-  justify-self: start;
-  color: #ff9bab;
-  font-size: 12px;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
 .cider-relay-instructions code {
   padding: 2px 5px;
   border: 1px solid rgba(255,255,255,.09);
@@ -1367,11 +1358,6 @@ h1 .bitchord-word {
   .cider-relay-panel-head { flex-direction: column; }
 }
 
-.relay-download-links {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
 
 .site-waves .prismatic-burst-canvas { mix-blend-mode: screen; }
 
