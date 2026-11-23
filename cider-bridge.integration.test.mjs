@@ -587,7 +587,7 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.includes('MONOCHROME × BITCHORD'));
   assert.ok(appSource.includes('Your <span className="monochrome-word">Monochrome.</span>'));
   assert.ok(appSource.includes("document.title = mono ? 'BitMono' : 'BitCider'"));
-  assert.ok(appSource.includes("'/monochrome-logo.svg?v=bitmono-brand-20261123'"));
+  assert.ok(appSource.includes("'/monofavicon.svg?v=bitmono-brand-20261123'"));
   assert.ok(appSource.includes("window.location.origin + '/bitmono/manifest.json'"));
   assert.ok(appSource.includes('className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly'));
   assert.ok(appSource.includes('SWITCH SOURCE'));
