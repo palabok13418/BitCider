@@ -191,24 +191,40 @@ function normalizeSong(song) {
 }
 
 async function searchCiderSongs(term) {
-  const candidates = [
-    '/api/v2/library/search?term=' + encodeURIComponent(term) + '&types=songs&limit=25',
-    '/api/v2/library/search?q=' + encodeURIComponent(term) + '&types=songs&limit=25'
-  ];
-  let lastError;
-  for (const endpoint of candidates) {
-    try {
-      const result = await ciderRequest(endpoint);
-      const rows = songRows(result);
-      if (rows.length) return rows.map(normalizeSong).filter(Boolean).slice(0, 25);
-      if (result?.data?.results || result?.results) return [];
-      lastError = new Error('Cider search returned no song results.');
-    } catch (error) {
-      lastError = error;
-      if (error.status !== 404 && error.status !== 400) break;
+  // Cider's scoped library API exposes paginated library songs, not an
+  // Apple Music-wide catalogue search. Search those library entries locally.
+  const needle = term.toLocaleLowerCase();
+  const matches = [];
+  const seen = new Set();
+  const pageSize = 200;
+  const maxLibrarySongs = Math.max(200, Math.min(
+    Number(process.env.BITCIDER_SEARCH_MAX_LIBRARY_SONGS || 4000),
+    10000
+  ));
+
+  for (let offset = 0; offset < maxLibrarySongs; offset += pageSize) {
+    const result = await ciderRequest(
+      '/api/v2/library/songs?offset=' + offset + '&limit=' + pageSize
+    );
+    const rows = songRows(result);
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      const track = normalizeSong(row);
+      if (!track || seen.has(track.id)) continue;
+      seen.add(track.id);
+      const haystack = [track.title, track.artist, track.album].join(' ').toLocaleLowerCase();
+      if (haystack.includes(needle)) {
+        matches.push(track);
+        if (matches.length >= 25) return matches;
+      }
     }
+
+    const total = Number(result?.meta?.total ?? result?.total ?? 0);
+    if (rows.length < pageSize || (total > 0 && offset + rows.length >= total)) break;
   }
-  throw lastError || new Error('Cider search is unavailable.');
+
+  return matches;
 }
 
 function findQueueRows(payload) {
@@ -247,9 +263,9 @@ function streamDetails(url, queueItem) {
 async function resolveCiderStream(trackId) {
   // Cider resolves the selected catalog item using the linked account.
   // Its legacy queue response includes the playable assetURL used by Cider.
-  await ciderRequest('/api/v1/playback/play-item', {
+  await ciderRequest('/api/v2/playback/play-item', {
     method: 'POST',
-    body: { id: trackId, type: 'song' }
+    body: { id: trackId, type: 'songs' }
   });
 
   let queuePayload;
@@ -257,7 +273,9 @@ async function resolveCiderStream(trackId) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     queuePayload = await ciderRequest('/api/v1/playback/queue');
     queueRows = findQueueRows(queuePayload);
-    const item = queueRows.find(row => String(row?.id || '') === String(trackId));
+    const item = queueRows.find(row => String(
+      row?.id || row?.attributes?.playParams?.id || row?.attributes?.id || ''
+    ) === String(trackId));
     const url = findAssetUrl(queueRows, trackId);
     if (url) {
       const parsed = new URL(url);
@@ -268,7 +286,7 @@ async function resolveCiderStream(trackId) {
       // output instead of leaving the desktop player playing in parallel.
       if (String(process.env.BITCIDER_PAUSE_CIDER_AFTER_RESOLVE || 'true').toLowerCase() !== 'false') {
         try {
-          await ciderRequest('/api/v1/playback/pause', { method: 'POST', body: {} });
+          await ciderRequest('/api/v2/playback/pause', { method: 'POST' });
         } catch (error) {
           console.warn('Could not pause Cider after resolving the stream:', error.message);
         }
