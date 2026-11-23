@@ -72,12 +72,16 @@ export function consumeRecoveryCode(code, savedHashes = []) {
   const candidate = hashRecoveryCode(code);
   if (!candidate) return { valid: false, hashes: savedHashes };
   const candidateBytes = Buffer.from(candidate, 'hex');
-  const index = savedHashes.findIndex(saved => {
-    if (!/^[a-f0-9]{64}$/i.test(saved)) return false;
-    return crypto.timingSafeEqual(candidateBytes, Buffer.from(saved, 'hex'));
+  let matchedIndex = -1;
+  // Compare every stored hash so the position of a matching recovery code
+  // does not affect how long the verification loop runs.
+  savedHashes.forEach((saved, index) => {
+    if (!/^[a-f0-9]{64}$/i.test(saved)) return;
+    const matches = crypto.timingSafeEqual(candidateBytes, Buffer.from(saved, 'hex'));
+    if (matches) matchedIndex = index;
   });
-  if (index < 0) return { valid: false, hashes: savedHashes };
-  return { valid: true, hashes: savedHashes.filter((_, i) => i !== index) };
+  if (matchedIndex < 0) return { valid: false, hashes: savedHashes };
+  return { valid: true, hashes: savedHashes.filter((_, index) => index !== matchedIndex) };
 }
 
 export function hashSessionId(sessionId) {
