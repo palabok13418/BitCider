@@ -1203,13 +1203,16 @@ export default function App() {
                     <span>{relayConfigBusy ? 'PREPARING CONFIG…' : status.ciderRelay?.provisioned ? 'REISSUE RELAY CONFIG' : 'DOWNLOAD RELAY CONFIG'}</span>
                     <span className="button-icon"><Icon name="arrow" /></span>
                   </button>
-                  {(
+                  <div className="relay-download-links">
                     <a className="relay-agent-link" href="/bitcider-relay.mjs" download="bitcider-relay.mjs">
                       Download the desktop relay runner
                     </a>
-                  )}
+                    <a className="relay-agent-link" href="/start-bitcider-relay.bat" download="start-bitcider-relay.bat">
+                      Download Windows one-click launcher
+                    </a>
+                  </div>
                   <p className="cider-relay-instructions">
-                    Save <code>bitcider-relay.json</code> and <code>bitcider-relay.mjs</code> in the same folder. With Cider open, run <code>node bitcider-relay.mjs</code> from that folder. Keep the relay running while using the BitChord addon.
+                    Save <code>bitcider-relay.json</code>, <code>bitcider-relay.mjs</code>, and the Windows launcher in the same folder. With Cider open, double-click <code>start-bitcider-relay.bat</code> on Windows, or run <code>node bitcider-relay.mjs</code> from that folder. Keep the relay running while using the BitChord addon.
                   </p>
                   {status.ciderRelay?.provisioned && !status.ciderRelay?.online && (
                     <p className="cider-relay-offline-note">The relay key is registered, but no desktop relay has checked in yet. Starting the runner should change this to ONLINE.</p>
