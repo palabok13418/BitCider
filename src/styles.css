@@ -1624,63 +1624,6 @@ h1 .bitchord-word {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* BitMono source transitions: encrypt the outgoing identity, then decrypt the incoming one. */
-.site-shell.cider-mode.mode-phase-encrypt .hero-copy .cider-word,
-.site-shell.cider-mode.mode-phase-encrypt .brand-word-cider {
-  animation: cipher-encode .42s steps(8, end) both;
-}
-.site-shell.mono-mode.mode-phase-encrypt .hero-copy .monochrome-word,
-.site-shell.mono-mode.mode-phase-encrypt .brand-word-mono {
-  animation: cipher-encode .42s steps(8, end) both;
-}
-.site-shell.cider-mode.mode-phase-encrypt .brand-logo-cider,
-.site-shell.mono-mode.mode-phase-encrypt .brand-logo-mono {
-  animation: logo-encode .42s steps(7, end) both;
-}
-
-.site-shell.mono-mode.mode-phase-decrypt .hero-copy .monochrome-word,
-.site-shell.mono-mode.mode-phase-decrypt .brand-word-mono {
-  animation: cipher-decode .65s steps(14, end) both;
-}
-.site-shell.cider-mode.mode-phase-decrypt .hero-copy .cider-word,
-.site-shell.cider-mode.mode-phase-decrypt .brand-word-cider {
-  animation: cipher-decode .65s steps(14, end) both;
-}
-.site-shell.mono-mode.mode-phase-decrypt .brand-logo-mono,
-.site-shell.cider-mode.mode-phase-decrypt .brand-logo-cider {
-  animation: logo-decode .65s steps(12, end) both;
-}
-
-@keyframes cipher-encode {
-  0% { clip-path: inset(0 0 0 0); filter: blur(0) contrast(1); text-shadow: none; transform: translateX(0); }
-  18% { clip-path: inset(0 0 28% 0); filter: blur(.35px) contrast(1.8); text-shadow: 2px 0 rgba(255,255,255,.65), -2px 0 rgba(255,43,94,.65); transform: translateX(2px) skewX(-3deg); }
-  42% { clip-path: inset(24% 0 18% 0); filter: blur(.8px) contrast(2.3); text-shadow: -3px 0 rgba(255,255,255,.5), 3px 0 rgba(255,43,94,.5); transform: translateX(-3px) skewX(4deg); }
-  68% { clip-path: inset(0 0 65% 0); filter: blur(1.6px) contrast(2.8); text-shadow: 0 0 12px rgba(255,255,255,.8); transform: translateX(1px) skewX(-6deg); }
-  100% { clip-path: inset(46% 0 46% 0); filter: blur(4px) contrast(3); text-shadow: 0 0 18px rgba(255,255,255,.9); transform: translateY(-3px) scaleY(.88); }
-}
-
-@keyframes cipher-decode {
-  0% { clip-path: inset(46% 0 46% 0); filter: blur(4px) contrast(3); text-shadow: 0 0 18px rgba(255,255,255,.85); transform: translateY(3px) scaleY(.88) skewX(7deg); }
-  24% { clip-path: inset(22% 0 34% 0); filter: blur(2px) contrast(2.2); text-shadow: 2px 0 rgba(255,255,255,.6), -2px 0 rgba(255,255,255,.35); }
-  48% { clip-path: inset(0 0 24% 0); filter: blur(1px) contrast(1.7); text-shadow: -1px 0 rgba(255,255,255,.4); transform: translateX(-1px) skewX(-2deg); }
-  74% { clip-path: inset(0 0 0 0); filter: blur(.25px) contrast(1.2); text-shadow: 0 0 8px rgba(255,255,255,.18); transform: translateX(1px); }
-  100% { clip-path: inset(0 0 0 0); filter: blur(0) contrast(1); text-shadow: none; transform: none; }
-}
-
-@keyframes logo-encode {
-  0% { clip-path: inset(0); filter: contrast(1) grayscale(0); }
-  30% { clip-path: inset(15% 0 42% 0); filter: contrast(2.2) grayscale(1) brightness(1.45); }
-  62% { clip-path: inset(42% 0 12% 0); filter: contrast(2.8) grayscale(1) brightness(1.8); }
-  100% { clip-path: inset(48% 0 48% 0); filter: contrast(3) grayscale(1) blur(2px); }
-}
-
-@keyframes logo-decode {
-  0% { clip-path: inset(48% 0 48% 0); filter: contrast(3) grayscale(1) blur(2px); }
-  28% { clip-path: inset(25% 0 26% 0); filter: contrast(2.3) grayscale(1) brightness(1.6); }
-  58% { clip-path: inset(5% 0 8% 0); filter: contrast(1.5) grayscale(1) brightness(1.25); }
-  100% { clip-path: inset(0); filter: contrast(1) grayscale(0) blur(0); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .brand-logo-stack .brand-logo,
   .brand-word-stack .brand-word,
