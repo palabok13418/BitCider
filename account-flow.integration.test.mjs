@@ -212,7 +212,7 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   // A fresh browser cannot password-sign-in before Cider identifies the account.
   const unlinkedBrowser = await jsonRequest(secondOrigin, '/api/status');
   const unlinkedBrowserCookie = cookieFrom(unlinkedBrowser.response);
-  const unlinkedPasswordLogin = await jsonRequest(secondOrigin, '/api/account/login-with-cider', {
+  const unlinkedPasswordLogin = await jsonRequest(secondOrigin, '/api/account/login', {
     method: 'POST',
     cookie: unlinkedBrowserCookie,
     csrf: unlinkedBrowser.payload.csrfToken,
