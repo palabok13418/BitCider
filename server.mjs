@@ -2486,7 +2486,12 @@ async function downloadBitMonoAudio({ provider, trackId, quality, sourceUrl, for
         trackId: String(trackId),
         quality,
         format: String(format || ''),
-        contentType: contentType || (String(format).toLowerCase() === 'mp3' ? 'audio/mpeg' : 'audio/flac'),
+        contentType: contentType && contentType !== 'application/octet-stream'
+          ? contentType
+          : (['mp3', 'mpeg', 'mpga'].includes(String(format).toLowerCase()) ? 'audio/mpeg'
+            : (['m4a', 'mp4', 'aac'].includes(String(format).toLowerCase()) ? 'audio/mp4'
+              : (String(format).toLowerCase() === 'ogg' ? 'audio/ogg'
+                : (String(format).toLowerCase() === 'flac' ? 'audio/flac' : 'application/octet-stream')))),
         size: byteCount,
         sha256: digest,
         etag: '"' + digest + '"',
@@ -2573,6 +2578,7 @@ async function serveBitMonoCachedAudio(req, res) {
   let stat;
   try { stat = await fs.promises.stat(paths.audio); }
   catch { return res.status(404).end(); }
+  await fs.promises.utimes(paths.audio, new Date(), new Date()).catch(() => {});
   const size = stat.size;
   const etag = metadata.etag || '"' + metadata.sha256 + '"';
   res.set({
@@ -2580,6 +2586,8 @@ async function serveBitMonoCachedAudio(req, res) {
     'Content-Length': String(size),
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'public, max-age=3600, immutable',
+    'Content-Disposition': 'inline',
+    'X-Content-Type-Options': 'nosniff',
     ETag: etag,
     'Last-Modified': new Date(metadata.createdAt).toUTCString(),
     'X-BitMono-Cache': 'HIT'
@@ -2772,14 +2780,16 @@ app.get('/bitmono/stream/:trackId', async (req, res) => {
       });
       res.set('Cache-Control', 'no-store');
       return res.json({
-        ...resolved,
         url: bitMonoAudioPublicUrl(req, audio.cacheKey),
         format,
         quality: resolved.quality || resolved.audioQuality || (resolvedQuality === 'low' ? 'LOW' : 'HIGH'),
+        audioQuality: resolved.audioQuality || resolved.quality || (resolvedQuality === 'low' ? 'LOW' : 'HIGH'),
         codec: resolved.codec || format,
         mimeType: audio.contentType,
         manifest: 'none',
         encrypted: resolved.encrypted === true,
+        audioMode: resolved.audioMode || 'STEREO',
+        audioModes: Array.isArray(resolved.audioModes) ? resolved.audioModes : ['STEREO'],
         cacheReady: true,
         buffered: true,
         sizeBytes: audio.size,
