@@ -61,7 +61,13 @@ a { color: inherit; text-decoration: none; }
   flex: 0 0 auto;
   object-fit: contain;
 }
-.brand-word { font-size: 19px; font-weight: 800; letter-spacing: -.9px; color: #f3f5fc; }
+.brand-word {
+  color: #fd3f57;
+  font-family: 'Martian Mono', ui-monospace, monospace;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -.9px;
+}
 .brand-word span { color: #ff2b5e; }
 .card-label, .scope-title, .eyebrow, .footer {
   font-family: var(--mono); letter-spacing: .12em;
