@@ -1699,3 +1699,10 @@ h1 .bitchord-word {
   font-size: 9px;
   line-height: 1.65;
 }
+
+@media (max-width: 900px) {
+  .connection-column {
+    justify-self: start;
+    max-width: 560px;
+  }
+}
