@@ -502,17 +502,24 @@ test('BitMono is a free Monochrome-backed addon with accurate stream metadata', 
     const url = new URL(request.url, 'http://localhost');
     upstreamRequests.push(url.pathname + url.search);
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const mockTrack = {
+      trackId: '123456789012345',
+      id: '123456789012345',
+      title: 'Test Monochrome Song',
+      artistNames: ['Test Artist'],
+      albumTitle: 'Test Album',
+      duration: 225000,
+      artwork: 'https://images.example.invalid/test-cover.jpg',
+      isrc: 'USMOCK000001'
+    };
     if (url.pathname === '/search/tracks') {
+      response.end(JSON.stringify({ data: { tracks: [mockTrack] } }));
+      return;
+    }
+    if (url.pathname === '/search') {
       response.end(JSON.stringify({
-        tracks: [{
-          trackId: '123456789012345',
-          title: 'Test Monochrome Song',
-          artistNames: ['Test Artist'],
-          albumTitle: 'Test Album',
-          duration: 225000,
-          artwork: 'https://images.example.invalid/test-cover.jpg',
-          isrc: 'USMOCK000001'
-        }]
+        topResults: [{ ...mockTrack, entityType: 'track' }],
+        tracks: [mockTrack]
       }));
       return;
     }
@@ -577,7 +584,99 @@ test('BitMono is a free Monochrome-backed addon with accurate stream metadata', 
   assert.equal(streamPayload.audioMode, 'STEREO');
   assert.equal(streamPayload.requestedQuality, 'dolby_atmos_hi');
   assert.equal(streamPayload.qualityFallback, true);
-  assert.deepEqual(upstreamRequests, ['/search/tracks?q=Test+Monochrome+Song&limit=20']);
+  assert.deepEqual(upstreamRequests.sort(), [
+    '/search?q=Test+Monochrome+Song',
+    '/search/tracks?q=Test+Monochrome+Song&limit=40'
+  ].sort());
+  assert.equal(search.headers.get('x-bitmono-cache'), 'MISS');
+  assert.match(search.headers.get('x-bitmono-request-id') || '', /^[0-9a-f-]{36}$/i);
+  assert.match(backend.output(), /"event":"upstream.response"/);
+  assert.match(backend.output(), /"event":"search.merged"/);
+  assert.match(backend.output(), /"duplicates":2?/);
+});
+
+test('BitMono uses unified top results and does not cache empty upstream searches', async t => {
+  const upstreamRequests = [];
+  let recovered = false;
+  const upstream = http.createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    upstreamRequests.push(url.pathname + url.search);
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+
+    if (url.searchParams.get('q') === 'Temporary Miss') {
+      const tracks = recovered ? [{
+        id: '998877665544332211',
+        title: 'Temporary Miss',
+        artist: { name: 'Recovery Artist' },
+        album: { title: 'Back Online' },
+        durationInMillis: 181250,
+        artwork: 'https://images.example.invalid/recovered.jpg'
+      }] : [];
+      response.end(JSON.stringify(url.pathname === '/search'
+        ? { data: { topResults: tracks.map(track => ({ ...track, entityType: 'track' })), tracks } }
+        : { data: { data: { tracks } } }));
+      return;
+    }
+
+    if (url.pathname === '/search') {
+      response.end(JSON.stringify({
+        data: {
+          topResults: [{
+            entityType: 'track',
+            trackId: '155102871061270528',
+            title: 'Fallback Track',
+            artistNames: ['Fallback Artist'],
+            album: { title: 'Fallback Album' },
+            duration: 205500,
+            artwork: 'https://images.example.invalid/fallback.jpg'
+          }],
+          tracks: []
+        }
+      }));
+      return;
+    }
+    response.end(JSON.stringify({ tracks: [] }));
+  });
+
+  const upstreamPort = await listen(upstream);
+  t.after(() => {
+    upstream.closeAllConnections?.();
+    return new Promise(resolve => upstream.close(resolve));
+  });
+  const backend = await startBackend({
+    BITMONO_TRACKS_API_BASE: 'http://127.0.0.1:' + upstreamPort
+  });
+  t.after(() => backend.stop());
+
+  const hintedSearch = await fetch(
+    backend.origin + '/bitmono/search?title=Fallback%20Track&artist=Fallback%20Artist'
+  );
+  const hintedPayload = await hintedSearch.json();
+  assert.equal(hintedSearch.status, 200, JSON.stringify(hintedPayload));
+  assert.equal(hintedPayload.tracks.length, 1);
+  assert.equal(hintedPayload.tracks[0].id, 'mono_155102871061270528');
+  assert.equal(hintedPayload.tracks[0].artist, 'Fallback Artist');
+  assert.equal(hintedPayload.tracks[0].album, 'Fallback Album');
+  assert.equal(hintedPayload.tracks[0].duration, 205.5);
+
+  const firstMiss = await fetch(backend.origin + '/bitmono/search?q=Temporary%20Miss');
+  const firstPayload = await firstMiss.json();
+  assert.equal(firstMiss.status, 200);
+  assert.deepEqual(firstPayload.tracks, []);
+  assert.equal(firstMiss.headers.get('cache-control'), 'no-store');
+
+  const countBeforeRetry = upstreamRequests.filter(path => path.includes('Temporary+Miss')).length;
+  recovered = true;
+  const recoveredSearch = await fetch(backend.origin + '/bitmono/search?q=Temporary%20Miss');
+  const recoveredPayload = await recoveredSearch.json();
+  assert.equal(recoveredSearch.status, 200, JSON.stringify(recoveredPayload));
+  assert.equal(recoveredPayload.tracks.length, 1);
+  assert.equal(recoveredPayload.tracks[0].title, 'Temporary Miss');
+  assert.equal(recoveredPayload.tracks[0].artist, 'Recovery Artist');
+  assert.equal(recoveredPayload.tracks[0].duration, 181.25);
+  assert.equal(upstreamRequests.filter(path => path.includes('Temporary+Miss')).length, countBeforeRetry + 2);
+  assert.match(backend.output(), /"event":"search.no_matches"/);
+  assert.match(backend.output(), /"event":"search.complete"/);
 });
 
 test('BitMono page mode updates branding, tab metadata, and keeps the source URL copyable', async () => {
