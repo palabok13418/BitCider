@@ -99,6 +99,24 @@ Security controls:
 - Account Key sign-in, passkey sign-in, and recovery are independently rate-limited and protected by session-bound CSRF. Cider connection matching is a separate flow. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
 - Cider app tokens are encrypted with AES-256-GCM using the dedicated Deplexo `BITCIDER_ENCRYPTION_KEY`, separate from the persistent data volume. The key must be backed up securely and never committed. The `connection.json` store and legacy `encryption.key` remain under `/data/bitcider` with restrictive file permissions. Protect and back up the full volume as well; runtime/server compromise can still expose decrypted credentials.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
+
+## BitMono complete-audio cache
+
+BitMono does not return Monochrome or Deezer's upstream audio URL directly to BitChord. When BitChord requests a track's stream, the Deplexo backend downloads the **entire audio file** first, hashes the completed bytes, and atomically stores the file under `BITCIDER_DATA_DIR/bitmono-audio-cache` (by default `/data/bitcider/bitmono-audio-cache`). The stream resolver does not return a playback URL until the download reaches EOF and the complete cache file is ready. Playback then reads from BitCider's cached copy, not the provider's chunked endpoint. The cache route supports `HEAD`, HTTP byte ranges, ETags, and CORS range headers for seeking.
+
+Default limits are a 256 MiB maximum per audio file, 1 GiB total audio cache, a seven-day cache lifetime, and a three-minute upstream download deadline. Expired files are removed, and least-recently-used files are evicted when the cache exceeds its size limit. An upstream error, playlist response, zero-byte body, interrupted transfer, or file above the configured size limit fails stream resolution rather than handing BitChord a partial file.
+
+Optional Deplexo environment overrides:
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `BITMONO_AUDIO_CACHE_DIR` | `/data/bitcider/bitmono-audio-cache` | Cache directory; keep it on the durable Deplexo volume |
+| `BITMONO_AUDIO_CACHE_TTL_MS` | `604800000` | Cache lifetime in milliseconds (7 days) |
+| `BITMONO_AUDIO_CACHE_MAX_BYTES` | `1073741824` | Total cache budget (1 GiB) |
+| `BITMONO_AUDIO_MAX_FILE_BYTES` | `268435456` | Maximum complete file size (256 MiB) |
+| `BITMONO_AUDIO_DOWNLOAD_TIMEOUT_MS` | `180000` | Maximum upstream download time (3 minutes) |
+
+The complete file is preloaded before playback starts, so BitChord no longer has to fetch successive audio chunks from Monochrome or Deezer during the song. The user's connection from BitChord to the Deplexo cache still needs enough bandwidth for the selected audio bitrate.
 - Registration creates 10 one-time recovery codes. They are shown once, while only their hashes are saved. Keep them in a password manager or offline safe location. Using a recovery code resets the passphrase, generates a fresh set of codes, and invalidates all active device sessions.
 - No email is collected or used for recovery. Losing both the passphrase and all unused recovery codes means the BitCider account cannot be recovered.
 
