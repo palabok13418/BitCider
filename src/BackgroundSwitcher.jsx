@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import Lightfall from './Lightfall.jsx';
 import LineWaves from './LineWaves.jsx';
 import AcidSquares from './AcidSquares.jsx';
+
+const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
 const LAST_BACKGROUND_KEY = 'bitcider.background.last.v1';
 
@@ -104,6 +106,42 @@ const BACKGROUND_REGISTRY = [
         dpr={1.25}
       />
     )
+  },
+  {
+    id: 'aero-shards',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <AeroShards
+          className="site-waves"
+          shardColor="#fd3f57"
+          accentColor="#ff9bac"
+          backgroundColor="transparent"
+          lightMode={false}
+          placement="full"
+          material="glass"
+          count={950}
+          shardSize={1}
+          spread={1}
+          twist={1}
+          billow={1}
+          speed={0.8}
+          scale={1}
+          depthOfField={0.75}
+          glow={0.32}
+          grain={0.05}
+          vignette={0.24}
+          intro
+          mouseInteraction
+          mouseStrength={0.55}
+          markers="plus"
+          pulseOnClick
+          holdToGather
+          parallax={0.5}
+          dpr={1.25}
+          onError={onError}
+        />
+      </Suspense>
+    )
   }
 ];
 
@@ -121,7 +159,7 @@ function chooseBackground() {
 }
 
 export default function BackgroundSwitcher({ warping = false }) {
-  const [backgroundId] = useState(() => chooseBackground());
+  const [backgroundId, setBackgroundId] = useState(() => chooseBackground());
 
   useEffect(() => {
     try {
@@ -132,5 +170,10 @@ export default function BackgroundSwitcher({ warping = false }) {
   }, [backgroundId]);
 
   const selected = BACKGROUND_REGISTRY.find(item => item.id === backgroundId) || BACKGROUND_REGISTRY[0];
-  return selected.render({ warping });
+  const handleAeroError = error => {
+    console.warn('[BitCider] AeroShards is unavailable. Falling back to Lightfall.', error);
+    setBackgroundId('lightfall');
+  };
+
+  return selected.render({ warping, onError: handleAeroError });
 }
