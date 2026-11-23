@@ -45,9 +45,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v8`.
+The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v9`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-23-account-key-v8"` and `"perUserCiderRelaySupported":true`. The signed-in account's `/api/status` response reports `ciderRelay.provisioned` and `ciderRelay.online`; the global `/health` field `ciderBridgeConfigured` describes only the legacy shared bridge, not a specific user's relay.
+- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-23-account-key-v9"` and `"perUserCiderRelaySupported":true`. The signed-in account's `/api/status` response reports `ciderRelay.provisioned` and `ciderRelay.online`; the global `/health` field `ciderBridgeConfigured` describes only the legacy shared bridge, not a specific user's relay.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
@@ -88,7 +88,7 @@ Build the frontend with `npm run build` before deploying the Worker. Cloudflare 
 
 ## 4. BitCider accounts, recovery, and stored data
 
-The current frontend/backend API version is `2026-11-23-account-key-v8`. Deplexo must run the matching `main` revision before the account panel can be used.
+The current frontend/backend API version is `2026-11-23-account-key-v9`. Deplexo must run the matching `main` revision before the account panel can be used.
 
 BitCider accounts do not collect a username or email. Each account has a random 256-bit Account Key; sign in with that key plus the password, or use a discoverable passkey. Recovery requires one unused recovery code and rotates the Account Key. Cider app tokens are stored connection data and are not the cross-device account identifier. The integration does not request Cider's `account` scope. Each account supports up to five passkeys and five active device sessions.
 
