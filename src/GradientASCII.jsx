@@ -688,8 +688,7 @@ const GradientASCII = ({
     let last = 0;
     let visible = typeof IntersectionObserver === 'undefined';
 
-    const linked = () =>
-      !parallel || programs.every(item => gl.getProgramParameter(item.program, parallel.COMPLETION_STATUS_KHR));
+
 
     const syncAtlas = () => {
       const s = settingsRef.current;
