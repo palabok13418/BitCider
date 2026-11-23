@@ -91,7 +91,7 @@ Content-Type: application/json
 
 This request is sent directly to Cider on the same device as the browser. After the user approves the native prompt, Cider returns the token to the page. The page sends it to the selected BitCider frontend's `/api/connect`; the request is forwarded to Deplexo and encrypted at rest.
 
-Cider must be running on the user's computer. For Cider versions with web API origin protection, the user must approve the frontend origin in **Settings → Connections → Extension security**. No Cider token or local API port is exposed in the frontend configuration.
+Cider must be running on the same computer as the browser. On current Chrome releases, the first request from this HTTPS site to `127.0.0.1` is gated by Chrome's **Loopback network** permission; the user must choose Allow when prompted. If previously denied, open the BitCider site's Chrome permissions, set **Loopback network** to Allow, reload, and retry. The app explicitly targets the `loopback` address space and checks the permission state before requesting authorization. A Cider `403 AUTH_REQUEST_DENIED` means the user denied the Cider consent dialog; repeated denials can trigger Cider's temporary authorization rate limit. No Cider token or local API port is exposed in the frontend configuration.
 
 ## Critical Cider bridge requirement
 
