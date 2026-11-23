@@ -10,6 +10,7 @@ const LightTunnel = lazy(() => import('./LightTunnel.jsx'));
 const PrismaticBurst = lazy(() => import('./PrismaticBurst.jsx'));
 const SideRays = lazy(() => import('./SideRays.jsx'));
 const Silk = lazy(() => import('./Silk.jsx'));
+const Topography = lazy(() => import('./Topography.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -386,6 +387,46 @@ const BACKGROUND_REGISTRY = [
           lightMode={false}
           paused={false}
           dpr={1.3}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'topography',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <Topography
+          className="site-waves"
+          color="#fd3f57"
+          lineCount={25}
+          lineWidth={1.05}
+          majorLines
+          elevation={1.05}
+          foreground={0.22}
+          scale={1.08}
+          detail={0.32}
+          tilt={34}
+          speed={0.075}
+          direction="forward"
+          morph={0.13}
+          glow={0.36}
+          depthOfField={0.38}
+          fog={0.48}
+          brightness={0.9}
+          opacity={0.84}
+          mouseInteraction
+          hoverEffect="lift"
+          mouseRadius={1.05}
+          mouseStrength={0.46}
+          trail={0.28}
+          parallax={0.38}
+          clickEffect="pulse"
+          markers="none"
+          glitch={0.025}
+          intro
+          lightMode={false}
+          dpr={1.2}
           onError={onError}
         />
       </Suspense>
