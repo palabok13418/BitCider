@@ -2026,7 +2026,6 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
           status: response.status,
           contentType: response.headers.get('content-type') || '',
           durationMs,
-          bodyPreview: bitMonoLogText(rawBody, 180)
         });
         lastError = error;
         if ((response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) && attempt < 2) {
@@ -2048,7 +2047,6 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
           status: response.status,
           contentType: response.headers.get('content-type') || '',
           bodyLength: rawBody.length,
-          bodyPreview: bitMonoLogText(rawBody, 180),
           durationMs
         });
         throw error;
