@@ -112,7 +112,6 @@ export default function App() {
       : (typeof apiError === 'string' && errorCode !== apiError ? apiError : payload?.message || '');
 
     const knownErrors = {
-      AUTH_REQUEST_DENIED: 'The BitCider permission request was denied in Cider. Click Connect Cider again and approve the request in Cider’s consent dialog.',
       AUTH_REQUEST_TIMEOUT: 'Cider’s approval dialog timed out. Keep Cider open and try connecting again.',
       AUTH_REQUEST_BUSY: 'Cider already has an approval dialog open. Finish or dismiss that dialog before trying again.',
       AUTH_REQUEST_COOLDOWN: 'Cider is limiting new authorization requests. Wait at least 5 seconds, then try again.',
@@ -166,9 +165,9 @@ export default function App() {
         setConnectPhase(current => current === 'promoting' ? 'idle' : current);
       }, 2300);
     } catch (error) {
-      setNotice(error.message || 'Could not complete Cider authorization.');
-      setNoticeType('warning');
       if (error?.code === 'AUTH_REQUEST_DENIED') {
+        // The red Denied animation is the only denial feedback.
+        setNotice('');
         setConnectPhase('denied');
         try {
           if (window.matchMedia?.('(pointer: coarse)').matches && typeof navigator.vibrate === 'function') {
@@ -183,9 +182,11 @@ export default function App() {
           setConnectPhase(current => current === 'denied' ? 'denied-return' : current);
           window.setTimeout(() => {
             setConnectPhase(current => current === 'denied-return' ? 'idle' : current);
-          }, 540);
+          }, 660);
         }, 1160);
       } else {
+        setNotice(error.message || 'Could not complete Cider authorization.');
+        setNoticeType('warning');
         setConnectPhase('idle');
       }
     } finally {
@@ -310,7 +311,11 @@ export default function App() {
                 <div className="scope-title">YOUR BITCHORD ADDON URL</div>
                 <div className="url-row">
                   <code>{status.addonUrl}</code>
-                  <button className="copy-button" onClick={copyAddonUrl} aria-label="Copy addon URL">
+                  <button
+                    className={`copy-button ${connectPhase === 'promoting' ? 'copy-button-entering' : ''} ${copied ? 'is-copied' : ''}`}
+                    onClick={copyAddonUrl}
+                    aria-label="Copy addon URL"
+                  >
                     {copied ? <Icon name="check" /> : <Icon name="copy" />}
                   </button>
                 </div>
