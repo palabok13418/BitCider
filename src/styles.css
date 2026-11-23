@@ -1764,25 +1764,63 @@ h1 .bitchord-word {
   animation: source-background-awake .9s cubic-bezier(.16,1,.3,1) both;
 }
 
+.hero-copy .cider-word,
+.hero-copy .monochrome-word {
+  display: inline-block;
+  transform-origin: center;
+}
 .site-shell.mode-phase-encrypt .hero-copy .cider-word,
 .site-shell.mode-phase-encrypt .brand-word-cider,
 .site-shell.mode-phase-encrypt .hero-copy .monochrome-word,
 .site-shell.mode-phase-encrypt .brand-word-mono {
-  animation: cipher-encode .5s steps(12, end) both;
+  animation: source-cipher-encode .5s steps(12, end) both;
 }
 .site-shell.mode-phase-decrypt .hero-copy .cider-word,
 .site-shell.mode-phase-decrypt .brand-word-cider,
 .site-shell.mode-phase-decrypt .hero-copy .monochrome-word,
 .site-shell.mode-phase-decrypt .brand-word-mono {
-  animation: cipher-decode .82s steps(20, end) both;
+  animation: source-cipher-decode .82s steps(20, end) both;
 }
 .site-shell.mode-phase-encrypt .brand-logo-cider,
 .site-shell.mode-phase-encrypt .brand-logo-mono {
-  animation: logo-encode .5s steps(12, end) both;
+  animation: source-logo-encode .5s steps(12, end) both;
 }
 .site-shell.mode-phase-decrypt .brand-logo-cider,
 .site-shell.mode-phase-decrypt .brand-logo-mono {
-  animation: logo-decode .82s steps(18, end) both;
+  animation: source-logo-decode .82s steps(18, end) both;
+}
+
+
+.site-shell.mode-phase-decrypt .brand-logo-cider,
+.site-shell.mode-phase-decrypt .brand-logo-mono {
+  animation: source-logo-decode .82s steps(18, end) both;
+}
+
+@keyframes source-cipher-encode {
+  0% { clip-path: inset(0); filter: blur(0) contrast(1); transform: translateX(0) skewX(0); text-shadow: none; }
+  22% { clip-path: inset(0 0 24% 0); filter: blur(.35px) contrast(1.65); transform: translateX(2px) skewX(-2deg); text-shadow: 2px 0 rgba(255,255,255,.55), -2px 0 rgba(255,43,94,.5); }
+  48% { clip-path: inset(19% 0 16% 0); filter: blur(.9px) contrast(2.1); transform: translateX(-2px) skewX(3deg); text-shadow: -3px 0 rgba(255,255,255,.48), 3px 0 rgba(255,43,94,.42); }
+  76% { clip-path: inset(0 0 58% 0); filter: blur(1.7px) contrast(2.5); transform: translateX(1px) skewX(-4deg); text-shadow: 0 0 13px rgba(255,255,255,.68); }
+  100% { clip-path: inset(45% 0 45% 0); filter: blur(3.5px) contrast(2.8); transform: translateY(-2px) scaleY(.9); text-shadow: 0 0 18px rgba(255,255,255,.8); }
+}
+@keyframes source-cipher-decode {
+  0% { clip-path: inset(45% 0 45% 0); filter: blur(3.5px) contrast(2.8); transform: translateY(2px) scaleY(.9); text-shadow: 0 0 17px rgba(255,255,255,.75); }
+  22% { clip-path: inset(24% 0 27% 0); filter: blur(2px) contrast(2.1); transform: translateY(1px) skewX(2deg); }
+  48% { clip-path: inset(9% 0 12% 0); filter: blur(1px) contrast(1.55); transform: translateX(-1px); text-shadow: -1px 0 rgba(255,255,255,.3); }
+  76% { clip-path: inset(0); filter: blur(.35px) contrast(1.12); transform: translateX(1px); }
+  100% { clip-path: inset(0); filter: blur(0) contrast(1); transform: none; text-shadow: none; }
+}
+@keyframes source-logo-encode {
+  0% { clip-path: inset(0); filter: contrast(1) grayscale(0) blur(0); transform: translateX(0) scale(1); }
+  28% { clip-path: inset(12% 0 38% 0); filter: contrast(1.8) grayscale(.6) brightness(1.35); transform: translateX(2px) scale(1.04); }
+  58% { clip-path: inset(34% 0 15% 0); filter: contrast(2.4) grayscale(1) brightness(1.7); transform: translateX(-2px) scale(.98); }
+  100% { clip-path: inset(47% 0 47% 0); filter: contrast(2.8) grayscale(1) blur(2px); transform: translateY(-2px) scale(.9); }
+}
+@keyframes source-logo-decode {
+  0% { clip-path: inset(47% 0 47% 0); filter: contrast(2.8) grayscale(1) blur(2px); transform: translateY(2px) scale(.9); }
+  30% { clip-path: inset(26% 0 24% 0); filter: contrast(2.1) grayscale(1) brightness(1.5) blur(1px); transform: translateX(-1px) scale(1.02); }
+  62% { clip-path: inset(8% 0 7% 0); filter: contrast(1.35) grayscale(.5) brightness(1.18); transform: translateX(1px) scale(1.01); }
+  100% { clip-path: inset(0); filter: contrast(1) grayscale(0) blur(0); transform: translateX(0) scale(1); }
 }
 
 @keyframes source-veil-cover {
