@@ -20,7 +20,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Gives each BitCider account its own encrypted Cider connection and personal BitChord addon URL; anonymous browser sessions can be upgraded into accounts.
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Encrypts saved Cider app tokens with AES-256-GCM.
-- Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
+- Uses Deplexo's `/data` persistent volume for connection records and the legacy CSRF-signing key; the dedicated Cider-token encryption key is kept separately as a Deplexo secret.
 - Allows exact same-origin Deplexo HTTPS requests to manage a session directly, while Netlify/Cloudflare use a private gateway secret.
 
 ## BitCider accounts and cloud-saved links
