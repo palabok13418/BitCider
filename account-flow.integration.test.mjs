@@ -113,8 +113,8 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
-  // First run uses the legacy persistent-volume key so the test can exercise
-  // the automatic migration that happens when the Deplexo secret is added.
+  // First run uses the legacy persistent-volume key. Keep the connection
+  // anonymous until the separate Deplexo encryption key is available.
   server = await startServer({ port, dataDir });
   const firstOrigin = server.origin;
 
@@ -123,10 +123,53 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.equal(anonymous.payload.tokenEncryptionConfigured, false);
   const anonymousCookie = cookieFrom(anonymous.response);
 
-  const registration = await jsonRequest(firstOrigin, '/api/account/register', {
+  const blockedRegistration = await jsonRequest(firstOrigin, '/api/account/register', {
     method: 'POST',
     cookie: anonymousCookie,
     csrf: anonymous.payload.csrfToken,
+    body: { username, password: initialPassword }
+  });
+  assert.equal(blockedRegistration.response.status, 503);
+  assert.equal(blockedRegistration.payload.error, 'SECURE_STORAGE_NOT_CONFIGURED');
+
+  const firstConnection = await jsonRequest(firstOrigin, '/api/connect', {
+    method: 'POST',
+    cookie: anonymousCookie,
+    csrf: anonymous.payload.csrfToken,
+    body: { token: fakeCiderToken, scopes: ['playback', 'queue', 'library', 'audio'] }
+  });
+  assert.equal(firstConnection.response.status, 200);
+  const savedAddonUrl = firstConnection.payload.addonUrl;
+  assert.match(savedAddonUrl, /\\/manifest\\.json$/);
+
+  const legacyStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
+  const legacySession = Object.values(legacyStore.sessions)[0];
+  assert.equal(legacySession.ciderToken.keyVersion, 1);
+  assert.equal(JSON.stringify(legacyStore).includes(fakeCiderToken), false);
+
+  await server.stop();
+  server = null;
+
+  // Restart with the Deplexo-only secret. The existing anonymous connection
+  // is upgraded first, then transferred into the newly created account.
+  server = await startServer({ port, dataDir, encryptionKey: dedicatedKey });
+  const secondOrigin = server.origin;
+
+  const restoredAnonymous = await jsonRequest(secondOrigin, '/api/status', { cookie: anonymousCookie });
+  assert.equal(restoredAnonymous.response.status, 200);
+  assert.equal(restoredAnonymous.payload.tokenEncryptionConfigured, true);
+  assert.equal(restoredAnonymous.payload.connected, true);
+  assert.equal(restoredAnonymous.payload.addonUrl, savedAddonUrl);
+
+  const migratedStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
+  const migratedSession = Object.values(migratedStore.sessions)[0];
+  assert.equal(migratedSession.ciderToken.keyVersion, 2);
+  assert.equal(JSON.stringify(migratedStore).includes(fakeCiderToken), false);
+
+  const registration = await jsonRequest(secondOrigin, '/api/account/register', {
+    method: 'POST',
+    cookie: anonymousCookie,
+    csrf: restoredAnonymous.payload.csrfToken,
     body: { username, password: initialPassword }
   });
   assert.equal(registration.response.status, 201);
@@ -134,42 +177,15 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   const originalRecoveryCode = registration.payload.recoveryCodes[0];
   const firstDeviceCookie = cookieFrom(registration.response);
 
-  const connectStatus = await jsonRequest(firstOrigin, '/api/status', { cookie: firstDeviceCookie });
-  assert.equal(connectStatus.payload.account.authenticated, true);
-  const connected = await jsonRequest(firstOrigin, '/api/connect', {
-    method: 'POST',
-    cookie: firstDeviceCookie,
-    csrf: connectStatus.payload.csrfToken,
-    body: { token: fakeCiderToken, scopes: ['playback', 'queue', 'library', 'audio'] }
-  });
-  assert.equal(connected.response.status, 200);
-  const savedAddonUrl = connected.payload.addonUrl;
-  assert.match(savedAddonUrl, /\/manifest\.json$/);
+  const firstDeviceStatus = await jsonRequest(secondOrigin, '/api/status', { cookie: firstDeviceCookie });
+  assert.equal(firstDeviceStatus.payload.account.authenticated, true);
+  assert.equal(firstDeviceStatus.payload.connected, true);
+  assert.equal(firstDeviceStatus.payload.addonUrl, savedAddonUrl);
 
-  const legacyStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
-  const legacyAccount = Object.values(legacyStore.accounts)[0];
-  assert.equal(legacyAccount.ciderToken.keyVersion, 1);
-  assert.equal(JSON.stringify(legacyStore).includes(fakeCiderToken), false);
-
-  await server.stop();
-  server = null;
-
-  // Restart with a separate environment secret. Startup must migrate all
-  // existing account and anonymous Cider tokens without changing addon URLs.
-  server = await startServer({ port, dataDir, encryptionKey: dedicatedKey });
-  const secondOrigin = server.origin;
-
-  const restoredFirstDevice = await jsonRequest(secondOrigin, '/api/status', { cookie: firstDeviceCookie });
-  assert.equal(restoredFirstDevice.response.status, 200);
-  assert.equal(restoredFirstDevice.payload.tokenEncryptionConfigured, true);
-  assert.equal(restoredFirstDevice.payload.account.authenticated, true);
-  assert.equal(restoredFirstDevice.payload.connected, true);
-  assert.equal(restoredFirstDevice.payload.addonUrl, savedAddonUrl);
-
-  const migratedStore = JSON.parse(await fs.readFile(path.join(dataDir, 'connection.json'), 'utf8'));
-  const migratedAccount = Object.values(migratedStore.accounts)[0];
-  assert.equal(migratedAccount.ciderToken.keyVersion, 2);
-  assert.equal(JSON.stringify(migratedStore).includes(fakeCiderToken), false);
+  const manifestResponse = await fetch(savedAddonUrl);
+  assert.equal(manifestResponse.status, 200);
+  assert.match(manifestResponse.headers.get('cache-control') || '', /no-store/i);
+  assert.equal(manifestResponse.headers.get('cache-control')?.includes('public'), false);
 
   // A clean second browser can sign in and recover the account-owned addon URL.
   const secondAnonymous = await jsonRequest(secondOrigin, '/api/status');
