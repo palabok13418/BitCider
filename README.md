@@ -21,7 +21,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Encrypts saved Cider app tokens with AES-256-GCM.
 - Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
-- Allows the official Deplexo HTTPS app origin to manage its own session directly, while Netlify/Cloudflare use a private gateway secret.
+- Allows exact same-origin Deplexo HTTPS requests to manage a session directly, while Netlify/Cloudflare use a private gateway secret.
 
 ## Cider authorization
 
