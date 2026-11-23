@@ -942,48 +942,32 @@ function normalizeSong(song, { quality = 'high', preferAtmos = false } = {}) {
 }
 
 async function searchCiderSongs(term, token, { quality = 'high', preferAtmos = false, accountId = null } = {}) {
-  // Cider's scoped library API exposes paginated library songs, not an
-  // Apple Music-wide catalogue search. Search those library entries locally.
-  const needle = term.toLocaleLowerCase();
+  // Search Apple's full catalog through Cider's signed AMAPI proxy rather than
+  // scanning only the user's saved library. Cider supplies the user's
+  // storefront and signs the upstream request; no MusicKit credentials leave Cider.
+  const params = new URLSearchParams({
+    term: String(term || '').trim().slice(0, 160),
+    types: 'songs',
+    limit: '25',
+    offset: '0'
+  });
+  const result = await ciderRequest(
+    '/api/v2/amapi/search?' + params.toString(),
+    { token, accountId }
+  );
+  const rows = songRows(result);
   const matches = [];
   const seen = new Set();
-  // Cider caps Apple Music library pages at 100 entries.
-  const pageSize = 100;
-  const maxLibrarySongs = Math.max(200, Math.min(
-    Number(process.env.BITCIDER_SEARCH_MAX_LIBRARY_SONGS || 4000),
-    10000
-  ));
-
-  for (let offset = 0; offset < maxLibrarySongs; offset += pageSize) {
-    const result = await ciderRequest(
-      '/api/v2/library/songs?offset=' + offset + '&limit=' + pageSize,
-      { token, accountId }
-    );
-    const rows = songRows(result);
-    if (!rows.length) break;
-
-    for (const row of rows) {
-      const attributes = row?.attributes || row || {};
-      const catalogId = attributes?.playParams?.id || row?.id || attributes?.id || attributes?.catalogId;
-      if (!catalogId || seen.has(String(catalogId))) continue;
-      const normalizedTracks = normalizeSong(row, { quality, preferAtmos });
-      if (!normalizedTracks.length) continue;
-      seen.add(String(catalogId));
-      const track = normalizedTracks[0];
-      const haystack = [track.title, track.artist, track.album].join(' ').toLocaleLowerCase();
-      if (haystack.includes(needle)) {
-        matches.push(...normalizedTracks);
-        if (matches.length >= 25) return matches.slice(0, 25);
-      }
-    }
-
-    const total = Number(result?.meta?.total ?? result?.total ?? 0);
-    if (rows.length < pageSize || (total > 0 && offset + rows.length >= total)) break;
+  for (const row of rows) {
+    const attributes = row?.attributes || row || {};
+    const catalogId = attributes?.playParams?.id || row?.id || attributes?.id || attributes?.catalogId;
+    if (!catalogId || seen.has(String(catalogId))) continue;
+    seen.add(String(catalogId));
+    matches.push(...normalizeSong(row, { quality, preferAtmos }));
+    if (matches.length >= 25) break;
   }
-
-  return matches;
+  return matches.slice(0, 25);
 }
-
 function findQueueRows(payload) {
   const d = payload?.data ?? payload;
   if (Array.isArray(d)) return d;
