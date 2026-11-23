@@ -19,6 +19,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Includes the supplied Lightfall WebGL background, with request-driven warping while a personal addon URL is created.
 - Gives each BitCider account its own encrypted Cider connection and personal BitChord addon URL; anonymous browser sessions can be upgraded into accounts.
 - Implements the addon manifest, search, and stream-resolution route shapes.
+- Preloads complete Monochrome or Deezer audio files onto the Deplexo cache before returning a playable URL; cached audio supports byte-range seeking to avoid upstream chunk-fetch stalls during playback.
 - Encrypts saved Cider app tokens with AES-256-GCM.
 - Uses Deplexo's `/data` persistent volume for connection records and the legacy CSRF-signing key; the dedicated Cider-token encryption key is kept separately as a Deplexo secret.
 - Allows exact same-origin Deplexo HTTPS requests to manage a session directly, while Netlify/Cloudflare use a private gateway secret.
