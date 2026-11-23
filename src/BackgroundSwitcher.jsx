@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Lightfall from './Lightfall.jsx';
 import LineWaves from './LineWaves.jsx';
+import AcidSquares from './AcidSquares.jsx';
 
 const LAST_BACKGROUND_KEY = 'bitcider.background.last.v1';
 
@@ -59,6 +60,48 @@ const BACKGROUND_REGISTRY = [
         intro
         opacity={0.82}
         maxDevicePixelRatio={1.75}
+      />
+    )
+  },
+  {
+    id: 'acid-squares',
+    render: () => (
+      <AcidSquares
+        color="#12080a"
+        accentColor="#fd3f57"
+        secondaryColor="#ff9bac"
+        tileSize={1}
+        gap={0.12}
+        roundness={0.25}
+        softness={0.5}
+        bulge={0.3}
+        rotation={35}
+        gloss={0.72}
+        waves={1}
+        waveScale={1}
+        speed={0.6}
+        shape="square"
+        pulse={1}
+        pulseSpeed={0.45}
+        pulseSpacing={1}
+        pulseWidth={1}
+        pulseOrigin="center"
+        brightness={1}
+        lighting="split"
+        tilt={0.7}
+        zoom={1}
+        depth={10}
+        grain={0.08}
+        fade={0.04}
+        opacity={0.92}
+        intro
+        mouseInteraction
+        hoverEffect="press"
+        mouseStrength={1}
+        mouseRadius={0.35}
+        pulseOnClick
+        detail="medium"
+        dpr={1.25}
       />
     )
   }
