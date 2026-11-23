@@ -34,9 +34,9 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current Cider API-linking frontend expects the Deplexo API version `2026-11-23-cider-auth-v2`.
+The current BitCider frontend expects the Deplexo API version `2026-11-22-secure-accounts-v1`.
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-23-cider-auth-v2"`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return JSON containing `"apiVersion":"2026-11-22-secure-accounts-v1"`.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
