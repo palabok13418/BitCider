@@ -216,7 +216,7 @@ test('addon search uses the configured Cider relay and forwards the scoped app t
     observedToken = request.headers.apptoken || '';
     observedPath = request.url || '';
     response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ data: [], meta: { offset: 0, limit: 200, total: 0 } }));
+    response.end(JSON.stringify({ data: { results: { songs: { data: [] } } } }));
   });
   const ciderPort = await listen(cider);
   const backend = await startBackend('http://127.0.0.1:' + ciderPort, { allowLoopbackCiderApi: true });
@@ -318,19 +318,25 @@ test('authenticated addon search and stream resolve through the matching local d
         body: body ? JSON.parse(body) : null
       });
       response.writeHead(200, { 'Content-Type': 'application/json' });
-      if (request.url?.startsWith('/api/v2/library/songs?')) {
+      if (request.url?.startsWith('/api/v2/amapi/search?')) {
         response.end(JSON.stringify({
-          data: [{
-            id: 'library-row-1',
-            attributes: {
-              name: 'Bridge Test Song',
-              artistName: 'BitCider Test Artist',
-              albumName: 'Relay Album',
-              durationInMillis: 180000,
-              playParams: { id: 'catalog-track-123' }
+          data: {
+            results: {
+              songs: {
+                data: [{
+                  id: 'catalog-track-123',
+                  type: 'songs',
+                  attributes: {
+                    name: 'Bridge Test Song',
+                    artistName: 'BitCider Test Artist',
+                    albumName: 'Relay Album',
+                    durationInMillis: 180000,
+                    playParams: { id: 'catalog-track-123' }
+                  }
+                }]
+              }
             }
-          }],
-          meta: { offset: 0, limit: 100, total: 1 }
+          }
         }));
       } else if (request.url === '/api/v2/queue') {
         response.end(JSON.stringify({
@@ -421,7 +427,7 @@ test('authenticated addon search and stream resolve through the matching local d
     assert.equal(stream.status, 200, JSON.stringify(streamPayload));
     assert.equal(streamPayload.url, 'https://media.example.invalid/bitcider-test.m4a');
 
-    assert.ok(ciderRequests.some(item => item.path.startsWith('/api/v2/library/songs?offset=0&limit=100')));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/amapi/search?term=Bridge+Test&types=songs&limit=25&offset=0'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/play-item' && item.method === 'POST'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/pause' && item.method === 'POST'));
