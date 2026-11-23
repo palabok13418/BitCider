@@ -1,0 +1,11 @@
+version: 1
+type: web
+
+build:
+  framework: auto
+  install: npm install
+  command: npm run build
+
+run:
+  command: npm start
+  port: 3000
