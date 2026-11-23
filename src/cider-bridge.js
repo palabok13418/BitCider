@@ -1,6 +1,6 @@
 const LOCAL_CIDER_ORIGIN = 'http://127.0.0.1:10767';
 const LOCAL_CIDER_TIMEOUT_MS = 12000;
-const BRIDGE_POLL_WAIT_MS = 20000;
+const BRIDGE_POLL_WAIT_MS = 5000;
 const BRIDGE_RETRY_MS = 1200;
 
 function bridgeHeaders(registration) {
@@ -192,6 +192,8 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
   let registration = null;
   let retry = BRIDGE_RETRY_MS;
   let ciderToken = '';
+  let localCiderAvailable = false;
+  let nextProbeAt = 0;
   const setState = (state, message = '') => onState?.(state, message);
 
   setState('connecting', 'Connecting this browser to the local Cider app.');
@@ -200,13 +202,21 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       if (!registration) {
         registration = await registerBridge(csrfToken, signal);
         ciderToken = registration.ciderToken;
+        localCiderAvailable = false;
+        nextProbeAt = 0;
+        retry = BRIDGE_RETRY_MS;
+      }
+
+      if (!localCiderAvailable && Date.now() >= nextProbeAt) {
         try {
           await probeLocalCider(signal);
+          localCiderAvailable = true;
           setState('connected', 'This BitCider tab is connected to Cider on this computer.');
         } catch (error) {
+          localCiderAvailable = false;
+          nextProbeAt = Date.now() + 10000;
           setState('cider-unavailable', error?.message || 'Cider is not reachable from this browser yet.');
         }
-        retry = BRIDGE_RETRY_MS;
       }
 
       const pollResponse = await fetch('/api/bridge/poll', {
@@ -229,8 +239,11 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
 
       const result = await executeLocalCiderJob(job, ciderToken);
       if (result.status >= 500) {
+        localCiderAvailable = false;
+        nextProbeAt = Date.now() + 10000;
         setState('cider-unavailable', result.body?.error?.message || 'Cider is not responding on this computer.');
       } else {
+        localCiderAvailable = true;
         setState('connected', 'This BitCider tab is connected to Cider on this computer.');
       }
       await deliverJobResult(registration, job.requestId, result, signal);
@@ -244,6 +257,7 @@ export async function runCiderBrowserRelay({ addonUrl, csrfToken, signal, onStat
       }
       registration = null;
       ciderToken = '';
+      localCiderAvailable = false;
       setState('reconnecting', error?.message || 'Reconnecting to Cider on this computer.');
       await delay(retry, signal);
       retry = Math.min(retry * 1.7, 10000);
