@@ -56,7 +56,7 @@ a { color: inherit; text-decoration: none; }
 .brand-word { font-size: 19px; font-weight: 800; letter-spacing: -.9px; color: #f3f5fc; }
 .brand-word span { color: #8fa5dd; }
 .topbar-right { display: flex; align-items: center; gap: 20px; }
-.topbar-caption, .card-label, .step-counter, .scope-title, .eyebrow, .footer, .manual-token-form label {
+.topbar-caption, .card-label, .step-counter, .scope-title, .eyebrow, .footer {
   font-family: var(--mono); letter-spacing: .12em;
 }
 .topbar-caption { color: #667084; font-size: 9px; }
@@ -119,14 +119,7 @@ h1 span { color: #9aaddc; text-shadow: 0 0 40px rgba(140,166,231,.17); }
 }
 .primary-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 12px 34px rgba(125,151,221,.22); }
 .button-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 7px; background: rgba(16,25,44,.1); }
-.text-link { margin: 15px auto 0; display: flex; align-items: center; justify-content: center; gap: 7px; color: #8d9ab2; font-size: 10px; transition: color .2s; }
-.text-link:hover { color: #d4e0ff; }
-.manual-token-form { margin-top: 18px; padding-top: 17px; border-top: 1px solid rgba(255,255,255,.08); display: grid; gap: 9px; }
-.manual-token-form label { color: #a8b4d0; font-size: 8px; }
-.manual-token-form input { width: 100%; padding: 12px 13px; color: #eff3ff; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; outline: none; background: rgba(0,0,0,.27); font: 11px var(--mono); }
-.manual-token-form input:focus { border-color: rgba(165,187,255,.65); }
-.manual-token-form button { border: 1px solid rgba(156,178,245,.28); border-radius: 8px; padding: 11px; color: #dbe5ff; background: rgba(124,148,211,.12); font: 9px var(--mono); letter-spacing: .12em; }
-.manual-token-form small { color: #78849a; font-size: 9px; line-height: 1.5; }
+.auth-help { margin: 12px 2px 0; color: #8793a8; font-size: 10px; line-height: 1.65; text-align: center; }
 .addon-url-panel { margin: 1px 0 17px; }
 .url-row { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
 .url-row code { overflow-wrap: anywhere; flex: 1; color: #d8e2fb; font: 10px/1.6 var(--mono); }
