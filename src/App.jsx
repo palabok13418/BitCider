@@ -121,7 +121,7 @@ export default function App() {
     const token = typeof data?.token === 'string' ? data.token.trim() : '';
     // Match only actual CR/LF characters. Escaping these twice would reject
     // ordinary token characters such as "r" and "n".
-    if (token.length < 12 || token.length > 8192 || /[\\r\\n]/.test(token)) {
+    if (token.length < 12 || token.length > 8192 || token.includes(String.fromCharCode(10)) || token.includes(String.fromCharCode(13))){
       throw new Error('Cider returned an invalid authorization response. Please try again.');
     }
     const grantedScopes = Array.isArray(data?.scopes)
