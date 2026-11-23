@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
@@ -537,8 +537,9 @@ export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [pageMode, setPageMode] = useState('cider');
-  const [modePickerOpen, setModePickerOpen] = useState(false);
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
+  const modeDragRef = useRef(null);
+  const [modeDragProgress, setModeDragProgress] = useState(null);
   const [modeTransitionTarget, setModeTransitionTarget] = useState('');
   const [bitMonoCopied, setBitMonoCopied] = useState(false);
   const bitMonoAddonUrl = typeof window !== 'undefined'
@@ -1167,15 +1168,77 @@ export default function App() {
     }
   }
 
+  function updateModeDrag(event) {
+    const drag = modeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return false;
+    const trackRect = event.currentTarget.getBoundingClientRect();
+    const thumbWidth = Math.max(1, trackRect.width / 2 - 5);
+    const minLeft = 5;
+    const maxLeft = Math.max(minLeft, trackRect.width - 5 - thumbWidth);
+    const thumbLeft = Math.min(maxLeft, Math.max(minLeft, event.clientX - trackRect.left - drag.grabOffset));
+    drag.progress = (thumbLeft - minLeft) / Math.max(1, maxLeft - minLeft);
+    if (Math.abs(event.clientX - drag.startX) >= 8) drag.moved = true;
+    setModeDragProgress(drag.progress);
+    return true;
+  }
+
+  function beginModeDrag(event) {
+    if (modeTransitionPhase !== 'idle' || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (!(event.target instanceof Element) || !event.target.closest('.mode-toggle-thumb')) return;
+    const thumb = event.currentTarget.querySelector('.mode-toggle-thumb');
+    if (!thumb) return;
+
+    const thumbRect = thumb.getBoundingClientRect();
+    const startProgress = pageMode === 'mono' ? 1 : 0;
+    modeDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      grabOffset: event.clientX - thumbRect.left,
+      progress: startProgress,
+      moved: false
+    };
+    event.preventDefault();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
+    setModeDragProgress(startProgress);
+  }
+
+  function finishModeDrag(event) {
+    const drag = modeDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    updateModeDrag(event);
+    const shouldSwitch = drag.moved;
+    const nextMode = drag.progress >= 0.5 ? 'mono' : 'cider';
+    modeDragRef.current = null;
+    setModeDragProgress(null);
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {}
+    if (shouldSwitch && nextMode !== pageMode) switchPageMode(nextMode);
+  }
+
+  function cancelModeDrag(event) {
+    const drag = modeDragRef.current;
+    if (!drag || (event?.pointerId != null && drag.pointerId !== event.pointerId)) return;
+    modeDragRef.current = null;
+    setModeDragProgress(null);
+  }
+
+  function handleModeSliderKeyDown(event) {
+    if (modeTransitionPhase !== 'idle') return;
+    if (event.key === 'ArrowLeft' || event.key === 'Home') {
+      event.preventDefault();
+      switchPageMode('cider');
+    } else if (event.key === 'ArrowRight' || event.key === 'End') {
+      event.preventDefault();
+      switchPageMode('mono');
+    }
+  }
+
   function switchPageMode(nextMode) {
     if (nextMode !== 'cider' && nextMode !== 'mono') return;
-    if (modeTransitionPhase !== 'idle') return;
-    if (nextMode === pageMode) {
-      setModePickerOpen(false);
-      return;
-    }
-
-    setModePickerOpen(false);
+    if (modeTransitionPhase !== 'idle' || nextMode === pageMode) return;
     setModeTransitionTarget(nextMode);
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -1459,28 +1522,42 @@ export default function App() {
             </>
           )}
         </section>
-      <section className={`mode-switcher ${modePickerOpen ? 'is-open' : ''}`} aria-label="Switch source experience">
-        <button
-          className="mode-pull-tab"
-          type="button"
-          onClick={() => setModePickerOpen(open => !open)}
-          aria-expanded={modePickerOpen}
-          aria-controls="bitcider-mode-panel"
+      <section className="mode-switcher" aria-label="Switch source">
+        <div
+          className={`mode-toggle ${pageMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''}`}
+          role="slider"
+          aria-label="Source selector"
+          aria-orientation="horizontal"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round((modeDragProgress ?? (pageMode === 'mono' ? 1 : 0)) * 100)}
+          aria-valuetext={pageMode === 'mono' ? 'Monochrome' : 'Cider'}
+          tabIndex={0}
+          onKeyDown={handleModeSliderKeyDown}
+          onPointerDown={beginModeDrag}
+          onPointerMove={updateModeDrag}
+          onPointerUp={finishModeDrag}
+          onPointerCancel={cancelModeDrag}
+          onLostPointerCapture={cancelModeDrag}
         >
-          <span className="mode-pull-grip" aria-hidden="true"><i /><i /><i /></span>
-          <span>{modePickerOpen ? 'CLOSE SOURCE SWITCHER' : 'SWITCH SOURCE'}</span>
-          <span className={`mode-pull-chevron ${modePickerOpen ? 'is-open' : ''}`} aria-hidden="true">⌃</span>
-        </button>
-        {modePickerOpen && (
-          <div className="mode-switch-panel" id="bitcider-mode-panel">
-            <div className="mode-switch-caption">CHOOSE YOUR BITCHORD SOURCE</div>
-            <div className={`mode-toggle ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} role="group" aria-label="Choose Cider or Monochrome">
-              <span className="mode-toggle-thumb" aria-hidden="true" />
-              <button type="button" onClick={() => switchPageMode('cider')} aria-pressed={pageMode === 'cider'}>Cider</button>
-              <button type="button" onClick={() => switchPageMode('mono')} aria-pressed={pageMode === 'mono'}>Monochrome</button>
-            </div>
-          </div>
-        )}
+          <span
+            className="mode-toggle-thumb"
+            style={modeDragProgress !== null ? { transform: `translateX(${modeDragProgress * 100}%)` } : undefined}
+            aria-hidden="true"
+          />
+          <span className="mode-toggle-label mode-toggle-label-cider">Cider</span>
+          <span className="mode-toggle-label mode-toggle-label-mono">Monochrome</span>
+          <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
+            <defs>
+              <filter id="bitcider-source-warp" x="-20%" y="-30%" width="140%" height="160%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.018 0.06" numOctaves="2" seed="8" result="warp-noise">
+                  <animate attributeName="baseFrequency" values="0.018 0.06;0.055 0.025;0.018 0.06" dur="0.65s" repeatCount="indefinite" />
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="warp-noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+            </defs>
+          </svg>
+        </div>
       </section>
         </div>
       </section>
