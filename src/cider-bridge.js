@@ -52,7 +52,7 @@ export function allowedLocalCiderJob(job) {
   let target;
   try { target = new URL(String(job.path || ''), LOCAL_CIDER_ORIGIN + '/'); }
   catch { return null; }
-  if (target.origin !== LOCAL_CIDER_ORIGIN || !target.pathname.startsWith('/api/v2/')) return null;
+  if (target.origin !== LOCAL_CIDER_ORIGIN || target.username || target.password || target.hash || !target.pathname.startsWith('/api/v2/')) return null;
 
   if (method === 'GET' && target.pathname === '/api/v2/amapi/search') {
     const keys = [...target.searchParams.keys()];
@@ -67,17 +67,17 @@ export function allowedLocalCiderJob(job) {
     return { method, target };
   }
 
-  if (method === 'POST' && target.pathname === '/api/v2/playback/play-item' && !target.search) {
+  if (method === 'POST' && target.pathname === '/api/v2/playback/play-item' && !target.search && !target.hash) {
     const id = String(job.body?.id || '');
     if (!/^[A-Za-z0-9._:-]{1,180}$/.test(id) || job.body?.type !== 'songs') return null;
     return { method, target, body: { id, type: 'songs' } };
   }
 
-  if (method === 'GET' && target.pathname === '/api/v2/queue' && !target.search) {
+  if (method === 'GET' && target.pathname === '/api/v2/queue' && !target.search && !target.hash) {
     return { method, target };
   }
 
-  if (method === 'POST' && target.pathname === '/api/v2/playback/pause' && !target.search) {
+  if (method === 'POST' && target.pathname === '/api/v2/playback/pause' && !target.search && !target.hash) {
     return { method, target };
   }
 
