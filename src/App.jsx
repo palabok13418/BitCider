@@ -4,6 +4,7 @@ import LineWaves from './LineWaves.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-22-passkeys-devices-v4';
+const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
   if (name === 'arrow') return <svg {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
@@ -38,6 +39,25 @@ export default function App() {
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [passkeyName, setPasskeyName] = useState('');
   const [securityPassword, setSecurityPassword] = useState('');
+  const [syncNotificationWatch, setSyncNotificationWatch] = useState(() => {
+    try {
+      return typeof window !== 'undefined'
+        && 'Notification' in window
+        && Notification.permission === 'granted'
+        && window.localStorage.getItem(SYNC_NOTIFICATION_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [syncNotificationPermission, setSyncNotificationPermission] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && 'Notification' in window
+        ? Notification.permission
+        : 'unsupported';
+    } catch {
+      return 'unsupported';
+    }
+  });
 
   async function refreshStatus() {
     try {
@@ -54,7 +74,7 @@ export default function App() {
         backendCompatible,
         deploymentWarning: backendCompatible
           ? null
-          : 'This website is newer than its Deplexo backend. Redeploy the latest BitCider main branch to Deplexo, then reload this page before linking Cider.'
+          : 'It looks like that the Frontend and the Backend are not up to sync with the latest changes from the BitCider Github Repo, Try Again Later when both ends Sync.'
       });
     } catch (error) {
       setStatus({
@@ -72,6 +92,95 @@ export default function App() {
     const heartbeat = window.setInterval(refreshStatus, 5 * 60 * 1000);
     return () => window.clearInterval(heartbeat);
   }, []);
+
+  async function enableSyncNotification() {
+    if (!('Notification' in window)) {
+      setSyncNotificationPermission('unsupported');
+      setNotice('This browser does not support desktop notifications.');
+      setNoticeType('warning');
+      return;
+    }
+
+    try {
+      const permission = Notification.permission === 'default'
+        ? await Notification.requestPermission()
+        : Notification.permission;
+      setSyncNotificationPermission(permission);
+
+      if (permission !== 'granted') {
+        setSyncNotificationWatch(false);
+        try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
+        setNotice(permission === 'denied'
+          ? 'Notifications are blocked for this website. Allow them in your browser site settings, then try again.'
+          : 'Notification permission was not granted.');
+        setNoticeType('warning');
+        return;
+      }
+
+      window.localStorage.setItem(SYNC_NOTIFICATION_KEY, '1');
+      setSyncNotificationWatch(true);
+      setNotice('Notifications are enabled. Keep this BitCider page open and we’ll let you know when both ends sync.');
+      setNoticeType('success');
+    } catch (error) {
+      setNotice(error?.message || 'Could not enable browser notifications.');
+      setNoticeType('warning');
+    }
+  }
+
+  useEffect(() => {
+    if (!syncNotificationWatch || status.backendCompatible === true) return undefined;
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      setSyncNotificationWatch(false);
+      try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
+      return undefined;
+    }
+
+    let stopped = false;
+    let checking = false;
+
+    async function checkForSync() {
+      if (stopped || checking) return;
+      checking = true;
+      try {
+        const response = await fetch('/api/status', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => ({}));
+        if (stopped || payload?.apiVersion !== API_VERSION) return;
+
+        // Remove the opt-in before showing the notification so repeated
+        // polling, reloads, or overlapping status updates cannot notify twice.
+        try { window.localStorage.removeItem(SYNC_NOTIFICATION_KEY); } catch {}
+        setSyncNotificationWatch(false);
+        setSyncNotificationPermission(Notification.permission);
+        try {
+          new Notification('BitCider', {
+            body: 'Both ends are now in Sync',
+            tag: 'bitcider-frontend-backend-synced',
+            renotify: false
+          });
+        } catch (error) {
+          console.warn('BitCider sync notification could not be displayed:', error);
+        }
+      } catch {
+        // A temporary network/backend failure is not a sync event. Keep polling.
+      } finally {
+        checking = false;
+      }
+    }
+
+    checkForSync();
+    const interval = window.setInterval(checkForSync, 15000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') checkForSync();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [syncNotificationWatch, status.backendCompatible]);
 
   async function accountRequest(path, payload) {
     setAccountBusy(true);
@@ -585,7 +694,25 @@ export default function App() {
           )}
 
           {notice && <div className={'notice notice-' + noticeType}>{notice}</div>}
-          {!notice && (status.message || status.error || status.deploymentWarning) && <div className="notice notice-warning">{status.message || status.error || status.deploymentWarning}</div>}
+          {!notice && (status.message || status.error || status.deploymentWarning) && <div className="notice notice-warning">{status.backendCompatible === false ? (
+              <>
+                <span className="sync-mismatch-copy">{status.deploymentWarning}</span>
+                <button
+                  type="button"
+                  className="sync-notification-button"
+                  onClick={enableSyncNotification}
+                  disabled={syncNotificationWatch || syncNotificationPermission === 'denied' || syncNotificationPermission === 'unsupported'}
+                >
+                  {syncNotificationWatch
+                    ? 'NOTIFICATION ENABLED · WAITING FOR SYNC'
+                    : syncNotificationPermission === 'denied'
+                      ? 'NOTIFICATIONS BLOCKED IN BROWSER SETTINGS'
+                      : syncNotificationPermission === 'unsupported'
+                        ? 'BROWSER NOTIFICATIONS NOT SUPPORTED'
+                        : 'NOTIFY ME WHEN BOTH ENDS SYNC'}
+                </button>
+              </>
+            ) : status.message || status.error || status.deploymentWarning}</div>}
         </section>
       </section>
 
