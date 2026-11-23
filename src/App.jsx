@@ -22,8 +22,11 @@ function Icon({ name, size = 18 }) {
 
 const CIPHER_GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789#$%&*+=<>?';
 
-function randomCipherGlyph() {
-  return CIPHER_GLYPHS[Math.floor(Math.random() * CIPHER_GLYPHS.length)];
+function scrambleText(value) {
+  return Array.from(value, character => /[A-Za-z0-9]/.test(character)
+    ? CIPHER_GLYPHS[Math.floor(Math.random() * CIPHER_GLYPHS.length)]
+    : character
+  ).join('');
 }
 
 function CipherText({ text, phase }) {
@@ -35,36 +38,53 @@ function CipherText({ text, phase }) {
       return undefined;
     }
 
-    const characters = Array.from(text);
-    const scramble = character => /[A-Za-z0-9]/.test(character) ? randomCipherGlyph() : character;
-    const revealOrder = characters
-      .map((character, index) => ({ character, index }))
-      .filter(item => /[A-Za-z0-9]/.test(item.character))
-      .map(item => item.index)
-      .sort(() => Math.random() - 0.5);
+    if (phase === 'handoff') {
+      setDisplayText(scrambleText(text));
+      return undefined;
+    }
 
-    if (phase === 'decrypt') {
-      setDisplayText(characters.map(scramble).join(''));
+    const characters = Array.from(text);
+    const revealOrder = characters
+      .map((character, index) => /[A-Za-z0-9]/.test(character) ? index : -1)
+      .filter(index => index >= 0);
+
+    // Fisher-Yates gives each character a stable, randomized reveal position.
+    for (let index = revealOrder.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [revealOrder[index], revealOrder[swapIndex]] = [revealOrder[swapIndex], revealOrder[index]];
+    }
+
+    if (phase === 'encrypt') {
+      setDisplayText(scrambleText(text));
+    } else if (phase === 'decrypt') {
+      setDisplayText(scrambleText(text));
+    } else {
+      setDisplayText(text);
+      return undefined;
     }
 
     let step = 0;
-    const totalSteps = phase === 'encrypt' ? 11 : 15;
+    const totalSteps = phase === 'encrypt' ? 13 : 20;
     const interval = window.setInterval(() => {
       step += 1;
+
       if (phase === 'encrypt') {
-        setDisplayText(step >= totalSteps ? text : characters.map(scramble).join(''));
+        // Keep the outgoing word encrypted until the page handoff replaces it.
+        setDisplayText(scrambleText(text));
       } else {
         const revealed = new Set(revealOrder.slice(0, Math.ceil(revealOrder.length * step / totalSteps)));
         setDisplayText(characters.map((character, index) => (
-          revealed.has(index) || !/[A-Za-z0-9]/.test(character) ? character : scramble(character)
+          revealed.has(index) || !/[A-Za-z0-9]/.test(character)
+            ? character
+            : CIPHER_GLYPHS[Math.floor(Math.random() * CIPHER_GLYPHS.length)]
         )).join(''));
       }
 
       if (step >= totalSteps) {
         window.clearInterval(interval);
-        setDisplayText(text);
+        if (phase === 'decrypt') setDisplayText(text);
       }
-    }, phase === 'encrypt' ? 30 : 36);
+    }, phase === 'encrypt' ? 34 : 38);
 
     return () => window.clearInterval(interval);
   }, [phase, text]);
@@ -519,6 +539,7 @@ export default function App() {
   const [pageMode, setPageMode] = useState('cider');
   const [modePickerOpen, setModePickerOpen] = useState(false);
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
+  const [modeTransitionTarget, setModeTransitionTarget] = useState('');
   const [bitMonoCopied, setBitMonoCopied] = useState(false);
   const bitMonoAddonUrl = typeof window !== 'undefined'
     ? window.location.origin + '/bitmono/manifest.json'
@@ -1155,12 +1176,29 @@ export default function App() {
     }
 
     setModePickerOpen(false);
+    setModeTransitionTarget(nextMode);
+
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      setPageMode(nextMode);
+      setModeTransitionTarget('');
+      return;
+    }
+
+    // One shared timeline coordinates the outgoing brand, visual handoff and incoming reveal.
     setModeTransitionPhase('encrypt');
     window.setTimeout(() => {
+      setModeTransitionPhase('handoff');
       setPageMode(nextMode);
-      setModeTransitionPhase('decrypt');
-      window.setTimeout(() => setModeTransitionPhase('idle'), 650);
-    }, 420);
+
+      window.setTimeout(() => {
+        setModeTransitionPhase('decrypt');
+        window.setTimeout(() => {
+          setModeTransitionPhase('idle');
+          setModeTransitionTarget('');
+        }, 820);
+      }, 220);
+    }, 500);
   }
 
   async function disconnect() {
@@ -1189,7 +1227,7 @@ export default function App() {
   if (isAccountPopup) return <AccountSetupWindow />;
 
   return (
-    <main className={`site-shell ${pageMode === 'mono' ? 'mono-mode' : 'cider-mode'} ${modeTransitionPhase !== 'idle' ? `mode-phase-${modeTransitionPhase}` : ''}`}>
+    <main className={`site-shell ${pageMode === 'mono' ? 'mono-mode' : 'cider-mode'} ${modeTransitionPhase !== 'idle' ? `mode-phase-${modeTransitionPhase} mode-target-${modeTransitionTarget}` : ''}`}>
       <BackgroundSwitcher warping={addonUrlGenerating} mode={pageMode} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
