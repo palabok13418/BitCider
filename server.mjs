@@ -2450,7 +2450,10 @@ async function downloadBitMonoAudio({ provider, trackId, quality, sourceUrl, for
 
     try {
       const response = await fetch(mediaUrl, {
-        headers: { Accept: 'audio/*, application/octet-stream;q=0.9, */*;q=0.5' },
+        headers: {
+          Accept: 'audio/*, application/octet-stream;q=0.9, */*;q=0.5',
+          'Accept-Encoding': 'identity'
+        },
         cache: 'no-store',
         redirect: 'follow',
         signal: AbortSignal.timeout(BITMONO_AUDIO_DOWNLOAD_TIMEOUT_MS)
@@ -2486,6 +2489,9 @@ async function downloadBitMonoAudio({ provider, trackId, quality, sourceUrl, for
 
       await pipeline(response.body, meter, fs.createWriteStream(tempAudioPath, { flags: 'wx' }));
       if (byteCount <= 0) throw new Error('The audio provider returned a zero-byte audio file.');
+      if (declaredLength > 0 && byteCount !== declaredLength) {
+        throw new Error('The audio transfer ended before the provider’s declared Content-Length was received.');
+      }
 
       const digest = hash.digest('hex');
       const createdAt = Date.now();
