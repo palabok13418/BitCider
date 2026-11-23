@@ -41,8 +41,6 @@ const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 const PORT = Number(process.env.PORT || 3000);
 const API_VERSION = '2026-11-23-account-key-v11';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
-const CIDER_API_CONFIG = normalizeCiderApiUrl(process.env.CIDER_API_URL);
-const CIDER_API = CIDER_API_CONFIG.url;
 const app = express();
 const browserBridges = new Map();
 const browserBridgeByOwner = new Map();
@@ -66,36 +64,6 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
-function normalizeCiderApiUrl(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return { url: '', error: '' };
-
-  try {
-    const parsed = new URL(raw);
-    const hostname = parsed.hostname.toLowerCase();
-    const isLoopbackHost = hostname === 'localhost'
-      || hostname === '127.0.0.1'
-      || hostname === '::1'
-      || hostname === '[::1]';
-    const allowLoopbackHttp = process.env.BITCIDER_ALLOW_LOOPBACK_CIDER_API === 'true';
-    const isAllowedProtocol = parsed.protocol === 'https:'
-      || (parsed.protocol === 'http:' && isLoopbackHost && allowLoopbackHttp);
-    if (!isAllowedProtocol
-      || parsed.username || parsed.password
-      || parsed.pathname !== '/' || parsed.search || parsed.hash) {
-      return {
-        url: '',
-        error: 'CIDER_API_URL must be an HTTPS relay origin. HTTP loopback is allowed only for local development when BITCIDER_ALLOW_LOOPBACK_CIDER_API=true.'
-      };
-    }
-    return { url: parsed.origin, error: '' };
-  } catch {
-    return {
-      url: '',
-      error: 'CIDER_API_URL is not a valid absolute HTTPS origin.'
-    };
-  }
-}
 
 function ensureSecret() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -1103,6 +1071,7 @@ app.post('/api/bridge/register', localOnly, requireCsrf, requireDedicatedTokenEn
     bridgeId,
     ownerKey,
     secretHash: hashBrowserBridgeSecret(bridgeSecret),
+    sessionHash: hashSessionId(sessionId),
     createdAt: Date.now(),
     lastSeenAt: Date.now()
   };
@@ -1264,8 +1233,11 @@ app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   const sessionId = req.bitciderSessionId;
   const session = getUserSession(req, res);
   if (session.authenticated) {
-    if (browserBridgeByOwner.get(browserBridgeOwnerKey(session.accountId, sessionId))) {
-      invalidateBrowserBridge(browserBridgeOwnerKey(session.accountId, sessionId), 'This BitCider account session was signed out.');
+    const ownerKey = browserBridgeOwnerKey(session.accountId, sessionId);
+    const bridgeId = browserBridgeByOwner.get(ownerKey);
+    const registration = bridgeId ? browserBridges.get(bridgeId) : null;
+    if (registration?.sessionHash === hashSessionId(sessionId)) {
+      invalidateBrowserBridge(ownerKey, 'This BitCider browser session was signed out.');
     }
   }
   await updateStore(store => {
@@ -1854,11 +1826,7 @@ const httpServer = app.listen(PORT, '0.0.0.0', () => {
   console.log('  BitCider service is running');
   console.log('  Local UI:    http://localhost:' + PORT);
   console.log('  LAN address: http://' + localIPv4() + ':' + PORT);
-  console.log('  Cider bridge:', CIDER_API ? 'configured' : 'NOT CONFIGURED');
-  if (CIDER_API_CONFIG.error) console.warn('  Cider bridge configuration:', CIDER_API_CONFIG.error);
-  if (!CIDER_API && !CIDER_API_CONFIG.error) {
-    console.warn('  Addon search and streaming need a secure per-user Cider relay; container localhost is not the user’s Cider app.');
-  }
+  console.log('  Cider bridge: browser-local (BitCider tab must stay open)');
   console.log('');
   if (!PUBLIC_URL) console.log('  Set BITCIDER_PUBLIC_URL to the public HTTPS origin for off-network BitChord access.');
 });
