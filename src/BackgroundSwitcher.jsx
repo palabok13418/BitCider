@@ -11,6 +11,7 @@ const PrismaticBurst = lazy(() => import('./PrismaticBurst.jsx'));
 const SideRays = lazy(() => import('./SideRays.jsx'));
 const Silk = lazy(() => import('./Silk.jsx'));
 const Topography = lazy(() => import('./Topography.jsx'));
+const WebThreads = lazy(() => import('./WebThreads.jsx'));
 
 const AeroShards = lazy(() => import('./AeroShards.jsx'));
 
@@ -427,6 +428,47 @@ const BACKGROUND_REGISTRY = [
           intro
           lightMode={false}
           dpr={1.2}
+          onError={onError}
+        />
+      </Suspense>
+    )
+  },
+  {
+    id: 'web-threads',
+    render: ({ onError }) => (
+      <Suspense fallback={null}>
+        <WebThreads
+          className="site-waves"
+          colors={['#fd3f57', '#ff2b5e', '#ff9bac', '#ffdce2']}
+          coreColor="#ffe6eb"
+          backgroundColor="transparent"
+          lightMode={false}
+          threadCount={14}
+          speed={0.18}
+          frequency={6.2}
+          spread={0.22}
+          taper={0.7}
+          position={0.5}
+          pinch={0.5}
+          nodes={2}
+          angle={-8}
+          glow={0.035}
+          falloff={0.72}
+          thickness={1.35}
+          brightness={0.9}
+          opacity={0.86}
+          depth={0.34}
+          pulses={0.16}
+          mirror
+          shimmer
+          fade={0.12}
+          grain={0.025}
+          intro
+          mouseInteraction
+          mouseStrength={0.55}
+          pulseOnClick
+          paused={false}
+          dpr={1.25}
           onError={onError}
         />
       </Suspense>
