@@ -1,75 +1,64 @@
 # BitCider
 
-BitCider connects a user's Cider app to a personal BitChord addon endpoint.
+BitCider connects a user's Cider account to a personal BitChord addon endpoint.
 
-## What it does
+## Hosting targets
 
-- Requests Cider access as **BitCider** through `cider://request-auth`.
-- Uses the `playback`, `queue`, `library`, and `audio` scopes.
-- Stores the approved Cider app token encrypted on the BitCider host.
-- Creates a unique personal addon URL.
-- Exposes the BitChord addon routes: `GET /manifest.json`, `GET /search?q=...`, and `GET /stream/:id`.
+BitCider is configured for only these hosting providers:
 
-The supplied LineWaves WebGL component is used as the full-page animated background.
+- **Deplexo** runs the authoritative Node.js backend and stores persistent encrypted data.
+- **Netlify** serves the React frontend and forwards API/addon requests through a Netlify Function.
+- **Cloudflare Workers** serves the React frontend and forwards API/addon requests through a Worker.
 
-## Important architecture note
+See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup and environment variables.
 
-Cider's API is local to the computer running Cider (normally port `10767`). Run BitCider on that same computer. BitChord must be able to reach the BitCider server over the network.
+## Current features
 
-For same-network testing, add the LAN URL shown in the UI to BitChord while the phone and Cider computer are on the same Wi-Fi. For access outside the LAN, place the service behind a public HTTPS tunnel or reverse proxy and set `BITCIDER_PUBLIC_URL` to that HTTPS base URL. Route only the personal addon path to the public internet; keep `/api/*` and the connection UI private to the Cider computer.
+- Opens Cider's `cider://request-auth` authorization flow as **BitCider**.
+- Requests `playback`, `queue`, `library`, and `audio` scopes.
+- Includes the supplied LineWaves WebGL background.
+- Creates a unique personal BitChord addon URL.
+- Implements the addon manifest, search, and stream-resolution route shapes.
+- Encrypts saved Cider app tokens with AES-256-GCM.
+- Uses Deplexo's `/data` persistent volume for the connection record and encryption key.
+- Keeps connection-management API routes behind the trusted Netlify/Cloudflare gateway secret.
 
-## Run locally
+## Cider authorization
 
-Requires Node.js 20 or newer.
-
-```bash
-npm install
-npm run build
-npm start
-```
-
-Open `http://localhost:8787` on the same computer as Cider.
-
-For frontend development, run the bridge and Vite in separate terminals:
-
-```bash
-npm start
-npm run dev
-```
-
-Vite forwards `/api` calls to the local BitCider server on port 8787.
-
-## Cider linking
-
-The connect button opens:
+The site opens:
 
 ```
 cider://request-auth?app-name=BitCider&scopes=playback,queue,library,audio
 ```
 
-The Connect button opens that exact Cider custom-protocol link. After approval, copy the one-time app token from Cider and paste it into the BitCider form. A browser page cannot silently read a token displayed by another desktop app. BitCider verifies the token with Cider's unscoped `GET /api/v2/client/info` endpoint before storing it.
+After the user approves the app in Cider, this first version asks the user to paste the one-time Cider app token into BitCider. The browser cannot silently read text displayed by another desktop application.
 
-Cider app tokens are sent to the local BitCider service and encrypted at rest with AES-256-GCM. The encryption key is created in `.bitcider/encryption.key`, which is excluded from Git. Back up that key with the connection file if you need to move the same local connection to another machine. Disconnecting deletes the encrypted connection record; revoke the app token from Cider's Connected Apps settings as well.
+## Critical Cider bridge limitation
 
-## Add to BitChord
+Cider's API normally listens on the user's own computer (commonly `127.0.0.1:10767`). A Deplexo container cannot reach the user's computer by calling its own `127.0.0.1`, and a Cider app token by itself does not make that local API remotely reachable.
 
-After linking Cider, copy the personal addon URL shown by the site. In BitChord, open **Settings → Sources → Add an addon** and paste the URL.
+A per-user outbound bridge/relay is still required for remote BitChord playback. It must keep the Cider app token on the user's device and relay only authenticated Cider API operations to Deplexo over an encrypted outbound connection. Do not expose Cider's local port directly to the public internet.
 
-BitChord's addon contract expects a manifest, search results, and stream resolution. The current stream adapter asks Cider to resolve a selected song, then reads the asset URL from Cider's playback queue. Actual stream compatibility depends on the Cider build and the media URL returned for that Apple Music item; test with a few tracks before relying on it.
+The current Cider API adapter is retained as an initial reference implementation, but a cloud deployment alone does not yet complete the remote playback path. This is deliberately documented rather than represented as working before it has been implemented and tested.
 
-## Configuration
+## Local development
 
-Copy `.env.example` to `.env` and set:
+```bash
+npm install
+npm run dev
+```
 
-- `BITCIDER_PUBLIC_URL`: public HTTPS origin if BitChord connects from outside the LAN.
-- `CIDER_API_URL`: local Cider API origin, default `http://127.0.0.1:10767`.
-- `PORT`: BitCider server port, default `8787`.
-- `BITCIDER_SEARCH_MAX_LIBRARY_SONGS`: maximum number of saved library songs scanned per search, default `4000` (maximum `10000`).
-- `BITCIDER_PAUSE_CIDER_AFTER_RESOLVE`: set to `false` to leave Cider playing after resolving a stream; defaults to `true` so BitChord is the only audible output.
+The Vite dev server proxies `/api/*` to a local BitCider backend on port 8787. To run the backend separately:
 
-## Current boundaries
+```bash
+npm run dev:server
+```
 
-- This is a single-user BitCider server instance. Each user's Cider account needs its own running instance and personal addon URL.
-- This initial version searches the linked Cider library, not the entire Apple Music catalogue. Full catalogue search would require the more sensitive `account` scope to obtain MusicKit credentials, so it is intentionally not requested.
-- The first adapter searches paginated songs from the user's Cider library using the scoped v2 Library API, then asks the v2 Playback API to resolve the selected song. It reads the legacy v1 playback queue for Cider's playable asset URL. If your Cider version does not expose an asset URL for a track, that track cannot be streamed through this adapter yet.
-- The manifest does not claim BitChord's optional hardware-backed `bitchordAuth` verification until the verifier is added and tested against the target hostname.
+For the Deplexo backend, use `npm start`. Deplexo supplies port 3000 through its `deplexo.yaml` configuration.
+
+## Security
+
+- Never commit Cider app tokens or `BITCIDER_PROXY_SECRET`.
+- The frontend gateway secret must be configured as a secret on Netlify and Cloudflare, not as a public build-time variable.
+- The Deplexo app uses the durable `/data/bitcider` directory.
+- Back up Deplexo's persistent volume before deleting or recreating the application.
