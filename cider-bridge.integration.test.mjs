@@ -695,6 +695,84 @@ test('BitMono uses unified top results and does not cache empty upstream searche
   assert.match(backend.output(), /"event":"search.complete"/);
 });
 
+test('BitMono falls back to Deezer when Monochrome returns no usable tracks', async t => {
+  const deezerRequests = [];
+  const deezer = http.createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    deezerRequests.push(url.pathname + url.search);
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (url.pathname === '/search') {
+      response.end(JSON.stringify({
+        tracks: [{
+          id: 'dz-track-42',
+          title: 'Deezer Recovery Song',
+          artist: 'Recovery Artist',
+          album: 'Fallback Album',
+          duration: 201,
+          artworkURL: 'https://images.example.invalid/deezer-cover.jpg',
+          format: 'mp3',
+          audioQuality: 'HIGH'
+        }]
+      }));
+      return;
+    }
+    if (url.pathname === '/stream/dz-track-42') {
+      response.end(JSON.stringify({
+        url: 'https://media.example.invalid/deezer-track.mp3',
+        format: 'mp3',
+        quality: 'HIGH',
+        codec: 'mp3',
+        manifest: 'none',
+        encrypted: false
+      }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: 'not found' }));
+  });
+  const deezerPort = await listen(deezer);
+  t.after(() => {
+    deezer.closeAllConnections?.();
+    return new Promise(resolve => deezer.close(resolve));
+  });
+
+  const monochrome = http.createServer((request, response) => {
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.end(JSON.stringify({ tracks: [], topResults: [] }));
+  });
+  const monoPort = await listen(monochrome);
+  t.after(() => {
+    monochrome.closeAllConnections?.();
+    return new Promise(resolve => monochrome.close(resolve));
+  });
+
+  const backend = await startBackend({
+    BITMONO_TRACKS_API_BASE: 'http://127.0.0.1:' + monoPort,
+    BITMONO_DEEZER_API_BASE: 'http://127.0.0.1:' + deezerPort
+  });
+  t.after(() => backend.stop());
+
+  const search = await fetch(backend.origin + '/bitmono/search?q=Deezer%20Recovery%20Song');
+  const searchPayload = await search.json();
+  assert.equal(search.status, 200, JSON.stringify(searchPayload));
+  assert.equal(searchPayload.tracks.length, 1);
+  assert.equal(searchPayload.tracks[0].id, 'dzr_dz-track-42');
+  assert.equal(searchPayload.tracks[0].title, 'Deezer Recovery Song');
+  assert.equal(searchPayload.tracks[0].artist, 'Recovery Artist');
+  assert.equal(searchPayload.tracks[0].duration, 201);
+  assert.ok(deezerRequests.some(path => path.startsWith('/search?q=Deezer+Recovery+Song')));
+
+  const stream = await fetch(backend.origin + '/bitmono/stream/dzr_dz-track-42?quality=auto');
+  const streamPayload = await stream.json();
+  assert.equal(stream.status, 200, JSON.stringify(streamPayload));
+  assert.equal(streamPayload.url, 'https://media.example.invalid/deezer-track.mp3');
+  assert.equal(streamPayload.codec, 'mp3');
+  assert.equal(streamPayload.encrypted, false);
+  assert.ok(deezerRequests.includes('/stream/dz-track-42?quality=LOSSLESS'));
+  assert.match(backend.output(), /"event":"search.fallback_selected"/);
+  assert.match(backend.output(), /"event":"fallback.deezer.stream_resolved"/);
+});
+
 test('BitMono page mode updates branding, tab metadata, and keeps the source URL copyable', async () => {
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
   const styleSource = await fs.readFile(path.join(ROOT, 'src/styles.css'), 'utf8');
