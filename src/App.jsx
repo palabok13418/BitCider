@@ -233,7 +233,6 @@ function AccountSetupWindow({
       const result = await post('/api/account/passkeys/register/verify', { ...registration, deviceName });
       setPasskeyCount(Number(result.passkeyCount || passkeyCount + 1));
       setHasPasskeys(true);
-      setPasskeyState('ready');
       setInfo('Passkey ' + (result.passkeyCount || passkeyCount + 1) + ' of ' + passkeyLimit + ' added.');
     } catch (err) {
       setError(err.message || 'Could not add this passkey. Try again.');
