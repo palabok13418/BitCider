@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
-const DATA_DIR = path.join(ROOT, '.bitcider');
+const DATA_DIR = process.env.BITCIDER_DATA_DIR
+  || (fs.existsSync('/data') ? path.join('/data', 'bitcider') : path.join(ROOT, '.bitcider'));
 const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 const PORT = Number(process.env.PORT || 8787);
@@ -96,9 +97,21 @@ function isLoopback(address = '') {
   return value === '127.0.0.1' || value === '::1' || value === '::ffff:127.0.0.1';
 }
 
+function trustedProxy(request) {
+  const expected = String(process.env.BITCIDER_PROXY_SECRET || '');
+  const received = String(request.get('x-bitcider-proxy-secret') || '');
+  if (!expected || !received) return false;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(received);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 function localOnly(req, res, next) {
-  if (!isLoopback(req.socket.remoteAddress || '')) {
-    return res.status(403).json({ error: 'LOCAL_ONLY', message: 'Connection management is only available from this computer.' });
+  if (!isLoopback(req.socket.remoteAddress || '') && !trustedProxy(req)) {
+    return res.status(403).json({
+      error: 'LOCAL_ONLY',
+      message: 'This management route must be accessed through the BitCider Netlify or Cloudflare gateway.'
+    });
   }
   next();
 }
