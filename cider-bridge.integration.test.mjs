@@ -448,11 +448,11 @@ test('main App owns the browser bridge state used by its relay effect and panel'
 test('loopback client-info probe uses the saved app token and exposes reauthorization on token rejection', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src/cider-bridge.js'), 'utf8');
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
-  assert.match(source, /async function probeLocalCider\\(signal, token\\)/);
-  assert.match(source, /apptoken:\\s*token/);
-  assert.match(source, /await probeLocalCider\\(signal, ciderToken\\)/);
-  assert.match(source, /error\\?\\.ciderCode === 'UNAUTHORIZED_APP_TOKEN'/);
-  assert.match(appSource, /browserBridge\\.state === 'cider-auth-required'/);
+  assert.match(source, /async function probeLocalCider\(signal, token\)/);
+  assert.match(source, /apptoken:\s*token/);
+  assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
+  assert.match(source, /error\?\.ciderCode === 'UNAUTHORIZED_APP_TOKEN'/);
+  assert.match(appSource, /browserBridge\.state === 'cider-auth-required'/);
   assert.match(appSource, /RECONNECT CIDER ON THIS DEVICE/);
 });
 
