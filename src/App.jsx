@@ -58,7 +58,6 @@ function AccountSetupWindow({
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [csrfToken, setCsrfToken] = useState('');
-  const [browserBridge, setBrowserBridge] = useState({ state: 'offline', message: 'Waiting for the local Cider bridge.' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -465,6 +464,7 @@ export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [status, setStatus] = useState({ loading: true, connected: false });
+  const [browserBridge, setBrowserBridge] = useState({ state: 'offline', message: 'Waiting for the local Cider bridge.' });
   const [busy, setBusy] = useState(false);
   const [connectPhase, setConnectPhase] = useState('idle');
   const [addonUrlGenerating, setAddonUrlGenerating] = useState(false);
