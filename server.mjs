@@ -11,7 +11,8 @@ const DATA_DIR = process.env.BITCIDER_DATA_DIR
   || (fs.existsSync('/data') ? path.join('/data', 'bitcider') : path.join(ROOT, '.bitcider'));
 const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
-const PORT = Number(process.env.PORT || 8787);
+// Match the Deplexo web-service port; an injected PORT still takes precedence.
+const PORT = Number(process.env.PORT || 3000);
 const CIDER_API = String(process.env.CIDER_API_URL || 'http://127.0.0.1:10767').replace(/\/+$/, '');
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
