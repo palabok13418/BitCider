@@ -192,7 +192,7 @@ async function main() {
   process.stdout.write('Config: ' + CONFIG_PATH + '\n');
   process.stdout.write('Account relay: ' + config.relayUrl + '\n');
   process.stdout.write('Cider API: local loopback only\n');
-  process.stdout.write('Retrieving the encrypted account Cider token over HTTPS; it will remain in memory only.\n');
+  process.stdout.write('Retrieving the Cider token from your encrypted BitCider account over HTTPS; it will remain in memory only.\n');
 
   let credentialAttempts = 0;
   let ciderToken = '';
