@@ -1175,7 +1175,7 @@ app.post('/api/relay/config', localOnly, requireCsrf, requireDedicatedTokenEncry
       relayKey,
       ciderApiUrl: 'http://127.0.0.1:10767',
       ciderToken: token,
-      requestTimeoutMs: 20000
+      requestTimeoutMs: 15000
     },
     agentUrl: relayOrigin.origin + '/bitcider-relay.mjs'
   });
