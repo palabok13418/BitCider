@@ -73,37 +73,13 @@ export default function App() {
     await refreshStatus();
   }
 
-  async function connectCider() {
-    setBusy(true);
-    setNotice('Opening Cider authorization…');
+  function connectCider() {
+    setShowManualToken(true);
+    setNotice('Cider is opening. Approve BitCider, then paste the one-time app token shown by Cider below.');
     setNoticeType('info');
-
-    // Request the token through Cider's local browser-auth endpoint. The
-    // cider:// link below remains available as a manual fallback.
-    try {
-      const response = await fetch(CIDER_API + '/api/v2/auth/request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ appName: 'BitCider', scopes: SCOPES })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(getErrorMessage(payload, 'Cider could not authorize BitCider.'));
-      const token = extractToken(payload);
-      if (token) {
-        await saveToken(token);
-      } else {
-        setShowManualToken(true);
-        setNotice('Approve BitCider in Cider. If Cider shows a one-time token, paste it below to finish linking.');
-        setNoticeType('info');
-      }
-    } catch (error) {
-      setShowManualToken(true);
-      setNotice(error?.message || 'Could not reach Cider. Open the Cider authorization link, approve it, then paste the token shown by Cider.');
-      setNoticeType('warning');
-    } finally {
-      setBusy(false);
-    }
+    // Use the exact Cider custom-protocol request supplied for BitCider.
+    // A web page cannot silently read a token displayed by another desktop app.
+    window.location.href = authUri;
   }
 
   async function submitManualToken(event) {
