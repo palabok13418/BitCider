@@ -31,7 +31,7 @@ async function listen(server) {
   return server.address().port;
 }
 
-async function startBackend(ciderApiUrl = '') {
+async function startBackend(ciderApiUrl = '', { allowLoopbackCiderApi = false } = {}) {
   const port = await freePort();
   const origin = 'http://127.0.0.1:' + port;
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-bridge-test-'));
@@ -46,7 +46,8 @@ async function startBackend(ciderApiUrl = '') {
       BITCIDER_ALLOW_LOOPBACK_ADMIN: 'true',
       BITCIDER_ENCRYPTION_KEY: encryptionKey,
       BITCIDER_CIDER_REQUEST_TIMEOUT_MS: '1500',
-      CIDER_API_URL: ciderApiUrl
+      CIDER_API_URL: ciderApiUrl,
+      BITCIDER_ALLOW_LOOPBACK_CIDER_API: allowLoopbackCiderApi ? 'true' : ''
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -177,7 +178,7 @@ test('addon search uses the configured Cider relay and forwards the scoped app t
     response.end(JSON.stringify({ data: [], meta: { offset: 0, limit: 200, total: 0 } }));
   });
   const ciderPort = await listen(cider);
-  const backend = await startBackend('http://127.0.0.1:' + ciderPort);
+  const backend = await startBackend('http://127.0.0.1:' + ciderPort, { allowLoopbackCiderApi: true });
   t.after(async () => {
     await backend.stop();
     await new Promise(resolve => cider.close(resolve));
@@ -199,7 +200,7 @@ test('addon search uses the configured Cider relay and forwards the scoped app t
 
 test('unreachable Cider relay returns a bounded, machine-readable 503', async t => {
   const unusedPort = await freePort();
-  const backend = await startBackend('http://127.0.0.1:' + unusedPort);
+  const backend = await startBackend('http://127.0.0.1:' + unusedPort, { allowLoopbackCiderApi: true });
   t.after(() => backend.stop());
 
   const addonUrl = await createAddon(backend);
@@ -213,4 +214,50 @@ test('unreachable Cider relay returns a bounded, machine-readable 503', async t 
   assert.equal(payload.code, 'CIDER_BRIDGE_UNAVAILABLE');
   assert.ok(Date.now() - startedAt < 5000, 'an offline bridge should fail promptly');
   assert.doesNotMatch(payload.message, /fetch failed/i);
+});
+
+test('hosted configuration rejects the old Deplexo localhost Cider API setting', async t => {
+  const backend = await startBackend('http://127.0.0.1:10767');
+  t.after(() => backend.stop());
+
+  const health = await fetch(backend.origin + '/health').then(response => response.json());
+  assert.equal(health.ciderBridgeConfigured, false);
+  assert.match(health.ciderBridgeConfigurationError, /HTTPS relay origin/i);
+
+  const addonUrl = await createAddon(backend);
+  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
+  const response = await fetch(searchUrl);
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, 'CIDER_BRIDGE_MISCONFIGURED');
+  assert.match(payload.message, /BITCIDER_ALLOW_LOOPBACK_CIDER_API=true/i);
+  assert.doesNotMatch(backend.output(), /fetch failed/i);
+});
+
+test('Cider bridge requests enforce their configured timeout', async t => {
+  const cider = http.createServer((_request, response) => {
+    setTimeout(() => {
+      if (!response.destroyed) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ data: [] }));
+      }
+    }, 2500);
+  });
+  const ciderPort = await listen(cider);
+  const backend = await startBackend('http://127.0.0.1:' + ciderPort, { allowLoopbackCiderApi: true });
+  t.after(async () => {
+    await backend.stop();
+    await new Promise(resolve => cider.close(resolve));
+  });
+
+  const addonUrl = await createAddon(backend);
+  const searchUrl = addonUrl.replace('/manifest.json', '/search?q=bridge-test');
+  const startedAt = Date.now();
+  const response = await fetch(searchUrl);
+  const payload = await response.json();
+
+  assert.equal(response.status, 504);
+  assert.equal(payload.code, 'CIDER_BRIDGE_TIMEOUT');
+  assert.ok(Date.now() - startedAt < 3500, 'the upstream request should be aborted at the configured deadline');
 });
