@@ -58,7 +58,8 @@ function loadConfig() {
     relayKey: config.relayKey,
     ciderApiUrl: local.origin,
     requestTimeoutMs: Math.max(3000, Math.min(Number(config.requestTimeoutMs) || 15000, 25000))
-  };}
+  };
+}
 
 export function allowedCiderRequest(job) {
   if (!job || typeof job !== 'object') return null;
@@ -114,8 +115,15 @@ async function postRelay(config, route, body) {
     error.fatal = true;
     throw error;
   }
+  if (response.status === 409 && route === '/api/relay/credentials') {
+    const error = new Error('This BitCider account no longer has a linked Cider token. Reconnect Cider in BitCider, then download a fresh relay config.');
+    error.fatal = true;
+    throw error;
+  }
   if (!response.ok) {
-    throw new Error('BitCider relay returned HTTP ' + response.status + (payload.error ? ' (' + payload.error + ')' : '') + '.');
+    const error = new Error('BitCider relay returned HTTP ' + response.status + (payload.error ? ' (' + payload.error + ')' : '') + '.');
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -186,11 +194,26 @@ async function main() {
   process.stdout.write('Cider API: local loopback only\\n');
   process.stdout.write('Retrieving the encrypted account Cider token over HTTPS; it will remain in memory only.\\n');
 
-  const credentials = await postRelay(config, '/api/relay/credentials', {});
-  const ciderToken = String(credentials.ciderToken || '');
-  if (ciderToken.length < 12 || ciderToken.length > 8192) {
-    throw new Error('BitCider did not return a valid Cider app token. Reconnect Cider and issue a new relay config.');
+  let credentialAttempts = 0;
+  let ciderToken = '';
+  while (!stopping && !ciderToken) {
+    try {
+      const credentials = await postRelay(config, '/api/relay/credentials', {});
+      ciderToken = String(credentials.ciderToken || '');
+      if (ciderToken.length < 12 || ciderToken.length > 8192) {
+        const error = new Error('BitCider did not return a valid Cider app token. Reconnect Cider and issue a new relay config.');
+        error.fatal = true;
+        throw error;
+      }
+    } catch (error) {
+      if (error.fatal) throw error;
+      credentialAttempts += 1;
+      const delay = Math.min(10000, 750 * (2 ** Math.min(credentialAttempts - 1, 4)));
+      process.stderr.write('Could not retrieve the Cider token: ' + error.message + ' Retrying in ' + delay + ' ms.\\n');
+      await sleep(delay);
+    }
   }
+  if (stopping || !ciderToken) return;
   config.ciderToken = ciderToken;
 
   try {
