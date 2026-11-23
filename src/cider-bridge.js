@@ -85,9 +85,10 @@ export function allowedLocalCiderJob(job) {
 }
 
 async function probeLocalCider(signal, token) {
-  // First make a CORS-simple request without apptoken. This tells us whether
-  // Cider permits this website origin at all, independently of its custom
-  // authentication-header preflight.
+  // First make a baseline request without apptoken. This checks whether the
+  // browser can read Cider's local API from this page before testing the
+  // additional preflight caused by the custom authentication header. A fetch
+  // TypeError alone cannot distinguish CORS from a refused local connection.
   try {
     await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
       method: 'GET',
@@ -102,10 +103,10 @@ async function probeLocalCider(signal, token) {
   } catch (cause) {
     if (cause?.name === 'TypeError') {
       const error = new Error(
-        'Cider did not allow the BitCider website origin to read its local API. Reconnect from this exact BitCider website and approve the origin prompt in Cider. If the origin is still blocked, update Cider to a build that supports browser-origin access; BitCider cannot add CORS permission headers to Cider.'
+        'The browser could not read Cider’s basic local API response from this BitCider website. Make sure Cider is running, Chrome allows Loopback network access for this site, and Cider allows this website origin. Reconnect and approve Cider’s origin prompt if it appears. BitCider cannot add CORS permission headers to Cider.'
       );
       error.code = 'LOCAL_CIDER_CORS_BLOCKED';
-      error.corsStage = 'origin';
+      error.corsStage = 'origin-or-loopback';
       error.cause = cause;
       throw error;
     }
