@@ -75,6 +75,24 @@ https://YOUR-DEPLEXO-APP/<personal-key>/manifest.json
 
 Do not manually invent or publish a user's personal key. The backend generates one per browser session after the Cider bridge verifies the account link.
 
+## Cider account linking
+
+The website initiates Cider's native consent flow from the user's browser:
+
+```http
+POST http://127.0.0.1:10767/api/v2/auth/request
+Content-Type: application/json
+
+{
+  "app_name": "BitCider",
+  "scopes": ["playback", "queue", "library", "audio"]
+}
+```
+
+This request is sent directly to Cider on the same device as the browser. After the user approves the native prompt, Cider returns the token to the page. The page sends it to the selected BitCider frontend's `/api/connect`; the request is forwarded to Deplexo and encrypted at rest.
+
+Cider must be running on the user's computer. For Cider versions with web API origin protection, the user must approve the frontend origin in **Settings → Connections → Extension security**. No Cider token or local API port is exposed in the frontend configuration.
+
 ## Critical Cider bridge requirement
 
 Cider's HTTP API normally listens on the computer running Cider (commonly `127.0.0.1:10767`). A hosted Deplexo container cannot use its own `127.0.0.1` to reach a user's computer. The browser site also cannot make that remote API reachable merely by storing a Cider app token.
