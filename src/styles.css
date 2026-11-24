@@ -2091,3 +2091,680 @@ h1 .bitchord-word {
     display: none !important;
   }
 }
+
+
+/* Account entry point and human-scale account management overlay. */
+.topbar {
+  gap: 20px;
+}
+.account-avatar-trigger {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,214,221,.17);
+  border-radius: 14px;
+  color: #f0c2ca;
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+  box-shadow: 0 9px 24px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.08);
+  transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+.account-avatar-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255,191,203,.36);
+  background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.045));
+  box-shadow: 0 12px 28px rgba(0,0,0,.28), 0 0 22px rgba(255,127,151,.08);
+}
+
+.account-center-overlay {
+  position: fixed;
+  z-index: 1500;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  overflow: auto;
+  background: rgba(4,3,4,.76);
+  backdrop-filter: blur(22px) saturate(.78);
+  -webkit-backdrop-filter: blur(22px) saturate(.78);
+  animation: account-center-backdrop-in .24s ease both;
+}
+.account-center-panel {
+  width: min(100%, 860px);
+  max-height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,221,226,.16);
+  border-radius: 24px;
+  color: #f9edf0;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(233,139,157,.11), transparent 40%),
+    linear-gradient(145deg, rgba(39,24,28,.985), rgba(15,10,12,.99));
+  box-shadow: 0 42px 140px rgba(0,0,0,.62), inset 0 1px rgba(255,255,255,.075);
+  animation: account-center-panel-in .48s cubic-bezier(.2,.8,.2,1) both;
+}
+.account-center-header {
+  min-height: 93px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 19px 25px;
+  border-bottom: 1px solid rgba(255,255,255,.085);
+}
+.account-center-avatar {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,204,214,.2);
+  border-radius: 16px;
+  color: #f1c8d0;
+  background: linear-gradient(145deg, rgba(255,255,255,.1), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 7px 24px rgba(0,0,0,.2);
+}
+.account-center-title { min-width: 0; flex: 1; }
+.account-center-kicker {
+  color: #bc929b;
+  font: 9px var(--mono);
+  letter-spacing: .15em;
+}
+.account-center-title h2 {
+  margin: 4px 0 2px;
+  color: #fff5f7;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -.045em;
+}
+.account-center-title p {
+  margin: 0;
+  color: #a98c92;
+  font-size: 10px;
+}
+.account-center-close {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 50%;
+  color: #d1b0b7;
+  background: rgba(255,255,255,.045);
+  font-size: 23px;
+  line-height: 1;
+  transition: color .18s ease, background .18s ease, transform .18s ease;
+}
+.account-center-close:hover { color: #fff; background: rgba(255,255,255,.1); transform: rotate(5deg); }
+.account-center-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 21px 25px 25px;
+  scrollbar-width: thin;
+}
+.account-center-profile-note {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.085);
+  border-radius: 13px;
+  background: rgba(255,255,255,.025);
+}
+.account-center-profile-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 11px;
+  color: #c8a9b0;
+  background: rgba(255,255,255,.035);
+}
+.account-center-profile-note strong {
+  color: #f5e8eb;
+  font-size: 11px;
+  font-weight: 700;
+}
+.account-center-profile-note p {
+  margin: 3px 0 0;
+  color: #a98d93;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.account-center-fixed {
+  margin-left: auto;
+  color: #927b80;
+  font: 8px var(--mono);
+  letter-spacing: .12em;
+}
+.account-center-reauth {
+  display: grid;
+  grid-template-columns: minmax(220px, .9fr) 1.1fr;
+  align-items: end;
+  gap: 14px;
+  margin: 15px 0 17px;
+  padding: 14px;
+  border: 1px solid rgba(242,193,204,.13);
+  border-radius: 14px;
+  background: rgba(5,3,4,.23);
+}
+.account-center-reauth label,
+.account-delete-confirm-card label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.account-center-reauth label > span,
+.account-delete-confirm-card label > span {
+  color: #b4949b;
+  font: 8px var(--mono);
+  letter-spacing: .11em;
+}
+.account-center-reauth input,
+.account-center-input,
+.account-delete-confirm-card input {
+  width: 100%;
+  min-width: 0;
+  min-height: 39px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,221,227,.12);
+  border-radius: 9px;
+  outline: 0;
+  color: #fff0f3;
+  background: rgba(0,0,0,.29);
+  font-size: 11px;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.account-center-reauth input:focus,
+.account-center-input:focus,
+.account-delete-confirm-card input:focus {
+  border-color: rgba(241,166,181,.55);
+  background: rgba(0,0,0,.39);
+  box-shadow: 0 0 0 3px rgba(241,166,181,.08);
+}
+.account-center-reauth input::placeholder,
+.account-center-input::placeholder,
+.account-delete-confirm-card input::placeholder { color: #765f65; }
+.account-center-reauth > p {
+  margin: 0;
+  color: #947b81;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.account-center-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+}
+.account-center-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.095);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.016));
+  box-shadow: inset 0 1px rgba(255,255,255,.035), 0 10px 25px rgba(0,0,0,.12);
+}
+.account-center-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 9px;
+  color: #c9aab1;
+  font: 8px var(--mono);
+  letter-spacing: .12em;
+}
+.account-center-state {
+  color: #9cd7b6;
+  font-size: 8px;
+  white-space: nowrap;
+}
+.account-center-state.is-muted { color: #a38d92; }
+.account-center-masked-secret {
+  margin: 14px 0 8px;
+  overflow: hidden;
+  color: #f3dce1;
+  font: 13px var(--mono);
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.account-center-secret {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0 5px;
+}
+.account-center-secret code {
+  display: block;
+  max-height: 80px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  border: 1px solid rgba(120,216,165,.2);
+  border-radius: 8px;
+  color: #d4f1e1;
+  background: rgba(16,58,38,.15);
+  font: 10px/1.6 var(--mono);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.account-center-card > p {
+  margin: 8px 0 13px;
+  color: #a78b91;
+  font-size: 9px;
+  line-height: 1.65;
+}
+.account-center-action {
+  min-height: 37px;
+  width: 100%;
+  padding: 0 11px;
+  border: 1px solid rgba(241,186,197,.22);
+  border-radius: 9px;
+  color: #f0cbd2;
+  background: rgba(225,151,166,.075);
+  font: 8px var(--mono);
+  letter-spacing: .09em;
+  transition: border-color .18s ease, background .18s ease, color .18s ease;
+}
+.account-center-action:hover:not(:disabled) {
+  border-color: rgba(255,198,210,.45);
+  color: #fff5f7;
+  background: rgba(225,151,166,.13);
+}
+.account-center-action:disabled { opacity: .42; }
+.account-center-input { margin-bottom: 10px; }
+.account-center-recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 6px;
+  margin: 12px 0 7px;
+}
+.account-center-recovery-codes code {
+  padding: 8px 6px;
+  border: 1px solid rgba(120,216,165,.16);
+  border-radius: 7px;
+  color: #d3efdf;
+  background: rgba(16,58,38,.13);
+  text-align: center;
+  font: 8px var(--mono);
+  overflow-wrap: anywhere;
+}
+.account-center-recovery-codes button { grid-column: 1 / -1; }
+.account-secondary-button {
+  min-height: 33px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  color: #dfc4ca;
+  background: rgba(255,255,255,.045);
+  font: 8px var(--mono);
+  letter-spacing: .08em;
+}
+.account-secondary-button:hover:not(:disabled) { border-color: rgba(255,255,255,.27); background: rgba(255,255,255,.08); }
+.account-center-passkeys { grid-column: 1 / -1; }
+.account-center-passkey-list { display: grid; gap: 7px; margin-top: 12px; }
+.account-center-passkey {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.075);
+  border-radius: 10px;
+  background: rgba(0,0,0,.16);
+}
+.account-center-passkey-icon {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 9px;
+  color: #c7aab0;
+  background: rgba(255,255,255,.035);
+}
+.account-center-passkey-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.account-center-passkey-copy strong {
+  color: #f1e3e6;
+  font-size: 10px;
+  font-weight: 700;
+}
+.account-center-passkey-copy span {
+  overflow: hidden;
+  color: #987e84;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-center-remove {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(235,132,150,.18);
+  border-radius: 7px;
+  color: #d8a3ad;
+  background: rgba(235,132,150,.05);
+  font-size: 9px;
+}
+.account-center-remove:hover:not(:disabled) { border-color: rgba(235,132,150,.4); background: rgba(235,132,150,.1); }
+.account-center-empty {
+  margin: 14px 0 0;
+  color: #a48a90;
+  font-size: 10px;
+}
+.account-center-message {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(120,216,165,.17);
+  border-radius: 9px;
+  color: #bde8d0;
+  background: rgba(28,92,57,.12);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.account-center-message.is-warning {
+  border-color: rgba(238,171,111,.2);
+  color: #ead0ae;
+  background: rgba(130,79,37,.12);
+}
+.account-center-danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-top: 17px;
+  padding: 15px 16px;
+  border: 1px solid rgba(225,103,126,.18);
+  border-radius: 13px;
+  background: linear-gradient(110deg, rgba(118,24,43,.11), rgba(0,0,0,.13));
+}
+.account-center-danger-zone strong {
+  color: #f0c5cc;
+  font-size: 11px;
+}
+.account-center-danger-zone p {
+  margin: 4px 0 0;
+  color: #a78b92;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.account-danger-button {
+  min-height: 37px;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border: 1px solid rgba(242,105,129,.36);
+  border-radius: 8px;
+  color: #ffdbe2;
+  background: linear-gradient(110deg, rgba(179,37,66,.32), rgba(112,22,42,.28));
+  font: 9px var(--mono);
+  letter-spacing: .07em;
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.account-danger-button:hover:not(:disabled) {
+  border-color: rgba(255,133,153,.62);
+  background: linear-gradient(110deg, rgba(205,44,77,.45), rgba(133,25,49,.38));
+  box-shadow: 0 7px 22px rgba(137,24,47,.2);
+}
+
+.site-shell.mono-mode .account-avatar-trigger {
+  border-color: rgba(255,255,255,.18);
+  color: #eee;
+  background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.025));
+}
+.site-shell.mono-mode .account-center-panel {
+  border-color: rgba(255,255,255,.16);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(255,255,255,.08), transparent 40%),
+    linear-gradient(145deg, rgba(34,34,34,.99), rgba(8,8,8,.995));
+}
+.site-shell.mono-mode .account-center-avatar { color: #f2f2f2; border-color: rgba(255,255,255,.2); }
+.site-shell.mono-mode .account-center-action { color: #ededed; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
+.site-shell.mono-mode .account-center-state { color: #c5c5c5; }
+.site-shell.mono-mode .account-center-secret code,
+.site-shell.mono-mode .account-center-recovery-codes code { color: #ededed; border-color: rgba(255,255,255,.17); background: rgba(255,255,255,.045); }
+
+.account-delete-game,
+.account-delete-confirm {
+  position: fixed;
+  z-index: 2200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(78,37,46,.3), transparent 58%),
+    rgba(5,3,4,.98);
+  color: #faeef1;
+  animation: account-center-backdrop-in .2s ease both;
+}
+.account-delete-game-heading {
+  position: absolute;
+  top: clamp(30px, 8vh, 74px);
+  left: 50%;
+  width: min(470px, calc(100% - 44px));
+  text-align: center;
+  transform: translateX(-50%);
+}
+.account-delete-game-heading h2,
+.account-delete-confirm-card h2,
+.account-delete-progress h2,
+.account-delete-complete h2 {
+  margin: 9px 0 8px;
+  color: #fff4f6;
+  font-size: clamp(27px, 4vw, 38px);
+  letter-spacing: -.06em;
+}
+.account-delete-game-heading p,
+.account-delete-confirm-card > p,
+.account-delete-progress > p,
+.account-delete-complete > p {
+  margin: 0;
+  color: #b499a0;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.account-delete-catches {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 20px 0 8px;
+}
+.account-delete-catches i {
+  width: 42px;
+  height: 4px;
+  border-radius: 5px;
+  background: rgba(255,255,255,.16);
+  transition: background .2s ease, box-shadow .2s ease;
+}
+.account-delete-catches i.is-caught {
+  background: #eeaab7;
+  box-shadow: 0 0 14px rgba(238,170,183,.32);
+}
+.account-delete-catch-count { color: #a98c93; font: 9px var(--mono); letter-spacing: .1em; }
+.account-delete-target {
+  position: absolute;
+  z-index: 2;
+  min-width: 128px;
+  min-height: 43px;
+  padding: 0 18px;
+  border: 1px solid rgba(255,164,181,.56);
+  border-radius: 10px;
+  color: #230c12;
+  background: linear-gradient(110deg, #ffd7df, #ea95a6);
+  box-shadow: 0 9px 26px rgba(218,89,117,.28), inset 0 1px rgba(255,255,255,.5);
+  transform: translate(-50%,-50%);
+  font: 10px var(--mono);
+  letter-spacing: .12em;
+  transition: left .27s cubic-bezier(.18,.82,.24,1), top .27s cubic-bezier(.18,.82,.24,1), scale .18s ease, filter .18s ease;
+  animation: delete-target-glimmer 2.4s ease-in-out infinite;
+}
+.account-delete-target:hover { scale: 1.045; filter: brightness(1.07); }
+.account-delete-cancel {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  padding: 8px 12px;
+  border: 0;
+  color: #8f777d;
+  background: transparent;
+  font-size: 10px;
+  transform: translateX(-50%);
+}
+.account-delete-cancel:hover { color: #d2bbc0; }
+.account-delete-confirm-card {
+  width: min(100%, 450px);
+  display: grid;
+  gap: 14px;
+  padding: 27px;
+  border: 1px solid rgba(255,211,219,.15);
+  border-radius: 21px;
+  background: linear-gradient(145deg, rgba(43,25,30,.99), rgba(15,9,12,.995));
+  box-shadow: 0 30px 100px rgba(0,0,0,.6), inset 0 1px rgba(255,255,255,.06);
+}
+.account-delete-confirm-card h2 { margin: 0; }
+.account-delete-confirm-card > p { margin: -3px 0 3px; }
+.account-delete-confirm-actions { display: grid; grid-template-columns: .8fr 1.2fr; gap: 9px; margin-top: 3px; }
+.account-delete-confirm-actions button { min-height: 40px; font-size: 8px; }
+.account-delete-cinema {
+  position: fixed;
+  z-index: 2500;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+  color: #f7edf0;
+}
+.account-delete-cinema::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #000;
+  transform-origin: center;
+}
+.account-delete-cinema.is-turning-off::before { animation: account-crt-turn-off .62s cubic-bezier(.76,0,.24,1) both; }
+.account-delete-cinema.is-black::before { transform: scaleY(1); }
+.account-delete-cinema.is-turning-on::before { animation: account-crt-turn-on .82s cubic-bezier(.2,.8,.2,1) both; }
+.account-delete-crt-glow {
+  position: absolute;
+  z-index: 1;
+  width: 100%;
+  height: 1px;
+  opacity: 0;
+  background: rgba(220,241,255,.9);
+  box-shadow: 0 0 18px 5px rgba(190,220,255,.34);
+  pointer-events: none;
+}
+.account-delete-cinema.is-turning-off .account-delete-crt-glow { animation: account-crt-line-off .62s ease both; }
+.account-delete-cinema.is-turning-on .account-delete-crt-glow { animation: account-crt-line-on .82s ease both; }
+.account-delete-progress,
+.account-delete-complete {
+  position: relative;
+  z-index: 2;
+  width: min(460px, calc(100% - 44px));
+  text-align: center;
+  animation: account-delete-copy-in .55s cubic-bezier(.2,.8,.2,1) both;
+}
+.account-delete-progress h2,
+.account-delete-complete h2 { font-size: clamp(26px, 4vw, 36px); }
+.account-delete-progress > p { min-height: 21px; margin-top: 15px; }
+.account-delete-progress-track {
+  width: 100%;
+  height: 5px;
+  margin-top: 23px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgba(255,255,255,.13);
+  box-shadow: inset 0 1px rgba(0,0,0,.6);
+}
+.account-delete-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c77d90, #f4c8d2);
+  box-shadow: 0 0 17px rgba(233,164,180,.38);
+  transition: width .58s cubic-bezier(.18,.82,.24,1);
+}
+.account-delete-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  color: #8f7d82;
+  font: 8px var(--mono);
+  letter-spacing: .11em;
+}
+.account-delete-complete { animation: account-delete-copy-in .48s ease both; }
+@keyframes account-center-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes account-center-panel-in {
+  from { opacity: 0; transform: translateY(12px) scale(.985); filter: blur(5px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes delete-target-glimmer {
+  0%,100% { box-shadow: 0 9px 26px rgba(218,89,117,.22), inset 0 1px rgba(255,255,255,.45); }
+  50% { box-shadow: 0 11px 34px rgba(218,89,117,.38), 0 0 20px rgba(255,166,186,.12), inset 0 1px rgba(255,255,255,.65); }
+}
+@keyframes account-crt-turn-off {
+  0% { transform: scaleY(0); filter: brightness(1.6); }
+  52% { transform: scaleY(1); filter: brightness(1.12); }
+  78% { transform: scaleY(.012); filter: brightness(1.45); }
+  100% { transform: scaleY(0); filter: brightness(0); }
+}
+@keyframes account-crt-line-off {
+  0%,45% { opacity: 0; }
+  58% { opacity: 1; }
+  82%,100% { opacity: 0; }
+}
+@keyframes account-crt-turn-on {
+  0% { transform: scaleY(.008); filter: brightness(2); }
+  22% { transform: scaleY(.008); filter: brightness(1.4); }
+  100% { transform: scaleY(0); filter: brightness(0); }
+}
+@keyframes account-crt-line-on {
+  0% { opacity: 1; }
+  22% { opacity: .8; }
+  100% { opacity: 0; }
+}
+@keyframes account-delete-copy-in {
+  from { opacity: 0; transform: translateY(7px); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@media (max-width: 720px) {
+  .account-center-overlay { padding: 12px; align-items: start; }
+  .account-center-panel { max-height: calc(100vh - 24px); border-radius: 18px; }
+  .account-center-header { min-height: 78px; padding: 14px 16px; }
+  .account-center-content { padding: 15px 16px 18px; }
+  .account-center-grid { grid-template-columns: 1fr; }
+  .account-center-passkeys { grid-column: auto; }
+  .account-center-reauth { grid-template-columns: 1fr; gap: 8px; }
+}
+@media (max-width: 480px) {
+  .topbar { gap: 12px; }
+  .account-avatar-trigger { width: 38px; height: 38px; border-radius: 12px; }
+  .account-center-header { gap: 11px; }
+  .account-center-avatar { width: 42px; height: 42px; border-radius: 13px; }
+  .account-center-title h2 { font-size: 19px; }
+  .account-center-card { padding: 14px; }
+  .account-center-danger-zone { align-items: flex-start; flex-direction: column; }
+  .account-center-danger-zone .account-danger-button { width: 100%; }
+  .account-delete-confirm-card { padding: 20px; }
+  .account-delete-confirm-actions { grid-template-columns: 1fr; }
+  .account-delete-game-heading { top: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-center-overlay,
+  .account-center-panel,
+  .account-delete-game,
+  .account-delete-confirm,
+  .account-delete-target,
+  .account-delete-cinema::before,
+  .account-delete-cinema .account-delete-crt-glow,
+  .account-delete-progress,
+  .account-delete-complete {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
