@@ -778,6 +778,10 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   async function revealSecret(secretType) {
+    if (!(status.passkeys || []).length) {
+      notify('Add a passkey to this account first. A passkey is required to replace and reveal account secrets.', 'warning');
+      return;
+    }
     setBusyAction(secretType);
     setMessage('');
     try {
@@ -904,24 +908,31 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     const x = minX <= maxX
       ? Math.round(minX + Math.random() * (maxX - minX))
       : Math.round(panelRect.width / 2);
-    // The upper portion peeks above a real Account Center card; the rest is layered underneath it.
+    // Keep only a small top strip exposed. The account card's higher stacking
+    // level conceals most of the target until it darts out to a new position.
     const y = Math.max(buttonHeight / 2, Math.min(
       panelRect.height - buttonHeight / 2,
-      cover.top - panelRect.top - buttonHeight * 0.04
+      cover.top - panelRect.top + buttonHeight * 0.3
     ));
     return { x, y: Math.round(y) };
   }
 
   useEffect(() => {
-    if (deleteStage !== 'hands') return undefined;
-    const reveal = window.setTimeout(() => setDeleteStage('game'), 2000);
-    return () => window.clearTimeout(reveal);
+    if (deleteStage === 'intro') {
+      const reveal = window.setTimeout(() => setDeleteStage('hands'), 850);
+      return () => window.clearTimeout(reveal);
+    }
+    if (deleteStage === 'hands') {
+      const reveal = window.setTimeout(() => setDeleteStage('game'), 2000);
+      return () => window.clearTimeout(reveal);
+    }
+    return undefined;
   }, [deleteStage]);
 
   function startDeleteGame() {
     setDeleteCaught(0);
     setDeleteSpot(randomDeletePosition());
-    setDeleteStage('hands');
+    setDeleteStage('intro');
     setMessage('');
   }
 
@@ -1079,7 +1090,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
                 <div className="account-center-masked-secret">•••• •••• •••• •••• •••• ••••</div>
               )}
               <p>The existing key is stored as a one-way verifier and cannot be read back. A passkey is required to replace it and reveal the new key.</p>
-              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!(status.passkeys || []).length || busyAction === 'account-key'}>
+              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={busyAction === 'account-key'}>
                 {busyAction === 'account-key' ? 'WAITING FOR PASSKEY…' : revealedAccountKey ? 'REPLACE & REVEAL KEY AGAIN' : 'REPLACE & REVEAL KEY'}
               </button>
             </section>
@@ -1106,7 +1117,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
                 <div className="account-center-masked-secret">•••• •••• •••• ••••</div>
               )}
               <p>Only code hashes are kept on the server. A passkey is required to replace this set and reveal the new codes. Replacing them invalidates every previous code.</p>
-              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!(status.passkeys || []).length || busyAction === 'backup-codes'}>
+              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={busyAction === 'backup-codes'}>
                 {busyAction === 'backup-codes' ? 'WAITING FOR PASSKEY…' : 'REPLACE & REVEAL BACKUP CODES'}
               </button>
             </section>
@@ -1141,7 +1152,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
           <div className="account-center-danger-zone">
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
-            {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className="account-danger-button account-delete-start" onClick={startDeleteGame} data-game-message="Let’s play a game before the end of the account.">Delete account</button>}
+            {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className={'account-danger-button account-delete-start' + (deleteStage === 'intro' ? ' is-launching' : '')} onClick={startDeleteGame} data-game-message="Let's play a little game before you terminate the account.">Delete account</button>}
           </div>
         </div>
       {deleteStage === 'game' && (

@@ -111,11 +111,17 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.doesNotMatch(panel, /account-delete-inline|Catch the delete button|Any other click resets/);
   assert.ok(panel.includes('body: JSON.stringify({})'));
   assert.ok(panel.includes('startAuthentication({ optionsJSON })'));
+  assert.ok(panel.includes('Add a passkey to this account first.'));
+  assert.ok(panel.includes("disabled={busyAction === 'account-key'}"));
+  assert.ok(panel.includes("disabled={busyAction === 'backup-codes'}"));
   assert.ok(panel.includes('startRegistration({ optionsJSON })'));
   assert.ok(panel.includes("'/api/account/passkeys/register/options', { password: passkeyPassword }"));
   assert.ok(panel.includes("deleteStage !== 'hands'"));
   assert.ok(panel.includes("setDeleteStage('hands')"));
+  assert.ok(panel.includes("setTimeout(() => setDeleteStage('hands'), 850)"));
   assert.ok(panel.includes("setTimeout(() => setDeleteStage('game'), 2000)"));
+  assert.ok(panel.includes("setDeleteStage('intro')"));
+  assert.ok(panel.includes("Let's play a little game before you terminate the account."));
   assert.ok(panel.includes("buffer.indexOf('\\n\\n')"));
   assert.ok(panel.includes('if (nextCatch >= 5)'));
   assert.ok(panel.includes('account-delete-start'));
@@ -126,7 +132,7 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.doesNotMatch(panel, /account-peekaboo-hand|clipPath|deletePeekSide/);
   assert.ok(panel.includes("setDeleteStage('hands')"));
   assert.ok(panel.includes("const visibleCards = cards"));
-  assert.ok(panel.includes("cover.top - panelRect.top - buttonHeight * 0.04"));
+  assert.ok(panel.includes("cover.top - panelRect.top + buttonHeight * 0.3"));
   assert.ok(styleSource.includes('.account-center-content {'));
   assert.ok(styleSource.includes('scrollbar-width: none;'));
   assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
@@ -141,8 +147,12 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.ok(styleSource.includes('@keyframes account-crt-beam-off'));
   assert.ok(styleSource.includes('@keyframes peekaboo-blink-top'));
   assert.ok(styleSource.includes('@keyframes peekaboo-eyes-mark'));
-  assert.ok(styleSource.includes('account-delete-start::before'));
-  assert.ok(styleSource.includes('account-delete-start::before'));
+  assert.ok(styleSource.includes('.account-delete-start:hover::before'));
+  assert.ok(styleSource.includes('.account-delete-start.is-launching::before'));
+  assert.ok(styleSource.includes('@keyframes account-delete-bubble-launch'));
+  assert.ok(styleSource.includes('@keyframes account-delete-button-launch'));
+  const crtBeam = styleSource.slice(styleSource.indexOf('html.bitcider-crt-off::before'), styleSource.indexOf('html.bitcider-crt-off::after'));
+  assert.doesNotMatch(crtBeam, /linear-gradient\(to bottom/);
 });
 
 

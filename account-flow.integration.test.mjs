@@ -140,7 +140,7 @@ test('signup password generator uses secure random Unicode groups and paired hid
   assert.ok(appSource.includes('morphPasswordText(from, to, frame / totalFrames)'));
   assert.ok(appSource.includes('aria-label={passwordVisible ? \'Hide password\' : \'Show password\'}'));
   assert.ok(styleSource.includes('.account-password-shell {'));
-  assert.ok(styleSource.includes('.account-password-generator { left: 6px;'));
+  assert.ok(styleSource.includes('.account-password-generator { right: 47px;'));
   assert.ok(styleSource.includes('.account-password-visibility { right: 6px;'));
   assert.ok(styleSource.includes('@keyframes password-decrypt-text'));
   assert.ok(styleSource.includes('@keyframes password-encrypt-text'));
@@ -434,3 +434,10 @@ test('header brand stays pinned left and account actions stay pinned right', asy
   assert.match(styleSource, /\.brand\s*\{[^}]*justify-self:\s*start;/);
   assert.match(styleSource, /\.account-avatar-trigger\s*\{\s*justify-self:\s*end;/);
 });;
+
+test('password generator sits immediately left of the show-password control', async () => {
+  const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
+  assert.match(styleSource, /\.account-password-generator\s*\{\s*right:\s*47px;/);
+  assert.match(styleSource, /\.account-password-visibility\s*\{\s*right:\s*6px;/);
+  assert.match(styleSource, /\.account-password-shell input\s*\{\s*padding-left:\s*16px;\s*padding-right:\s*90px;/);
+});
