@@ -1020,6 +1020,10 @@ export default function App() {
   const [modeDragProgress, setModeDragProgress] = useState(null);
   const [modeTransitionTarget, setModeTransitionTarget] = useState('');
   const [bitMonoCopied, setBitMonoCopied] = useState(false);
+  const [bitMonoHealth, setBitMonoHealth] = useState({
+    state: 'checking',
+    message: 'Checking live BitMono song search.'
+  });
   const bitMonoAddonUrl = typeof window !== 'undefined'
     ? window.location.origin + '/bitmono/manifest.json'
     : '/bitmono/manifest.json';
@@ -1133,6 +1137,108 @@ export default function App() {
     const heartbeat = window.setInterval(refreshStatus, 30000);
     return () => window.clearInterval(heartbeat);
   }, []);
+
+  useEffect(() => {
+    if (isAccountPopup || pageMode !== 'mono') return undefined;
+
+    let active = true;
+    let inFlight = false;
+
+    async function checkBitMonoHealth() {
+      if (!active || inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+
+      const startedAt = performance.now();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20000);
+      const slowTimer = window.setTimeout(() => {
+        if (!active || !inFlight) return;
+        const elapsedMs = Math.round(performance.now() - startedAt);
+        const message = 'Live BitMono search is taking longer than 2 seconds (' + elapsedMs + ' ms).';
+        setBitMonoHealth({ state: 'slow', message, durationMs: elapsedMs });
+        console.warn('[BitMono health] Live song search is delayed.', {
+          endpoint: '/api/bitmono/health',
+          query: 'Daft Punk',
+          elapsedMs,
+          note: 'The health endpoint runs the live song-search pipeline used by the addon.'
+        });
+      }, 2000);
+
+      try {
+        const response = await fetch('/api/bitmono/health', {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        });
+        const payload = await response.json().catch(() => null);
+        if (!active) return;
+
+        const clientLatencyMs = Math.round(performance.now() - startedAt);
+        const details = {
+          requestId: response.headers.get('X-BitMono-Request-Id') || payload?.requestId || null,
+          httpStatus: response.status,
+          clientLatencyMs,
+          serverDurationMs: Number.isFinite(Number(payload?.durationMs)) ? Number(payload.durationMs) : null,
+          provider: payload?.provider || null,
+          resultCount: Number(payload?.resultCount || 0),
+          sampleTracks: Array.isArray(payload?.sampleTracks) ? payload.sampleTracks : [],
+          diagnostics: Array.isArray(payload?.diagnostics) ? payload.diagnostics : [],
+          error: payload?.error || null,
+          message: payload?.message || null
+        };
+
+        if (!response.ok || payload?.ok !== true || details.resultCount < 1) {
+          const message = payload?.message || 'Live BitMono song search failed (HTTP ' + response.status + ').';
+          setBitMonoHealth({ state: 'bad', message, ...details });
+          console.error('[BitMono health] Live song search failed.', details);
+          return;
+        }
+
+        const state = payload?.status === 'slow' ? 'slow' : 'good';
+        const message = payload?.statusMessage || (state === 'slow'
+          ? 'BitMono is returning songs, but the live source is degraded or slow.'
+          : 'BitMono live song search returned tracks.');
+        setBitMonoHealth({ state, message, ...details });
+
+        if (state === 'slow') {
+          console.warn('[BitMono health] Live song search is degraded.', details);
+        }
+      } catch (error) {
+        if (!active) return;
+        const clientLatencyMs = Math.round(performance.now() - startedAt);
+        const message = error?.name === 'AbortError'
+          ? 'BitMono live song search did not respond within 20 seconds.'
+          : (error?.message || 'BitMono health check could not reach the addon backend.');
+        const details = {
+          endpoint: '/api/bitmono/health',
+          query: 'Daft Punk',
+          clientLatencyMs,
+          error: error?.message || String(error),
+          aborted: error?.name === 'AbortError'
+        };
+        setBitMonoHealth({ state: 'bad', message, ...details });
+        console.error('[BitMono health] Could not complete the live song search.', details);
+      } finally {
+        window.clearTimeout(timeout);
+        window.clearTimeout(slowTimer);
+        inFlight = false;
+      }
+    }
+
+    setBitMonoHealth({ state: 'checking', message: 'Checking live BitMono song search.' });
+    void checkBitMonoHealth();
+    const interval = window.setInterval(checkBitMonoHealth, 5000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void checkBitMonoHealth();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAccountPopup, pageMode]);
 
   useEffect(() => {
     if (isAccountPopup || status.loading || !status.connected || !status.addonUrl
@@ -1865,7 +1971,15 @@ export default function App() {
                 </div>
               </div>
               <div className="addon-url-panel bitmono-url-panel">
-                <div className="scope-title">FREE BITMONO ADDON URL</div>
+                <div className="bitmono-url-panel-head">
+                  <div className="scope-title">FREE BITMONO ADDON URL</div>
+                  <span
+                    className={`bitmono-health-dot is-${bitMonoHealth.state}`}
+                    role="status"
+                    aria-label={`BitMono song search status: ${bitMonoHealth.state}. ${bitMonoHealth.message || ''}`}
+                    title={bitMonoHealth.message || 'Checking live BitMono song search.'}
+                  />
+                </div>
                 <div className="url-row bitmono-url-row">
                   <input className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly aria-label="BitMono addon URL" onFocus={event => event.currentTarget.select()} />
                   <button
