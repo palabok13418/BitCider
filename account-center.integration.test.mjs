@@ -116,12 +116,13 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.ok(panel.includes("deleteStage !== 'hands'"));
   assert.ok(panel.includes("setDeleteStage('hands')"));
   assert.ok(panel.includes("setTimeout(() => setDeleteStage('game'), 2000)"));
-  assert.ok(panel.includes("buffer.indexOf('\\\\n\\\\n')"));
+  assert.ok(panel.includes("buffer.indexOf('\\n\\n')"));
   assert.ok(panel.includes('if (nextCatch >= 5)'));
   assert.ok(panel.includes('account-delete-start'));
   assert.ok(panel.includes('account-peekaboo-hands'));
   assert.ok(panel.includes('className="account-danger-button account-delete-target"'));
-  assert.ok(panel.includes("style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}"));
+  assert.ok(panel.includes("left: deleteSpot.x + 'px'"));
+  assert.ok(panel.includes('clipPath: deletePeekSide'));
   assert.ok(styleSource.includes('.account-center-content {'));
   assert.ok(styleSource.includes('scrollbar-width: none;'));
   assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
@@ -130,6 +131,7 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.ok(movingButtonStyles.includes('position: fixed'));
   assert.ok(movingButtonStyles.includes('z-index: 2300'));
   assert.ok(styleSource.includes('@keyframes peekaboo-cover'));
+  assert.ok(styleSource.includes('account-delete-start::before'));
   assert.ok(styleSource.includes('account-delete-start::before'));
 });
 
