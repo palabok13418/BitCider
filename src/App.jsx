@@ -1542,11 +1542,58 @@ export default function App() {
             </>
           )}
           </div>
-        </section>
         <div
           className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`}
           aria-label="Music sources"
         >
+          <div
+            className="mode-switch-panel"
+            id="bitcider-mode-panel"
+            aria-hidden={!modeSwitcherOpen}
+          >
+            <div
+              className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''} ${modeTransitionPhase !== 'idle' ? 'is-switching' : ''}`}
+              role="group"
+              aria-label="Choose music source"
+              onPointerDown={beginModeDrag}
+              onPointerMove={updateModeDrag}
+              onPointerUp={finishModeDrag}
+              onPointerCancel={cancelModeDrag}
+              onLostPointerCapture={cancelModeDrag}
+            >
+              <span
+                className="mode-toggle-thumb"
+                style={modeDragProgress !== null ? { transform: `translateX(${modeDragProgress * 100}%)` } : undefined}
+                aria-hidden="true"
+              />
+              <button
+                className="mode-toggle-option"
+                type="button"
+                onClick={() => handleSourceChoice('cider')}
+                data-source="cider"
+                aria-pressed={selectorMode === 'cider'}
+                disabled={!modeSwitcherOpen}
+              >Cider</button>
+              <button
+                className="mode-toggle-option"
+                type="button"
+                onClick={() => handleSourceChoice('mono')}
+                data-source="mono"
+                aria-pressed={selectorMode === 'mono'}
+                disabled={!modeSwitcherOpen}
+              >Monochrome</button>
+              <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
+                <defs>
+                  <filter id="bitcider-source-warp" x="-20%" y="-30%" width="140%" height="160%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.018 0.06" numOctaves="2" seed="8" result="warp-noise">
+                      <animate attributeName="baseFrequency" values="0.018 0.06;0.055 0.025;0.018 0.06" dur="0.65s" repeatCount="indefinite" />
+                    </feTurbulence>
+                    <feDisplacementMap in="SourceGraphic" in2="warp-noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+                  </filter>
+                </defs>
+              </svg>
+            </div>
+          </div>
           <button
             className="mode-pull-tab"
             type="button"
@@ -1556,58 +1603,8 @@ export default function App() {
           >
             <span className="mode-pull-label">Music Sources</span>
           </button>
-          <div
-            className="mode-switch-panel"
-            id="bitcider-mode-panel"
-            aria-hidden={!modeSwitcherOpen}
-          >
-              <div
-                className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''} ${modeTransitionPhase !== 'idle' ? 'is-switching' : ''}`}
-                role="group"
-                aria-label="Choose music source"
-                onPointerDown={beginModeDrag}
-                onPointerMove={updateModeDrag}
-                onPointerUp={finishModeDrag}
-                onPointerCancel={cancelModeDrag}
-                onLostPointerCapture={cancelModeDrag}
-              >
-                <span
-                  className="mode-toggle-thumb"
-                  style={modeDragProgress !== null ? { transform: `translateX(${modeDragProgress * 100}%)` } : undefined}
-                  aria-hidden="true"
-                />
-                <button
-                  className="mode-toggle-option"
-                  type="button"
-                  onClick={() => handleSourceChoice('cider')}
-                  data-source="cider"
-                  aria-pressed={selectorMode === 'cider'}
-                  disabled={!modeSwitcherOpen}
-                >Cider</button>
-                <button
-                  className="mode-toggle-option"
-                  type="button"
-                  onClick={() => handleSourceChoice('mono')}
-                  data-source="mono"
-                  aria-pressed={selectorMode === 'mono'}
-                  disabled={!modeSwitcherOpen}
-                >Monochrome</button>
-                <svg className="mode-warp-defs" aria-hidden="true" focusable="false">
-                  <defs>
-                    <filter id="bitcider-source-warp" x="-20%" y="-30%" width="140%" height="160%">
-                      <feTurbulence type="fractalNoise" baseFrequency="0.018 0.06" numOctaves="2" seed="8" result="warp-noise">
-                        <animate attributeName="baseFrequency" values="0.018 0.06;0.055 0.025;0.018 0.06" dur="0.65s" repeatCount="indefinite" />
-                      </feTurbulence>
-                      <feDisplacementMap in="SourceGraphic" in2="warp-noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
-                    </filter>
-                  </defs>
-                </svg>
-              </div>
-          </div>
         </div>
-
-        </div>
-      </section>
+        </section>
 
 
 
