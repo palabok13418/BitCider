@@ -2744,5 +2744,13 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out b
 @media (prefers-reduced-motion: reduce) {
   .account-center-overlay,
   .account-center-panel,
-
+  .account-delete-target,
+  .account-delete-progress,
+  html.bitcider-crt-off .site-shell,
+  html.bitcider-crt-on .site-shell,
+  html.bitcider-crt-off::after,
+  html.bitcider-crt-on::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
 }
