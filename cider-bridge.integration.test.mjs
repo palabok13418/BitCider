@@ -479,20 +479,19 @@ test('Cider auth probe makes only the authenticated request and surfaces real 40
   const probeStart = source.indexOf('async function probeLocalCider(');
   const probeEnd = source.indexOf('async function executeLocalCiderJob(', probeStart);
   const probe = source.slice(probeStart, probeEnd);
-  assert.match(probe, /async function probeLocalCider\\(signal, token\\)/);
-  assert.equal((probe.match(/fetch\\(/g) || []).length, 1, 'the probe should not make an unauthenticated request that Cider predictably rejects');
-  assert.match(probe, /apptoken:\\s*token/);
-  assert.match(probe, /error\\.corsStage = 'authenticated-request'/);
-  assert.match(probe, /The browser could not complete the authenticated request to Cider/);
-  assert.doesNotMatch(probe, /mode:\\s*'no-cors'/);
-  assert.match(source, /await probeLocalCider\\(signal, ciderToken\\)/);
-  assert.match(source, /error\\?\\.status === 401 \\|\\| error\\?\\.status === 403/);
-  assert.match(appSource, /browserBridge\\.state === 'cider-auth-required' && \\(/);
-  assert.match(appSource, /browserBridge\\.state === 'cider-access-blocked'/);
-  assert.match(appSource, /CIDER ACCESS BLOCKED/);
-  assert.match(appSource, /RECONNECT CIDER ON THIS DEVICE/);
+  assert.ok(probe.includes('async function probeLocalCider(signal, token)'));
+  assert.equal(probe.split('fetch(').length - 1, 1, 'the probe should not make an unauthenticated request that Cider predictably rejects');
+  assert.ok(probe.includes('apptoken: token'));
+  assert.ok(probe.includes("error.corsStage = 'authenticated-request'"));
+  assert.ok(probe.includes('The browser could not complete the authenticated request to Cider'));
+  assert.ok(!probe.includes("mode: 'no-cors'"));
+  assert.ok(source.includes('await probeLocalCider(signal, ciderToken)'));
+  assert.ok(source.includes('error?.status === 401 || error?.status === 403'));
+  assert.ok(appSource.includes("browserBridge.state === 'cider-auth-required' && ("));
+  assert.ok(appSource.includes("browserBridge.state === 'cider-access-blocked'"));
+  assert.ok(appSource.includes('CIDER ACCESS BLOCKED'));
+  assert.ok(appSource.includes('RECONNECT CIDER ON THIS DEVICE'));
 });
-
 test('BitMono health automatically falls back to the live search route when an older backend lacks the health endpoint', async () => {
   const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
   assert.ok(appSource.includes('let useLegacySearchHealth = false;'));
