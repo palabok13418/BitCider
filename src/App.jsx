@@ -1395,7 +1395,10 @@ export default function App() {
           )}
         </div>
 
-        <div className="connection-column">
+        <div
+          className="connection-column"
+          style={modePullProgress > 0 ? { '--pull-progress': modePullProgress } : undefined}
+        >
         <section className="connection-card" aria-live="polite">
           <div className="source-mode-content">
           {pageMode === 'mono' ? (
@@ -1592,7 +1595,6 @@ export default function App() {
         </section>
         <section
           className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`}
-          style={modePullProgress > 0 ? { '--pull-progress': modePullProgress } : undefined}
           aria-label="Switch source"
         >
             <button
