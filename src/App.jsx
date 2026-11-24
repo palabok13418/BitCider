@@ -774,11 +774,11 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
       while (true) {
         const { done, value } = await reader.read();
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        let boundary = buffer.indexOf('\\n\\n');
+        let boundary = buffer.indexOf('\n\n');
         while (boundary >= 0) {
           const block = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-          const dataLine = block.split('\\n').find(line => line.startsWith('data:'));
+          const dataLine = block.split('\n').find(line => line.startsWith('data:'));
           if (dataLine) {
             const event = JSON.parse(dataLine.slice(5).trim());
             if (typeof event.progress === 'number') setDeleteProgress(event.progress);
@@ -786,7 +786,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             if (event.type === 'error') throw new Error(event.label || 'Account deletion was interrupted.');
             if (event.type === 'complete') completed = true;
           }
-          boundary = buffer.indexOf('\\n\\n');
+          boundary = buffer.indexOf('\n\n');
         }
         if (done) break;
       }
