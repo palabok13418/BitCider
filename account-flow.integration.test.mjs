@@ -124,6 +124,27 @@ test('Account setup silently offers credentials to Chrome Password Manager', asy
   assert.doesNotMatch(styleSource, /account-password-manager-note/);
 });
 
+test('signup password generator uses secure random Unicode groups and paired hidden confirmation', async () => {
+  const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
+  const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
+  assert.ok(appSource.includes('const length = 24 + secureRandomIndex(477)'));
+  assert.ok(appSource.includes('window.crypto.getRandomValues(sample)'));
+  assert.ok(appSource.includes("Array.from('ضصثقفقغعهخحجددذرزسشص')"));
+  assert.ok(appSource.includes("Array.from('密碼鍵龍影秘語字夢狐霧夜星')"));
+  assert.ok(appSource.includes("'a\\\\u0336\\\\u035c\\\\u0315'"));
+  assert.ok(appSource.includes("setPasswordConfirm(generated)"));
+  assert.ok(appSource.includes("placeholder=\"Start Typing\""));
+  assert.ok(appSource.includes("placeholder=\"Password123\"") === false);
+  assert.ok(appSource.includes("isGeneratedPassword && !passwordVisible ? 'Password123'"));
+  assert.ok(appSource.includes('function togglePasswordVisibility()'));
+  assert.ok(appSource.includes('morphPasswordText(from, to, frame / totalFrames)'));
+  assert.ok(appSource.includes('aria-label={passwordVisible ? \'Hide password\' : \'Show password\'}'));
+  assert.ok(styleSource.includes('.account-password-shell {'));
+  assert.ok(styleSource.includes('.account-password-generator { left: 6px;'));
+  assert.ok(styleSource.includes('.account-password-visibility { right: 6px;'));
+  assert.ok(styleSource.includes('@keyframes password-decrypt-text'));
+  assert.ok(styleSource.includes('@keyframes password-encrypt-text'));
+});
 test('BitCider accounts restore cloud links across sessions and survive encryption-key migration', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-flow-'));
   const port = await freePort();

@@ -1071,6 +1071,63 @@ h1 .bitchord-word {
   font-size: 12px;
 }
 .account-popup-form input::placeholder { color: #805f65; }
+
+.account-password-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.account-password-shell input {
+  padding-left: 52px;
+  padding-right: 50px;
+  font-family: var(--mono);
+  letter-spacing: .035em;
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+.account-password-shell input[readonly] { cursor: default; }
+.account-password-tool {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  display: grid;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 8px;
+  color: #bd9ba4;
+  background: rgba(255,255,255,.035);
+  transform: translateY(-50%);
+  transition: color .18s ease, border-color .18s ease, background .18s ease, opacity .18s ease;
+}
+.account-password-tool:hover:not(:disabled) {
+  color: #fff1f4;
+  border-color: rgba(255,111,145,.42);
+  background: rgba(255,75,113,.12);
+}
+.account-password-tool:disabled { opacity: .42; cursor: not-allowed; }
+.account-password-generator { left: 6px; color: #f1b6c4; }
+.account-password-visibility { right: 6px; }
+.account-password-shell.is-decrypting input {
+  animation: password-decrypt-text .48s ease-out both;
+}
+.account-password-shell.is-encrypting input {
+  animation: password-encrypt-text .48s ease-in both;
+}
+@keyframes password-decrypt-text {
+  0% { filter: blur(5px); opacity: .55; letter-spacing: .2em; text-shadow: 0 0 12px rgba(255,111,145,.7); }
+  55% { filter: blur(1px); opacity: .9; letter-spacing: .08em; }
+  100% { filter: blur(0); opacity: 1; letter-spacing: .035em; text-shadow: 0 0 0 transparent; }
+}
+@keyframes password-encrypt-text {
+  0% { filter: blur(0); opacity: 1; letter-spacing: .035em; }
+  45% { filter: blur(1px); opacity: .85; letter-spacing: .12em; text-shadow: 0 0 12px rgba(255,111,145,.6); }
+  100% { filter: blur(5px); opacity: .55; letter-spacing: .2em; text-shadow: 0 0 16px rgba(255,111,145,.8); }
+}
+
 .account-popup-form input:focus {
   border-color: rgba(255,77,116,.6);
   box-shadow: 0 0 0 3px rgba(255,43,94,.09);

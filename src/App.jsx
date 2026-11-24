@@ -16,6 +16,9 @@ function Icon({ name, size = 18 }) {
   if (name === 'link') return <svg {...common}><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" /><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1" /></svg>;
   if (name === 'shield') return <svg {...common}><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg>;
   if (name === 'external') return <svg {...common}><path d="M14 3h7v7M10 14 21 3" /><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></svg>;
+  if (name === 'eye') return <svg {...common}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>;
+  if (name === 'eye-off') return <svg {...common}><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M9.9 5.2A11.2 11.2 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 4.1M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.1 0 2.1-.2 3-.5" /></svg>;
+  if (name === 'wand') return <svg {...common}><path d="m15 4 5 5M4 20l12.5-12.5M4 4v4M2 6h4M18 15v5M15.5 17.5h5M10 2v3M8.5 3.5h3" /></svg>;
   if (name === 'unplug') return <svg {...common}><path d="m16 16 3 3M2 2l20 20M7 7 4 4M14 7l3-3M7 14l-3 3" /><path d="M8 8a5 5 0 0 0 7 7" /></svg>;
   return null;
 }
@@ -97,6 +100,58 @@ function getErrorMessage(payload, fallback) {
   return payload?.error?.message || payload?.message || payload?.error || fallback;
 }
 
+const PASSWORD_GENERATOR_GROUPS = [
+  Array.from('abcdefghijklmnopqrstuvwxyz'),
+  Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+  Array.from('0123456789'),
+  Array.from('!@#$%^&*()-_=+[]{};:,.<>/?\\\\|~'),
+  Array.from('⟡⧫⌬⍟⎈⧉⌘⌥⚙⚛⚝⚿♜♞♢♧☠𖤐🜁🜂🜃🜄'),
+  ['𝔄', '𝕏', '𝖘', '𝒵', '𝓠', '𝖅', '𝔷', '𝕽', '𝘿', '𝙓'],
+  Array.from('ضصثقفقغعهخحجددذرزسشص'),
+  Array.from('密碼鍵龍影秘語字夢狐霧夜星'),
+  Array.from('ЖФЯщΩψξλΔЖФЯ'),
+  ['a\\u0336\\u035c\\u0315', 'Z\\u0338\\u0351\\u034f', 'm\\u0337\\u0307\\u0323', 'Q\\u0336\\u034f\\u031c', 'x\\u0338\\u0334\\u0301', 'R\\u0337\\u0308\\u035c']
+];
+const PASSWORD_GENERATOR_POOL = PASSWORD_GENERATOR_GROUPS.flat();
+const PASSWORD_MORPH_GLYPHS = Array.from('ABCDEFGHJKLMNPQRSTUVWXYZ23456789#$%&*+=<>?⟡⧫⌬⍟⚛⚝ЖΩ密龍');
+
+function secureRandomIndex(maximum) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 0x100000000) {
+    throw new RangeError('Invalid secure random range.');
+  }
+  const limit = Math.floor(0x100000000 / maximum) * maximum;
+  const sample = new Uint32Array(1);
+  do {
+    window.crypto.getRandomValues(sample);
+  } while (sample[0] >= limit);
+  return sample[0] % maximum;
+}
+
+function generateCryptographicPassword() {
+  const length = 24 + secureRandomIndex(477);
+  const characters = PASSWORD_GENERATOR_GROUPS.map(group => group[secureRandomIndex(group.length)]);
+  while (characters.length < length) {
+    characters.push(PASSWORD_GENERATOR_POOL[secureRandomIndex(PASSWORD_GENERATOR_POOL.length)]);
+  }
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const swap = secureRandomIndex(index + 1);
+    [characters[index], characters[swap]] = [characters[swap], characters[index]];
+  }
+  return characters.join('');
+}
+
+function morphPasswordText(from, to, progress) {
+  const source = Array.from(from);
+  const target = Array.from(to);
+  const length = Math.max(source.length, target.length);
+  const settled = Math.floor(length * Math.max(0, Math.min(1, progress)));
+  return Array.from({ length }, (_, index) => {
+    if (index < settled) return target[index] || '';
+    return source[index] || PASSWORD_MORPH_GLYPHS[secureRandomIndex(PASSWORD_MORPH_GLYPHS.length)];
+  }).join('');
+}
+
+
 
 function passwordStrength(value) {
   if (!value) return { level: 0, label: 'Start typing', note: 'No character-count limit. Strength is guidance, not a gate.' };
@@ -170,7 +225,59 @@ function AccountSetupWindow({
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [enrollmentPassword, setEnrollmentPassword] = useState('');
+  const [isGeneratedPassword, setIsGeneratedPassword] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordAnimating, setPasswordAnimating] = useState(false);
+  const [passwordAnimatedValue, setPasswordAnimatedValue] = useState('');
+  const passwordAnimationRef = useRef(null);
   const strength = passwordStrength(password);
+
+  useEffect(() => () => {
+    if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+  }, []);
+
+  function generateAccountPassword() {
+    try {
+      if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+      const generated = generateCryptographicPassword();
+      setPassword(generated);
+      setPasswordConfirm(generated);
+      setIsGeneratedPassword(true);
+      setPasswordVisible(false);
+      setPasswordAnimating(false);
+      setPasswordAnimatedValue('');
+      setError('');
+    } catch {
+      setError('Secure password generation is unavailable in this browser context. Use a supported HTTPS browser and try again.');
+    }
+  }
+
+  function togglePasswordVisibility() {
+    if (!password || passwordAnimating) return;
+    const nextVisible = !passwordVisible;
+    const hiddenText = isGeneratedPassword
+      ? 'Password123'
+      : '•'.repeat(Math.min(Array.from(password).length, 48));
+    const from = passwordVisible ? password : hiddenText;
+    const to = nextVisible ? password : hiddenText;
+    if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+
+    setPasswordAnimating(true);
+    setPasswordAnimatedValue(from);
+    let frame = 0;
+    const totalFrames = 15;
+    passwordAnimationRef.current = window.setInterval(() => {
+      frame += 1;
+      setPasswordAnimatedValue(morphPasswordText(from, to, frame / totalFrames));
+      if (frame >= totalFrames) {
+        window.clearInterval(passwordAnimationRef.current);
+        passwordAnimationRef.current = null;
+        setPasswordVisible(nextVisible);
+        setPasswordAnimatedValue('');
+        setPasswordAnimating(false);
+      }
+    }, 32);
+  }
 
   async function post(path, payload = {}) {
     const response = await fetch(path, {
@@ -431,7 +538,43 @@ function AccountSetupWindow({
               <form className="account-popup-form" id="account-create-form" autoComplete="on" onSubmit={createAccount}>
                 <label>
                   <span>CREATE A PASSWORD</span>
-                  <input id="new-password" name="new-password" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose any password" required />
+                  <div className={'account-password-shell' + (passwordAnimating ? ' is-animating ' + (passwordVisible ? 'is-decrypting' : 'is-encrypting') : '')}>
+                    <button
+                      className="account-password-tool account-password-generator"
+                      type="button"
+                      onClick={generateAccountPassword}
+                      disabled={busy || passwordAnimating}
+                      aria-label="Generate a cryptographically random password"
+                      title="Generate a secure password"
+                    ><Icon name="wand" size={16} /></button>
+                    <input
+                      id="new-password"
+                      name="new-password"
+                      type={passwordAnimating || passwordVisible || isGeneratedPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={passwordAnimating ? passwordAnimatedValue : isGeneratedPassword && !passwordVisible ? 'Password123' : password}
+                      onChange={event => {
+                        setPassword(event.target.value);
+                        setPasswordConfirm('');
+                        setIsGeneratedPassword(false);
+                      }}
+                      readOnly={passwordAnimating || (isGeneratedPassword && !passwordVisible)}
+                      placeholder="Start Typing"
+                      required
+                      dir="ltr"
+                      spellCheck={false}
+                      aria-label="Create a password"
+                    />
+                    <button
+                      className="account-password-tool account-password-visibility"
+                      type="button"
+                      onClick={togglePasswordVisibility}
+                      disabled={!password || busy || passwordAnimating}
+                      aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                      aria-pressed={passwordVisible}
+                      title={passwordVisible ? 'Hide password' : 'Show password'}
+                    ><Icon name={passwordVisible ? 'eye-off' : 'eye'} size={16} /></button>
+                  </div>
                 </label>
                 <div className={strengthClass} aria-live="polite">
                   <div className="password-strength-bars"><i /><i /><i /></div>
@@ -440,9 +583,24 @@ function AccountSetupWindow({
                 </div>
                 <label>
                   <span>CONFIRM PASSWORD</span>
-                  <input id="confirm-password" name="confirm-password" type="password" autoComplete="new-password" value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} placeholder="Type it again" required />
+                  <input
+                    id="confirm-password"
+                    name="confirm-password"
+                    type={passwordAnimating || passwordVisible || isGeneratedPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={passwordAnimating ? passwordAnimatedValue : isGeneratedPassword && !passwordVisible ? 'Password123' : passwordConfirm}
+                    onChange={event => {
+                      setPasswordConfirm(event.target.value);
+                      setIsGeneratedPassword(false);
+                    }}
+                    readOnly={passwordAnimating || isGeneratedPassword}
+                    placeholder="Type it again"
+                    required
+                    dir="ltr"
+                    spellCheck={false}
+                  />
                 </label>
-                <p className="account-popup-footnote">There is no password character-count rule. The strength indicator is only a live estimate and will never block a password by itself.</p>
+                <p className="account-popup-footnote">Generate a 24–500 character password with secure randomness, or type your own. Generated passwords include multiple scripts, symbols and combining characters. The hidden preview reads Password123; the actual password is much more complex.</p>
                 <button className="account-submit-button" type="submit" disabled={!canSubmitCreate || !tokenEncryptionConfigured}>{busy ? 'CREATING ACCOUNT…' : 'CREATE ACCOUNT'}</button>
               </form>
               <button className="account-recovery-link" type="button" onClick={() => { setCiderLinked(false); setAccountKey(''); setPassword(''); setPasswordConfirm(''); setError(''); setStage('login'); }}>ALREADY HAVE AN ACCOUNT? SIGN IN</button>
