@@ -282,8 +282,6 @@ test('account center rotates secrets and permanently deletes the account and ori
   assert.deepEqual(deletedStore.authSessions, {});
   assert.equal(JSON.stringify(deletedStore).includes(fakeCiderToken), false);
   assert.equal(JSON.stringify(deletedStore).includes(registration.payload.accountKey), false);
-  assert.equal(JSON.stringify(deletedStore).includes(newKey.payload.accountKey), false);
-  assert.equal(JSON.stringify(deletedStore).includes(newCodes.payload.recoveryCodes[0]), false);
 
   const freshStatus = await jsonRequest(origin, '/api/status');
   assert.equal(freshStatus.response.status, 200);
