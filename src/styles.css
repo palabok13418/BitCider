@@ -2472,13 +2472,33 @@ h1 .bitchord-word {
 .site-shell.mono-mode .account-center-secret code,
 .site-shell.mono-mode .account-center-recovery-codes code { color: #ededed; border-color: rgba(255,255,255,.17); background: rgba(255,255,255,.045); }
 
+.account-delete-start { position: relative; }
+.account-delete-start::before {
+  content: attr(data-game-message);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: max-content;
+  max-width: min(260px, 70vw);
+  padding: 9px 12px;
+  border: 1px solid rgba(255,220,228,.2);
+  border-radius: 12px 12px 3px 12px;
+  color: #ffe8ed;
+  background: rgba(37,20,26,.96);
+  box-shadow: 0 8px 28px rgba(0,0,0,.28);
+  font: 9px/1.5 var(--mono);
+  letter-spacing: .01em;
+  white-space: normal;
+  pointer-events: none;
+  animation: account-delete-bubble-in .45s cubic-bezier(.2,.8,.2,1) both;
+}
 .account-delete-target {
   position: fixed;
   z-index: 2300;
   min-width: 146px;
   min-height: 41px;
   padding: 0 16px;
-  border: 1px solid rgba(255,178,194,.55);
+  border: 1px solid rgba(255,178,194,.7);
   border-radius: 9px;
   color: #250c13;
   background: linear-gradient(110deg, #ffdce3, #eaa0b0 70%, #d78c9e);
@@ -2488,18 +2508,60 @@ h1 .bitchord-word {
   letter-spacing: .12em;
   cursor: pointer;
   touch-action: manipulation;
-  transition:
-    left .48s cubic-bezier(.16,1,.3,1),
-    top .48s cubic-bezier(.16,1,.3,1),
-    filter .16s ease,
-    box-shadow .16s ease;
+  transition: left .48s cubic-bezier(.16,1,.3,1), top .48s cubic-bezier(.16,1,.3,1), clip-path .2s ease, filter .16s ease;
   animation: delete-target-glimmer 2.8s ease-in-out infinite;
 }
-.account-delete-target:hover {
-  filter: brightness(1.08);
-  box-shadow: 0 11px 32px rgba(218,89,117,.36), inset 0 1px rgba(255,255,255,.72);
-}
+.account-delete-target:hover { filter: brightness(1.12); }
 .account-delete-target:active { filter: brightness(.94); }
+
+.account-peekaboo-hands {
+  position: fixed;
+  z-index: 4000;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgba(0,0,0,.98);
+  animation: peekaboo-cover 2s cubic-bezier(.72,0,.24,1) both;
+}
+.account-peekaboo-hand {
+  position: absolute;
+  top: -9%;
+  width: min(57vw, 650px);
+  height: 120%;
+  border-radius: 48% 48% 38% 38%;
+  background:
+    radial-gradient(ellipse at 48% 27%, rgba(255,231,207,.98) 0 9%, transparent 38%),
+    radial-gradient(ellipse at 50% 50%, #e8b99c 0 35%, #c98e70 68%, #8e5948 100%);
+  box-shadow: inset 18px 0 32px rgba(255,239,222,.24), inset -22px -8px 36px rgba(85,43,35,.3), 0 0 65px rgba(0,0,0,.8);
+  filter: saturate(.9);
+}
+.account-peekaboo-hand::before {
+  content: "";
+  position: absolute;
+  top: 3%;
+  width: 100%;
+  height: 37%;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 10% 55%, #f2c8ad 0 11%, #b97961 13%, transparent 17%),
+    radial-gradient(ellipse at 30% 45%, #f4cbb1 0 11%, #b97961 13%, transparent 17%),
+    radial-gradient(ellipse at 50% 42%, #f4cbb1 0 11%, #b97961 13%, transparent 17%),
+    radial-gradient(ellipse at 70% 45%, #f1c5a8 0 11%, #a96d58 13%, transparent 17%),
+    radial-gradient(ellipse at 90% 55%, #eab99d 0 10%, #9b604e 12%, transparent 17%);
+}
+.account-peekaboo-hand::after {
+  content: "";
+  position: absolute;
+  top: 29%;
+  left: 22%;
+  width: 56%;
+  height: 48%;
+  border-radius: 48%;
+  background: radial-gradient(ellipse at 35% 22%, rgba(255,237,218,.35), transparent 58%), linear-gradient(145deg, #edc1a5, #c58b70 72%, #9a624f);
+  box-shadow: inset 0 8px 14px rgba(255,240,223,.2), inset 0 -15px 20px rgba(96,49,40,.18);
+}
+.hand-left { left: -10%; transform: rotate(-8deg); }
+.hand-right { right: -10%; transform: rotate(8deg) scaleX(-1); }
 
 .account-delete-cinema {
   position: fixed;
@@ -2526,7 +2588,7 @@ h1 .bitchord-word {
   z-index: 2;
   width: min(460px, calc(100% - 44px));
   text-align: center;
-  animation: account-delete-copy-in .55s cubic-bezier(.2,.8,.2,1) both;
+  animation: account-delete-copy-in .8s cubic-bezier(.2,.8,.2,1) both;
 }
 .account-delete-progress h2 {
   margin: 9px 0 8px;
@@ -2543,8 +2605,8 @@ h1 .bitchord-word {
 }
 .account-delete-progress-track {
   width: 100%;
-  height: 5px;
-  margin-top: 23px;
+  height: 6px;
+  margin-top: 0;
   overflow: hidden;
   border-radius: 9px;
   background: rgba(255,255,255,.13);
@@ -2564,10 +2626,11 @@ h1 .bitchord-word {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 10px;
-  color: #8f7d82;
+  margin-top: 13px;
+  color: #9b858c;
   font: 8px var(--mono);
-  letter-spacing: .11em;
+  letter-spacing: .08em;
+  text-align: left;
 }
 
 /* Animate the actual site surface, not a black card pretending to be a CRT. */
@@ -2583,12 +2646,12 @@ html.bitcider-crt-on body {
 }
 html.bitcider-crt-off .site-shell {
   transform-origin: 50% 50%;
-  animation: account-crt-power-down .82s cubic-bezier(.62,.02,.82,.28) both;
+  animation: account-crt-power-down 1.45s cubic-bezier(.72,.02,.82,.32) both;
   will-change: transform, filter, opacity;
 }
 html.bitcider-crt-on .site-shell {
   transform-origin: 50% 50%;
-  animation: account-crt-power-up .98s cubic-bezier(.16,.88,.22,1) both;
+  animation: account-crt-power-up 1.55s cubic-bezier(.16,.88,.22,1) both;
   will-change: transform, filter, opacity;
 }
 html.bitcider-crt-off::after,
@@ -2604,9 +2667,18 @@ html.bitcider-crt-on::after {
     linear-gradient(90deg, rgba(255,30,80,.045), transparent 24%, transparent 76%, rgba(75,150,255,.045)),
     radial-gradient(ellipse at center, rgba(235,220,230,.11), transparent 70%);
 }
-html.bitcider-crt-off::after { animation: account-crt-phosphor-off .82s ease-out both; }
-html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out both; }
+html.bitcider-crt-off::after { animation: account-crt-phosphor-off 1.45s ease-out both; }
+html.bitcider-crt-on::after { animation: account-crt-phosphor-on 1.55s ease-out both; }
 
+@keyframes account-delete-bubble-in {
+  from { opacity: 0; transform: translateY(7px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes peekaboo-cover {
+  0%, 10% { opacity: 1; }
+  62% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
 @keyframes account-delete-bar-shimmer {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
@@ -2746,6 +2818,7 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out b
   .account-center-danger-zone .account-danger-button { width: 100%; }
 
   .account-delete-target { min-width: 112px; min-height: 39px; font-size: 7px; }
+  .account-peekaboo-hand { width: 70vw; }
 }
 @media (prefers-reduced-motion: reduce) {
   .account-center-overlay,
