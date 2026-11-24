@@ -1301,6 +1301,7 @@ export default function App() {
 
     let active = true;
     let inFlight = false;
+    let useLegacySearchHealth = false;
 
     async function checkBitMonoHealth() {
       if (!active || inFlight || document.visibilityState === 'hidden') return;
@@ -1315,28 +1316,82 @@ export default function App() {
         const message = 'Live BitMono search is taking longer than 2 seconds (' + elapsedMs + ' ms).';
         setBitMonoHealth({ state: 'slow', message, durationMs: elapsedMs });
         console.warn('[BitMono health] Live song search is delayed.', {
-          endpoint: '/api/bitmono/health',
+          endpoint: useLegacySearchHealth ? '/bitmono/search' : '/api/bitmono/health',
           query: 'Daft Punk',
           elapsedMs,
-          note: 'The health endpoint runs the live song-search pipeline used by the addon.'
+          note: 'The health check exercises the live song-search pipeline used by the addon.'
         });
       }, 2000);
 
       try {
-        const response = await fetch('/api/bitmono/health', {
+        let usingSearchFallback = useLegacySearchHealth;
+        let endpoint = usingSearchFallback
+          ? '/bitmono/search?q=Daft%20Punk'
+          : '/api/bitmono/health';
+        let response = await fetch(endpoint, {
           cache: 'no-store',
           headers: { Accept: 'application/json' },
           signal: controller.signal
         });
-        const payload = await response.json().catch(() => null);
+        let payload = await response.json().catch(() => null);
+
+        // Older Deplexo backend builds expose the production search route but
+        // do not yet include the dedicated /api/bitmono/health diagnostic.
+        // Detect that once, then use the real search route as a compatibility
+        // probe instead of logging a 404 every few seconds.
+        if (!usingSearchFallback && response.status === 404) {
+          useLegacySearchHealth = true;
+          usingSearchFallback = true;
+          endpoint = '/bitmono/search?q=Daft%20Punk';
+          response = await fetch(endpoint, {
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal
+          });
+          payload = await response.json().catch(() => null);
+          if (active) {
+            console.warn('[BitMono health] Dedicated health route is not deployed yet; using live search compatibility check.', {
+              healthEndpoint: '/api/bitmono/health',
+              fallbackEndpoint: endpoint,
+              fallbackHttpStatus: response.status
+            });
+          }
+        }
+
         if (!active) return;
+
+        if (usingSearchFallback) {
+          const tracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
+          const provider = tracks.some(track => String(track?.id || '').startsWith('dzr_'))
+            ? 'deezer'
+            : 'monochrome';
+          payload = {
+            ok: response.ok && tracks.length > 0,
+            status: response.ok && tracks.length > 0 ? 'good' : 'bad',
+            statusMessage: tracks.length
+              ? 'BitMono live search is working. Using the search route as a compatibility health check until the backend health route is deployed.'
+              : 'The BitMono compatibility search returned no tracks. Check the live search backend.',
+            requestId: response.headers.get('X-BitMono-Request-Id') || payload?.requestId || null,
+            provider: tracks.length ? provider : null,
+            resultCount: tracks.length,
+            sampleTracks: tracks.slice(0, 3).map(track => ({
+              title: String(track?.title || '').slice(0, 90),
+              artist: String(track?.artist || '').slice(0, 90),
+              provider: String(track?.id || '').startsWith('dzr_') ? 'deezer' : 'monochrome'
+            })),
+            error: payload?.error || null,
+            message: payload?.message || null
+          };
+        }
 
         const clientLatencyMs = Math.round(performance.now() - startedAt);
         const details = {
           requestId: response.headers.get('X-BitMono-Request-Id') || payload?.requestId || null,
           httpStatus: response.status,
+          endpoint,
+          healthEndpointFallback: usingSearchFallback,
           clientLatencyMs,
-          serverDurationMs: Number.isFinite(Number(payload?.durationMs)) ? Number(payload.durationMs) : null,
+          serverDurationMs: payload?.durationMs == null ? null : (Number.isFinite(Number(payload.durationMs)) ? Number(payload.durationMs) : null),
           provider: payload?.provider || null,
           resultCount: Number(payload?.resultCount || 0),
           sampleTracks: Array.isArray(payload?.sampleTracks) ? payload.sampleTracks : [],
@@ -1348,7 +1403,11 @@ export default function App() {
         if (!response.ok || payload?.ok !== true || details.resultCount < 1) {
           const message = payload?.message || 'Live BitMono song search failed (HTTP ' + response.status + ').';
           setBitMonoHealth({ state: 'bad', message, ...details });
-          console.error('[BitMono health] Live song search failed.', details);
+          if (usingSearchFallback) {
+            console.warn('[BitMono health] Live search compatibility check is unavailable.', details);
+          } else {
+            console.error('[BitMono health] Live song search failed.', details);
+          }
           return;
         }
 
@@ -1371,8 +1430,9 @@ export default function App() {
           ? 'BitMono live song search did not respond within 20 seconds.'
           : (error?.message || 'BitMono health check could not reach the addon backend.');
         const details = {
-          endpoint: '/api/bitmono/health',
+          endpoint: useLegacySearchHealth ? '/bitmono/search' : '/api/bitmono/health',
           query: 'Daft Punk',
+          healthEndpointFallback: useLegacySearchHealth,
           clientLatencyMs,
           error: error?.message || String(error),
           aborted: error?.name === 'AbortError'
@@ -1388,7 +1448,7 @@ export default function App() {
 
     setBitMonoHealth({ state: 'checking', message: 'Checking live BitMono song search.' });
     void checkBitMonoHealth();
-    const interval = window.setInterval(checkBitMonoHealth, 5000);
+    const interval = window.setInterval(checkBitMonoHealth, 30000);
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') void checkBitMonoHealth();
     };

@@ -85,36 +85,6 @@ export function allowedLocalCiderJob(job) {
 }
 
 async function probeLocalCider(signal, token) {
-  // First make a baseline request without apptoken. This checks whether the
-  // browser can read Cider's local API from this page before testing the
-  // additional preflight caused by the custom authentication header. A fetch
-  // TypeError alone cannot distinguish CORS from a refused local connection.
-  try {
-    await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      cache: 'no-store',
-      redirect: 'error',
-      headers: { Accept: 'application/json' },
-      targetAddressSpace: 'loopback',
-      signal: AbortSignal.any([signal, AbortSignal.timeout(4500)])
-    });
-  } catch (cause) {
-    if (cause?.name === 'TypeError') {
-      const error = new Error(
-        'BitCider can’t connect to Cider. Make sure Cider is open, allow this website to access your local network in Chrome, and approve the connection in Cider if asked. If it still doesn’t work, Cider may be blocking the connection.'
-      );
-      error.code = 'LOCAL_CIDER_CORS_BLOCKED';
-      error.corsStage = 'origin-or-loopback';
-      error.cause = cause;
-      throw error;
-    }
-    throw cause;
-  }
-
-  // This second request adds the documented apptoken header. Because that
-  // header is not CORS-safelisted, the browser must preflight it with OPTIONS.
   let response;
   try {
     response = await fetch(LOCAL_CIDER_ORIGIN + '/api/v2/client/info', {
@@ -133,15 +103,16 @@ async function probeLocalCider(signal, token) {
   } catch (cause) {
     if (cause?.name === 'TypeError') {
       const error = new Error(
-        'Cider allowed a basic request from this BitCider website, but blocked the authenticated request because its CORS policy did not allow the required apptoken header. Reconnecting the same token will not fix this Cider-side preflight restriction. Update Cider to a build that allows apptoken for approved browser origins.'
+        'The browser could not complete the authenticated request to Cider. Allow BitCider Loopback network access in Chrome and confirm Cider permits this BitCider website origin and the apptoken header.'
       );
       error.code = 'LOCAL_CIDER_CORS_BLOCKED';
-      error.corsStage = 'apptoken';
+      error.corsStage = 'authenticated-request';
       error.cause = cause;
       throw error;
     }
     throw cause;
   }
+
   const payload = await response.json().catch(() => ({}));
   const apiError = payload?.error;
   const ciderCode = typeof apiError === 'object'

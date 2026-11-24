@@ -473,25 +473,33 @@ test('main App owns the browser bridge state used by its relay effect and panel'
 });
 
 
-test('Cider auth probe separates origin CORS from the apptoken preflight and handles current 403 auth errors', async () => {
+test('Cider auth probe makes only the authenticated request and surfaces real 403 token failures', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src/cider-bridge.js'), 'utf8');
   const appSource = await fs.readFile(path.join(ROOT, 'src/App.jsx'), 'utf8');
   const probeStart = source.indexOf('async function probeLocalCider(');
   const probeEnd = source.indexOf('async function executeLocalCiderJob(', probeStart);
   const probe = source.slice(probeStart, probeEnd);
-  assert.match(probe, /async function probeLocalCider\(signal, token\)/);
-  assert.match(probe, /headers:\s*\{\s*Accept:\s*'application\/json'\s*\}/);
-  assert.match(probe, /apptoken:\s*token/);
-  assert.match(probe, /error\.corsStage = 'origin-or-loopback'/);
-  assert.match(probe, /error\.corsStage = 'apptoken'/);
-  assert.match(probe, /Cider allowed a basic request from this BitCider website/);
-  assert.match(source, /await probeLocalCider\(signal, ciderToken\)/);
-  assert.match(source, /LOCAL_CIDER_CORS_BLOCKED/);
-  assert.match(source, /error\?\.status === 401 \|\| error\?\.status === 403/);
-  assert.match(appSource, /browserBridge\.state === 'cider-auth-required' && \(/);
-  assert.match(appSource, /browserBridge\.state === 'cider-access-blocked'/);
+  assert.match(probe, /async function probeLocalCider\\(signal, token\\)/);
+  assert.equal((probe.match(/fetch\\(/g) || []).length, 1, 'the probe should not make an unauthenticated request that Cider predictably rejects');
+  assert.match(probe, /apptoken:\\s*token/);
+  assert.match(probe, /error\\.corsStage = 'authenticated-request'/);
+  assert.match(probe, /The browser could not complete the authenticated request to Cider/);
+  assert.doesNotMatch(probe, /mode:\\s*'no-cors'/);
+  assert.match(source, /await probeLocalCider\\(signal, ciderToken\\)/);
+  assert.match(source, /error\\?\\.status === 401 \\|\\| error\\?\\.status === 403/);
+  assert.match(appSource, /browserBridge\\.state === 'cider-auth-required' && \\(/);
+  assert.match(appSource, /browserBridge\\.state === 'cider-access-blocked'/);
   assert.match(appSource, /CIDER ACCESS BLOCKED/);
   assert.match(appSource, /RECONNECT CIDER ON THIS DEVICE/);
+});
+
+test('BitMono health automatically falls back to the live search route when an older backend lacks the health endpoint', async () => {
+  const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
+  assert.ok(appSource.includes('let useLegacySearchHealth = false;'));
+  assert.ok(appSource.includes('if (!usingSearchFallback && response.status === 404)'));
+  assert.ok(appSource.includes("'/bitmono/search?q=Daft%20Punk'"));
+  assert.ok(appSource.includes("healthEndpointFallback: usingSearchFallback"));
+  assert.ok(appSource.includes('window.setInterval(checkBitMonoHealth, 30000)'));
 });
 
 test('GradientASCII declares its shader-link readiness helper only once', async () => {
