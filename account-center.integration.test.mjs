@@ -113,10 +113,13 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.ok(panel.includes('startAuthentication({ optionsJSON })'));
   assert.ok(panel.includes('startRegistration({ optionsJSON })'));
   assert.ok(panel.includes("'/api/account/passkeys/register/options', { password: passkeyPassword }"));
-  assert.ok(panel.includes('const movement = window.setInterval'));
-  assert.ok(panel.includes('}, 900);'));
+  assert.ok(panel.includes("deleteStage !== 'hands'"));
+  assert.ok(panel.includes("setDeleteStage('hands')"));
+  assert.ok(panel.includes("setTimeout(() => setDeleteStage('game'), 2000)"));
+  assert.ok(panel.includes("buffer.indexOf('\\\\n\\\\n')"));
   assert.ok(panel.includes('if (nextCatch >= 5)'));
-  assert.ok(panel.includes("deleteStage !== 'game' && <button type=\"button\" className=\"account-danger-button\""));
+  assert.ok(panel.includes('account-delete-start'));
+  assert.ok(panel.includes('account-peekaboo-hands'));
   assert.ok(panel.includes('className="account-danger-button account-delete-target"'));
   assert.ok(panel.includes("style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}"));
   assert.ok(styleSource.includes('.account-center-content {'));
@@ -126,6 +129,8 @@ test('Account Center removes the fixed profile row and global password banner wh
   const movingButtonStyles = styleSource.slice(styleSource.indexOf('.account-delete-target {'), styleSource.indexOf('.account-delete-cinema {'));
   assert.ok(movingButtonStyles.includes('position: fixed'));
   assert.ok(movingButtonStyles.includes('z-index: 2300'));
+  assert.ok(styleSource.includes('@keyframes peekaboo-cover'));
+  assert.ok(styleSource.includes('account-delete-start::before'));
 });
 
 
