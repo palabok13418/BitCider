@@ -42,7 +42,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-23-account-key-v11';
+const API_VERSION = '2026-11-24-account-center-v12';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
 const browserBridges = new Map();
@@ -1105,7 +1105,10 @@ app.get('/api/status', localOnly, async (req, res) => {
     passkeys,
     account: authenticated ? {
       authenticated: true,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      accountKeyConfigured: Boolean(user.accountKeyHash),
+      passwordConfigured: Boolean(user.password?.hash),
+      recoveryCodeCount: Array.isArray(user.recoveryCodeHashes) ? user.recoveryCodeHashes.length : 0
     } : { authenticated: false },
     error: null
   });
@@ -1304,6 +1307,77 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
   }
 });
 
+app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async (req, res) => {
+  const { user, sessionId, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before deleting this account.' });
+  }
+  if (req.body?.confirmation !== 'DELETE') {
+    return res.status(400).json({ error: 'DELETE_CONFIRMATION_REQUIRED', message: 'Complete the deletion confirmation before continuing.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+  }
+
+  const passwordHash = user.password?.hash;
+  res.status(200);
+  res.set('Content-Type', 'text/event-stream; charset=utf-8');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, no-transform');
+  res.set('Connection', 'keep-alive');
+  res.set('X-Accel-Buffering', 'no');
+  // Clear only this origin's HTTP cache and web storage. The session cookie
+  // is expired separately below without a broad domain cookie-clearing rule.
+  res.set('Clear-Site-Data', '"cache", "storage"');
+  res.flushHeaders?.();
+
+  const sendProgress = (progress, label, type = 'progress') => {
+    if (res.destroyed) return;
+    res.write('data: ' + JSON.stringify({ type, progress, label }) + '\\n\\n');
+    res.flush?.();
+  };
+
+  sendProgress(6, 'Closing active Cider browser connections');
+  for (const registration of [...browserBridges.values()]) {
+    if (registration.accountId === accountId) {
+      invalidateBrowserBridge(registration.ownerKey, 'This BitCider account was deleted.');
+    }
+  }
+
+  sendProgress(24, 'Revoking passkeys, backup codes, Account Key, and device sessions');
+  const deletion = await updateStore(store => {
+    const account = store.accounts[accountId];
+    if (!account || account.password?.hash !== passwordHash) {
+      return { ok: false, write: false };
+    }
+    for (const [sessionHash, entry] of Object.entries(store.authSessions)) {
+      if (entry?.accountId === accountId) delete store.authSessions[sessionHash];
+    }
+    for (const [pendingSessionId, pending] of Object.entries(store.sessions)) {
+      if (pending?.pendingAccountId === accountId) delete store.sessions[pendingSessionId];
+    }
+    for (const [challengeHash, challenge] of Object.entries(store.webauthnChallenges)) {
+      if (challenge?.accountId === accountId) delete store.webauthnChallenges[challengeHash];
+    }
+    delete store.sessions[sessionId];
+    delete store.authSessions[hashSessionId(sessionId)];
+    // Removing the account record in this same atomic write destroys its
+    // passkey public keys, recovery-code hashes, Account Key verifier,
+    // password verifier, encrypted Cider token, and private addon key.
+    delete store.accounts[accountId];
+    return { ok: true };
+  });
+
+  if (!deletion.ok) {
+    sendProgress(100, 'The account changed before deletion could finish. Nothing further was removed.', 'error');
+    return res.end();
+  }
+
+  sendProgress(92, 'Account credentials, passkeys, recovery codes, Cider link, and device sessions removed');
+  clearSessionCookie(res);
+  sendProgress(100, 'This account has been permanently deleted', 'complete');
+  return res.end();
+});
+
 app.post('/api/account/logout', localOnly, requireCsrf, async (req, res) => {
   const sessionId = req.bitciderSessionId;
   const session = getUserSession(req, res);
@@ -1377,6 +1451,97 @@ app.post('/api/account/recover', localOnly, authRateLimit(5), requireCsrf, requi
     console.error('BitCider password recovery failed:', error.message);
     return res.status(500).json({ error: 'RECOVERY_FAILED', message: 'Could not recover this account. Try again.' });
   }
+});
+
+app.post('/api/account/password/change', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const { user, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before changing your password.' });
+  }
+  const currentPassword = req.body?.currentPassword;
+  const newPassword = req.body?.newPassword;
+  if (!await verifyPassword(currentPassword, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+  }
+  if (!validatePassword(newPassword)) {
+    return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a valid new password.' });
+  }
+
+  let nextPassword;
+  try { nextPassword = await createPasswordRecord(newPassword); }
+  catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a valid new password.' }); }
+
+  const previousHash = user.password?.hash;
+  const result = await updateStore(store => {
+    const account = store.accounts[accountId];
+    if (!account || account.password?.hash !== previousHash) {
+      return { status: 409, error: 'ACCOUNT_CHANGED', message: 'Your account changed during this request. Refresh and try again.', write: false };
+    }
+    account.password = nextPassword;
+    const currentHash = hashSessionId(req.bitciderSessionId);
+    let revokedDevices = 0;
+    for (const [sessionHash, entry] of Object.entries(store.authSessions)) {
+      if (entry?.accountId === accountId && sessionHash !== currentHash) {
+        delete store.authSessions[sessionHash];
+        revokedDevices += 1;
+      }
+    }
+    return { ok: true, revokedDevices };
+  });
+  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+  res.set('Cache-Control', 'no-store');
+  return res.json({ ok: true, revokedDevices: result.revokedDevices });
+});
+
+app.post('/api/account/key/rotate', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const { user, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before replacing your Account Key.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+  }
+
+  const previousHash = user.password?.hash;
+  const accountKey = createAccountKey();
+  const accountKeyHash = hashAccountKey(accountKey);
+  const result = await updateStore(store => {
+    const account = store.accounts[accountId];
+    if (!account || account.password?.hash !== previousHash) {
+      return { status: 409, error: 'ACCOUNT_CHANGED', message: 'Your account changed during this request. Refresh and try again.', write: false };
+    }
+    account.accountKeyHash = accountKeyHash;
+    return { ok: true };
+  });
+  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  return res.json({ ok: true, accountKey });
+});
+
+app.post('/api/account/recovery-codes/rotate', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const { user, accountId, authenticated } = getUserSession(req, res);
+  if (!authenticated || !accountId) {
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before replacing your recovery codes.' });
+  }
+  if (!await verifyPassword(req.body?.password, user.password)) {
+    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+  }
+
+  const previousHash = user.password?.hash;
+  const recovery = createRecoveryCodes();
+  const result = await updateStore(store => {
+    const account = store.accounts[accountId];
+    if (!account || account.password?.hash !== previousHash) {
+      return { status: 409, error: 'ACCOUNT_CHANGED', message: 'Your account changed during this request. Refresh and try again.', write: false };
+    }
+    account.recoveryCodeHashes = recovery.hashes;
+    return { ok: true };
+  });
+  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
+  return res.json({ ok: true, recoveryCodes: recovery.codes });
 });
 
 app.post('/api/account/passkeys/register/options', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
