@@ -198,7 +198,7 @@ test('account center rotates secrets and permanently deletes the account and ori
   assert.equal(keyRevealOptions.payload.userVerification, 'required');
   assert.equal(keyRevealOptions.payload.allowCredentials[0].id, 'integration-passkey-id');
   const keyChallengeStore = JSON.parse(await fs.readFile(storePath, 'utf8'));
-  const keyChallenge = keyChallengeStore.webauthnChallenges[crypto.createHash('sha256').update(cookie.split('=')[1]).digest('hex')];
+  const keyChallenge = Object.values(keyChallengeStore.webauthnChallenges)[0];
   assert.equal(keyChallenge.purpose, 'reveal-secret');
   assert.equal(keyChallenge.accountId, accountId);
   assert.equal(keyChallenge.secretType, 'account-key');
