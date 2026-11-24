@@ -2252,6 +2252,9 @@ h1 .bitchord-word {
   grid-template-columns: repeat(2, minmax(0,1fr));
   gap: 12px;
 }
+.account-center-overlay.is-delete-hunt .account-center-card {
+  background: linear-gradient(145deg, rgba(34,22,26,.995), rgba(17,12,15,.998));
+}
 .account-center-card {
   position: relative;
   z-index: 5;

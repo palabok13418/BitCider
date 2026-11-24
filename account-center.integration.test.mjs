@@ -126,7 +126,7 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.doesNotMatch(panel, /account-peekaboo-hand|clipPath|deletePeekSide/);
   assert.ok(panel.includes("setDeleteStage('hands')"));
   assert.ok(panel.includes("const visibleCards = cards"));
-  assert.ok(panel.includes("cover.top - panelRect.top + buttonHeight * 0.08"));
+  assert.ok(panel.includes("cover.top - panelRect.top - buttonHeight * 0.04"));
   assert.ok(styleSource.includes('.account-center-content {'));
   assert.ok(styleSource.includes('scrollbar-width: none;'));
   assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));

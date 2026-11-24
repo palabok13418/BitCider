@@ -710,7 +710,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     // The upper portion peeks above a real Account Center card; the rest is layered underneath it.
     const y = Math.max(buttonHeight / 2, Math.min(
       panelRect.height - buttonHeight / 2,
-      cover.top - panelRect.top + buttonHeight * 0.08
+      cover.top - panelRect.top - buttonHeight * 0.04
     ));
     return { x, y: Math.round(y) };
   }
