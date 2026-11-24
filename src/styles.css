@@ -2210,91 +2210,16 @@ h1 .bitchord-word {
   width: 0;
   height: 0;
 }
-.account-center-profile-note {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255,255,255,.085);
-  border-radius: 13px;
-  background: rgba(255,255,255,.025);
-}
-.account-center-profile-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 11px;
-  color: #c8a9b0;
-  background: rgba(255,255,255,.035);
-}
-.account-center-profile-note strong {
-  color: #f5e8eb;
-  font-size: 11px;
-  font-weight: 700;
-}
-.account-center-profile-note p {
-  margin: 3px 0 0;
-  color: #a98d93;
-  font-size: 10px;
-  line-height: 1.45;
-}
-.account-center-fixed {
-  margin-left: auto;
-  color: #927b80;
-  font: 8px var(--mono);
-  letter-spacing: .12em;
-}
-.account-center-reauth {
-  display: grid;
-  grid-template-columns: minmax(220px, .9fr) 1.1fr;
-  align-items: end;
-  gap: 14px;
-  margin: 15px 0 17px;
-  padding: 14px;
-  border: 1px solid rgba(242,193,204,.13);
-  border-radius: 14px;
-  background: rgba(5,3,4,.23);
-}
-.account-center-reauth label {
+.account-center-password-label {
   display: grid;
   gap: 7px;
+  margin: 10px 0;
   min-width: 0;
 }
-.account-center-reauth label > span {
+.account-center-password-label > span {
   color: #b4949b;
   font: 8px var(--mono);
   letter-spacing: .11em;
-}
-.account-center-reauth input,
-.account-center-input {
-  width: 100%;
-  min-width: 0;
-  min-height: 39px;
-  padding: 0 12px;
-  border: 1px solid rgba(255,221,227,.12);
-  border-radius: 9px;
-  outline: 0;
-  color: #fff0f3;
-  background: rgba(0,0,0,.29);
-  font-size: 11px;
-  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
-}
-.account-center-reauth input:focus,
-.account-center-input:focus {
-  border-color: rgba(241,166,181,.55);
-  background: rgba(0,0,0,.39);
-  box-shadow: 0 0 0 3px rgba(241,166,181,.08);
-}
-.account-center-reauth input::placeholder,
-.account-center-input::placeholder { color: #765f65; }
-.account-center-reauth > p {
-  margin: 0;
-  color: #947b81;
-  font-size: 9px;
-  line-height: 1.6;
 }
 .account-center-grid {
   display: grid;
@@ -2853,7 +2778,6 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out b
   .account-center-content { padding: 15px 16px 18px; }
   .account-center-grid { grid-template-columns: 1fr; }
   .account-center-passkeys { grid-column: auto; }
-  .account-center-reauth { grid-template-columns: 1fr; gap: 8px; }
 }
 @media (max-width: 480px) {
   .topbar { gap: 12px; }
