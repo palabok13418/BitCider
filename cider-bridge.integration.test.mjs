@@ -905,7 +905,13 @@ test('BitMono page mode updates branding, tab metadata, and keeps the source URL
   assert.ok(appSource.includes("'/monofavicon.svg?v=bitmono-brand-20261123'"));
   assert.ok(appSource.includes("window.location.origin + '/bitmono/manifest.json'"));
   assert.ok(appSource.includes('className="bitmono-url-input" type="text" value={bitMonoAddonUrl} readOnly'));
-  assert.ok(appSource.includes('SWITCH SOURCE'));
+  const musicPanelIndex = appSource.indexOf('className="mode-switch-panel"');
+  const musicLabelIndex = appSource.indexOf('<span className="mode-pull-label">Music Sources</span>');
+  assert.ok(musicPanelIndex >= 0, 'Music Sources slider panel exists');
+  assert.ok(musicLabelIndex > musicPanelIndex, 'Music Sources label remains below the revealed slider');
+  assert.ok(!appSource.includes('SWITCH SOURCE'), 'old source-selector label is removed');
+  assert.ok(styleSource.includes('margin: 22px calc(0px - var(--connection-card-inset)) calc(0px - var(--connection-card-inset));'));
+  assert.ok(styleSource.includes('transform: translate3d(0,-16px,0);'));
   assert.ok(appSource.includes("setPageMode(nextMode)"));
   assert.ok(appSource.includes('The extra Atmos, Hi-Res, High, and Low choices stay available in BitChord'));
   assert.ok(styleSource.includes('.site-shell.mono-mode'));
