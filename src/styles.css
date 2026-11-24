@@ -1566,7 +1566,6 @@ h1 .bitchord-word {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
   width: 100%;
   min-height: 44px;
   padding: 0 22px;
@@ -1578,6 +1577,7 @@ h1 .bitchord-word {
   box-shadow: 0 9px 22px rgba(0,0,0,.22);
   font: 9px var(--mono);
   letter-spacing: .13em;
+  text-align: center;
   cursor: pointer;
   transition: color .22s ease, background .22s ease, border-radius .32s ease;
   touch-action: manipulation;
@@ -1602,19 +1602,6 @@ h1 .bitchord-word {
 .mode-pull-label {
   justify-self: center;
   white-space: nowrap;
-}
-
-.mode-pull-chevron {
-  justify-self: end;
-  display: inline-block;
-  color: currentColor;
-  font: 16px/1 sans-serif;
-  transform: rotate(0);
-  transition: transform .42s cubic-bezier(.18,.82,.24,1);
-}
-
-.mode-switcher.is-open .mode-pull-chevron {
-  transform: rotate(180deg);
 }
 
 .mode-switch-panel {
@@ -1805,7 +1792,6 @@ h1 .bitchord-word {
 
 @media (prefers-reduced-motion: reduce) {
   .mode-switcher,
-  .mode-pull-chevron,
   .mode-switch-panel,
   .mode-toggle-thumb { transition-duration: .01ms !important; }
   .mode-toggle.is-dragging .mode-toggle-thumb,
