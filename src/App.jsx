@@ -881,36 +881,26 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
   function randomDeletePosition() {
     const panel = document.querySelector('.account-center-panel');
-    if (!panel) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+    const grid = panel?.querySelector('.account-center-grid');
+    if (!panel || !grid) return { x: 160, y: 120, cardIndex: 0, side: 0 };
 
-    // The first three cards are Account Key, Password and Backup Codes.
-    // Select among all three, even when the user has scrolled away from them.
-    const content = panel.querySelector('.account-center-content');
+    // Keep the target attached to one of the three security cards. It is
+    // positioned in the grid's own coordinate space, so scrolling the cards
+    // carries the target with them instead of moving the whole account panel.
     const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3);
     const candidates = cards.filter(card => {
       const rect = card.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     });
-    if (!candidates.length) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+    if (!candidates.length) return { x: 160, y: 120, cardIndex: 0, side: 0 };
 
     const chosenCard = candidates[Math.floor(Math.random() * candidates.length)];
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-    // Reveal the chosen hiding card inside the account panel's own scroll area.
-    // This keeps the game target anchored to a real card even when the user
-    // started the game from the bottom of the settings panel.
-    if (content) {
-      const contentRect = content.getBoundingClientRect();
-      const initialRect = chosenCard.getBoundingClientRect();
-      const cardHeight = Math.min(initialRect.height, content.clientHeight);
-      const centeredTop = content.scrollTop +
-        initialRect.top - contentRect.top -
-        Math.max(0, (content.clientHeight - cardHeight) / 2);
-      const maxScroll = Math.max(0, content.scrollHeight - content.clientHeight);
-      content.scrollTop = clamp(centeredTop, 0, maxScroll);
-    }
-
+    const gridRect = grid.getBoundingClientRect();
     const rect = chosenCard.getBoundingClientRect();
+    const cardLeft = rect.left - gridRect.left;
+    const cardTop = rect.top - gridRect.top;
+    const cardRight = cardLeft + rect.width;
+    const cardBottom = cardTop + rect.height;
     const buttonWidth = window.innerWidth <= 480 ? 112 : 146;
     const buttonHeight = window.innerWidth <= 480 ? 39 : 41;
     const randomBetween = (min, max) => min <= max
@@ -920,25 +910,25 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     let x;
     let y;
 
-    // The button sits behind the card (z-index 4 vs 5). Its center is nudged
-    // just inside the chosen edge, leaving only a narrow clickable strip out.
+    // The target sits underneath the card (z-index 4 vs 5), with a visible
+    // strip extending beyond exactly one of its four edges.
     if (side === 0) { // top edge
-      x = randomBetween(rect.left + buttonWidth * 0.55, rect.right - buttonWidth * 0.55);
-      y = rect.top + buttonHeight * 0.3;
+      x = randomBetween(cardLeft + buttonWidth * 0.55, cardRight - buttonWidth * 0.55);
+      y = cardTop + buttonHeight * 0.2;
     } else if (side === 1) { // right edge
-      x = rect.right - buttonWidth * 0.3;
-      y = randomBetween(rect.top + buttonHeight * 0.55, rect.bottom - buttonHeight * 0.55);
+      x = cardRight - buttonWidth * 0.2;
+      y = randomBetween(cardTop + buttonHeight * 0.55, cardBottom - buttonHeight * 0.55);
     } else if (side === 2) { // bottom edge
-      x = randomBetween(rect.left + buttonWidth * 0.55, rect.right - buttonWidth * 0.55);
-      y = rect.bottom - buttonHeight * 0.3;
+      x = randomBetween(cardLeft + buttonWidth * 0.55, cardRight - buttonWidth * 0.55);
+      y = cardBottom - buttonHeight * 0.2;
     } else { // left edge
-      x = rect.left + buttonWidth * 0.3;
-      y = randomBetween(rect.top + buttonHeight * 0.55, rect.bottom - buttonHeight * 0.55);
+      x = cardLeft + buttonWidth * 0.2;
+      y = randomBetween(cardTop + buttonHeight * 0.55, cardBottom - buttonHeight * 0.55);
     }
 
     return {
-      x: Math.round(clamp(x, buttonWidth * 0.55, window.innerWidth - buttonWidth * 0.55)),
-      y: Math.round(clamp(y, buttonHeight * 0.55, window.innerHeight - buttonHeight * 0.55)),
+      x: Math.round(x),
+      y: Math.round(y),
       cardIndex: cards.indexOf(chosenCard),
       side
     };
@@ -1105,6 +1095,15 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
         <div className="account-center-content">
           <div className="account-center-grid">
+            {deleteStage === 'game' && (
+              <button
+                className="account-danger-button account-delete-target"
+                type="button"
+                style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
+                onPointerDown={event => event.stopPropagation()}
+                onClick={catchDeleteTarget}
+              >Delete account</button>
+            )}
             <section className="account-center-card">
               <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
               {revealedAccountKey ? (
@@ -1181,15 +1180,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className={'account-danger-button account-delete-start' + (deleteStage === 'intro' ? ' is-launching' : '')} onClick={startDeleteGame} data-game-message="Let's play a little game before you terminate the account.">Delete account</button>}
           </div>
         </div>
-      {deleteStage === 'game' && (
-        <button
-          className="account-danger-button account-delete-target"
-          type="button"
-          style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
-          onPointerDown={event => event.stopPropagation()}
-          onClick={catchDeleteTarget}
-        >Delete account</button>
-      )}
       </section>
     </div>
     {deleteStage === 'hands' && (
