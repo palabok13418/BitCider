@@ -32,6 +32,7 @@ import {
   parseAddonTrackId,
   streamMetadata
 } from './audio-quality.mjs';
+import { applySecurityHeaders, createIpRateLimiter } from './security-hardening.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
@@ -60,6 +61,7 @@ const DUMMY_PASSWORD_RECORD = await createPasswordRecord(
 app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
+app.use(applySecurityHeaders);
 app.use(express.json({ limit: '256kb' }));
 app.use('/api', (_req, res, next) => {
   res.set('Cache-Control', 'no-store');
@@ -396,6 +398,20 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
     next();
   };
 }
+
+const bitMonoSearchRateLimit = createIpRateLimiter({ limit: 45, windowMs: 60_000 });
+const bitMonoStreamRateLimit = createIpRateLimiter({ limit: 12, windowMs: 60_000 });
+const bitMonoAudioRateLimit = createIpRateLimiter({ limit: 360, windowMs: 60_000 });
+const personalAddonSearchRateLimit = createIpRateLimiter({
+  limit: 35,
+  windowMs: 60_000,
+  keyGenerator: req => String(req.ip || req.socket?.remoteAddress || 'unknown') + ':' + req.params.addonKey
+});
+const personalAddonStreamRateLimit = createIpRateLimiter({
+  limit: 12,
+  windowMs: 60_000,
+  keyGenerator: req => String(req.ip || req.socket?.remoteAddress || 'unknown') + ':' + req.params.addonKey
+});
 
 function createAccountKey() {
   return crypto.randomBytes(32).toString('base64url');
@@ -1645,7 +1661,7 @@ app.post('/api/account/devices/revoke', localOnly, authRateLimit(5), requireCsrf
   return res.json({ ok: true });
 });
 
-app.post('/api/connect', localOnly, requireCsrf, async (req, res) => {
+app.post('/api/connect', localOnly, authRateLimit(10), requireCsrf, async (req, res) => {
   const { sessionId, user: previous, accountId, authenticated } = getUserSession(req, res);
   if (authenticated && !dedicatedTokenEncryptionKey()) {
     return res.status(503).json({
@@ -1750,7 +1766,7 @@ app.get('/api/connect', localOnly, (_req, res) => {
   });
 });
 
-app.post('/api/disconnect', localOnly, requireCsrf, async (req, res) => {
+app.post('/api/disconnect', localOnly, authRateLimit(10), requireCsrf, async (req, res) => {
   const { sessionId, accountId, authenticated } = getUserSession(req, res);
   await updateStore(store => {
     if (authenticated) {
@@ -2666,7 +2682,7 @@ app.get('/bitmono/manifest.json', (_req, res) => {
   });
 });
 
-app.get('/bitmono/search', async (req, res) => {
+app.get('/bitmono/search', bitMonoSearchRateLimit, async (req, res) => {
   const requestId = crypto.randomUUID();
   const queryFromClient = String(req.query.q || '').trim();
   const requestedTitle = String(req.query.title || '').trim();
@@ -2773,7 +2789,7 @@ app.get('/bitmono/search', async (req, res) => {
   }
 });
 
-app.get('/bitmono/stream/:trackId', async (req, res) => {
+app.get('/bitmono/stream/:trackId', bitMonoStreamRateLimit, async (req, res) => {
   const requestId = crypto.randomUUID();
   const suppliedId = String(req.params.trackId || '').trim();
   if (suppliedId.startsWith('dzr_')) {
@@ -2887,8 +2903,8 @@ async function serveBitMonoCachedAudioRoute(req, res) {
   }
 }
 
-app.get('/bitmono/audio/:cacheKey', serveBitMonoCachedAudioRoute);
-app.head('/bitmono/audio/:cacheKey', serveBitMonoCachedAudioRoute);
+app.get('/bitmono/audio/:cacheKey', bitMonoAudioRateLimit, serveBitMonoCachedAudioRoute);
+app.head('/bitmono/audio/:cacheKey', bitMonoAudioRateLimit, serveBitMonoCachedAudioRoute);
 
 app.get('/:addonKey/manifest.json', validAddonKey, (req, res) => {
   res.set('Cache-Control', 'private, no-store');
@@ -2943,7 +2959,7 @@ function sendAddonFailure(res, fallbackCode, error) {
   });
 }
 
-app.get('/:addonKey/search', validAddonKey, async (req, res) => {
+app.get('/:addonKey/search', validAddonKey, personalAddonSearchRateLimit, async (req, res) => {
   const query = String(req.query.q || '').trim();
   if (!query) return res.json({ tracks: [] });
   if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
@@ -2959,7 +2975,7 @@ app.get('/:addonKey/search', validAddonKey, async (req, res) => {
   }
 });
 
-app.get('/:addonKey/stream/:trackId', validAddonKey, async (req, res) => {
+app.get('/:addonKey/stream/:trackId', validAddonKey, personalAddonStreamRateLimit, async (req, res) => {
   const trackId = String(req.params.trackId || '');
   if (!trackId || trackId.length > 180) return res.status(400).json({ error: 'Invalid track id.' });
   try {
