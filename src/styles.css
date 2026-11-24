@@ -2556,7 +2556,9 @@ h1 .bitchord-word {
   border-radius: inherit;
   background: linear-gradient(90deg, #b86e82, #f4c8d2);
   box-shadow: 0 0 17px rgba(233,164,180,.38);
-  transition: width .58s cubic-bezier(.18,.82,.24,1);
+  background-size: 200% 100%;
+  animation: account-delete-bar-shimmer 1.05s linear infinite;
+  transition: width 1.2s cubic-bezier(.18,.82,.24,1);
 }
 .account-delete-progress-meta {
   display: flex;
@@ -2605,6 +2607,10 @@ html.bitcider-crt-on::after {
 html.bitcider-crt-off::after { animation: account-crt-phosphor-off .82s ease-out both; }
 html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out both; }
 
+@keyframes account-delete-bar-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
 @keyframes delete-target-glimmer {
   0%,100% { box-shadow: 0 8px 25px rgba(218,89,117,.2), inset 0 1px rgba(255,255,255,.55); }
   50% { box-shadow: 0 11px 34px rgba(218,89,117,.36), 0 0 18px rgba(255,166,186,.14), inset 0 1px rgba(255,255,255,.74); }
