@@ -1332,7 +1332,7 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
 
   const sendProgress = (progress, label, type = 'progress') => {
     if (res.destroyed) return;
-    res.write('data: ' + JSON.stringify({ type, progress, label }) + '\\n\\n');
+    res.write('data: ' + JSON.stringify({ type, progress, label }) + '\n\n');
     res.flush?.();
   };
 
