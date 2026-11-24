@@ -124,8 +124,8 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
   assert.ok(styleSource.includes('.account-center-password-label input'));
   const movingButtonStyles = styleSource.slice(styleSource.indexOf('.account-delete-target {'), styleSource.indexOf('.account-delete-cinema {'));
-  assert.match(movingButtonStyles, /position:\\s*fixed/);
-  assert.match(movingButtonStyles, /z-index:\\s*2300/);
+  assert.ok(movingButtonStyles.includes('position: fixed'));
+  assert.ok(movingButtonStyles.includes('z-index: 2300'));
 });
 
 
