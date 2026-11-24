@@ -1312,9 +1312,6 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
   if (!authenticated || !accountId) {
     return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before deleting this account.' });
   }
-  if (req.body?.confirmation !== 'DELETE') {
-    return res.status(400).json({ error: 'DELETE_CONFIRMATION_REQUIRED', message: 'Complete the deletion confirmation before continuing.' });
-  }
   if (!await verifyPassword(req.body?.password, user.password)) {
     return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
   }
