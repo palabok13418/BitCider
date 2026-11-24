@@ -1590,7 +1590,11 @@ export default function App() {
           )}
           </div>
         </section>
-        <section className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`} aria-label="Switch source">
+        <section
+          className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`}
+          style={modePullProgress > 0 ? { '--pull-progress': modePullProgress } : undefined}
+          aria-label="Switch source"
+        >
             <button
               className="mode-pull-tab"
               type="button"
@@ -1604,7 +1608,6 @@ export default function App() {
               onPointerUp={finishModePull}
               onPointerCancel={cancelModePull}
               onLostPointerCapture={cancelModePull}
-              style={modePullProgress > 0 ? { '--pull-progress': modePullProgress } : undefined}
               aria-expanded={modeSwitcherOpen}
               aria-controls="bitcider-mode-panel"
             >
