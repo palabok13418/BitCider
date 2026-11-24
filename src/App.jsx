@@ -684,28 +684,35 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
   function randomDeletePosition() {
     const panel = document.querySelector('.account-center-panel');
-    const rect = panel?.getBoundingClientRect();
-    const width = window.innerWidth || 1280;
-    const height = window.innerHeight || 800;
-    if (!rect || !rect.width || !rect.height) {
-      return { x: Math.round(width / 2), y: Math.round(height / 2) };
+    const panelRect = panel?.getBoundingClientRect();
+    if (!panel || !panelRect?.width || !panelRect?.height) {
+      return { x: 180, y: 150 };
     }
 
-    const edge = ['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)];
-    const randomBetween = (minimum, maximum) => Math.round(minimum + Math.random() * Math.max(0, maximum - minimum));
-    if (edge === 'left') {
-      return { x: Math.round(rect.left + 34), y: randomBetween(rect.top + 58, rect.bottom - 58) };
-    }
-    if (edge === 'right') {
-      return { x: Math.round(rect.right - 34), y: randomBetween(rect.top + 58, rect.bottom - 58) };
-    }
-    if (edge === 'top') {
-      return { x: randomBetween(rect.left + 110, rect.right - 110), y: Math.round(rect.top + 10) };
-    }
-    return {
-      x: randomBetween(rect.left + 110, rect.right - 110),
-      y: Math.round(rect.bottom - 10)
-    };
+    const content = panel.querySelector('.account-center-content');
+    const contentRect = content?.getBoundingClientRect();
+    const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card'));
+    const visibleCards = cards
+      .map(card => ({ card, rect: card.getBoundingClientRect() }))
+      .filter(({ rect }) => contentRect && rect.width > 0 && rect.height > 0 &&
+        rect.bottom > contentRect.top + 4 && rect.top < contentRect.bottom - 4)
+      .sort((a, b) => a.rect.top - b.rect.top);
+    const cover = visibleCards[0]?.rect || panel.querySelector('.account-center-danger-zone')?.getBoundingClientRect();
+    if (!cover) return { x: Math.round(panelRect.width / 2), y: Math.round(panelRect.height / 2) };
+
+    const buttonWidth = window.innerWidth <= 480 ? 112 : 146;
+    const buttonHeight = window.innerWidth <= 480 ? 39 : 41;
+    const minX = Math.max(buttonWidth * 0.55, cover.left - panelRect.left + buttonWidth * 0.55);
+    const maxX = Math.min(panelRect.width - buttonWidth * 0.55, cover.right - panelRect.left - buttonWidth * 0.55);
+    const x = minX <= maxX
+      ? Math.round(minX + Math.random() * (maxX - minX))
+      : Math.round(panelRect.width / 2);
+    // The upper portion peeks above a real Account Center card; the rest is layered underneath it.
+    const y = Math.max(buttonHeight / 2, Math.min(
+      panelRect.height - buttonHeight / 2,
+      cover.top - panelRect.top + buttonHeight * 0.08
+    ));
+    return { x, y: Math.round(y) };
   }
 
   useEffect(() => {
@@ -940,21 +947,22 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className="account-danger-button account-delete-start" onClick={startDeleteGame} data-game-message="Let’s play a game before the end of the account.">Delete account</button>}
           </div>
         </div>
+      {deleteStage === 'game' && (
+        <button
+          className="account-danger-button account-delete-target"
+          type="button"
+          style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
+          onPointerDown={event => event.stopPropagation()}
+          onClick={catchDeleteTarget}
+        >Delete account</button>
+      )}
       </section>
     </div>
-    {deleteStage === 'game' && (
-      <button
-        className="account-danger-button account-delete-target"
-        type="button"
-        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
-        onPointerDown={event => event.stopPropagation()}
-        onClick={catchDeleteTarget}
-      >Delete account</button>
-    )}
     {deleteStage === 'hands' && (
-      <div className="account-peekaboo-hands" aria-hidden="true">
-        <span className="account-peekaboo-hand hand-left" />
-        <span className="account-peekaboo-hand hand-right" />
+      <div className="account-peekaboo-blink" aria-hidden="true">
+        <span className="account-peekaboo-lid eyelid-top" />
+        <span className="account-peekaboo-lid eyelid-bottom" />
+        <span className="account-peekaboo-closed-eyes">⌣　⌣</span>
       </div>
     )}
     </>

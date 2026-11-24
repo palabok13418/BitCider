@@ -2133,6 +2133,8 @@ h1 .bitchord-word {
 .account-center-overlay.is-delete-hunt { pointer-events: none; }
 .account-center-overlay.is-delete-hunt .account-center-panel { pointer-events: auto; }
 .account-center-panel {
+  position: relative;
+  isolation: isolate;
   width: min(100%, 860px);
   max-height: min(88vh, 900px);
   display: flex;
@@ -2251,6 +2253,8 @@ h1 .bitchord-word {
   gap: 12px;
 }
 .account-center-card {
+  position: relative;
+  z-index: 5;
   min-width: 0;
   padding: 16px;
   border: 1px solid rgba(255,255,255,.095);
@@ -2495,8 +2499,8 @@ h1 .bitchord-word {
   animation: account-delete-bubble-in .45s cubic-bezier(.2,.8,.2,1) both;
 }
 .account-delete-target {
-  position: fixed;
-  z-index: 1499;
+  position: absolute;
+  z-index: 4;
   min-width: 146px;
   min-height: 41px;
   padding: 0 16px;
@@ -2513,66 +2517,57 @@ h1 .bitchord-word {
   touch-action: manipulation;
   transition: left .42s cubic-bezier(.16,1,.3,1), top .42s cubic-bezier(.16,1,.3,1), filter .16s ease;
   animation: delete-target-glimmer 2.8s ease-in-out infinite;
+  text-align: left;
+  justify-content: flex-start;
 }
 .account-delete-target:hover { filter: brightness(1.12); }
 .account-delete-target:active { filter: brightness(.94); }
 .account-delete-target:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 
-.account-peekaboo-hands {
+.account-peekaboo-blink {
   position: fixed;
   z-index: 4000;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  background: rgba(0,0,0,.98);
-  animation: peekaboo-cover 2s ease-in-out both;
+  background: rgba(5, 3, 7, .2);
 }
-.account-peekaboo-hand {
+.account-peekaboo-lid {
   position: absolute;
-  top: -9%;
-  width: min(57vw, 650px);
-  height: 120%;
-  border-radius: 48% 48% 38% 38%;
+  left: -3%;
+  width: 106%;
+  height: 54%;
   background:
-    radial-gradient(ellipse at 48% 27%, rgba(255,231,207,.98) 0 9%, transparent 38%),
-    radial-gradient(ellipse at 50% 50%, #e8b99c 0 35%, #c98e70 68%, #8e5948 100%);
-  box-shadow: inset 18px 0 32px rgba(255,239,222,.24), inset -22px -8px 36px rgba(85,43,35,.3), 0 0 65px rgba(0,0,0,.8);
-  filter: saturate(.9);
+    radial-gradient(ellipse at 50% 100%, rgba(236,153,174,.16), transparent 42%),
+    linear-gradient(180deg, #09070c 0%, #21121b 68%, #3b202c 100%);
+  box-shadow: 0 18px 48px rgba(0,0,0,.46);
+  will-change: transform;
 }
-.account-peekaboo-hand::before {
-  content: "";
-  position: absolute;
-  top: 3%;
-  width: 100%;
-  height: 37%;
-  border-radius: 50%;
+.eyelid-top {
+  top: -2%;
+  border-radius: 0 0 48% 48% / 0 0 15% 15%;
+  animation: peekaboo-blink-top 2s cubic-bezier(.68,0,.28,1) both;
+}
+.eyelid-bottom {
+  bottom: -2%;
+  border-radius: 48% 48% 0 0 / 15% 15% 0 0;
   background:
-    radial-gradient(ellipse at 10% 55%, #f2c8ad 0 11%, #b97961 13%, transparent 17%),
-    radial-gradient(ellipse at 30% 45%, #f4cbb1 0 11%, #b97961 13%, transparent 17%),
-    radial-gradient(ellipse at 50% 42%, #f4cbb1 0 11%, #b97961 13%, transparent 17%),
-    radial-gradient(ellipse at 70% 45%, #f1c5a8 0 11%, #a96d58 13%, transparent 17%),
-    radial-gradient(ellipse at 90% 55%, #eab99d 0 10%, #9b604e 12%, transparent 17%);
+    radial-gradient(ellipse at 50% 0%, rgba(236,153,174,.12), transparent 42%),
+    linear-gradient(0deg, #09070c 0%, #21121b 68%, #3b202c 100%);
+  animation: peekaboo-blink-bottom 2s cubic-bezier(.68,0,.28,1) both;
 }
-.account-peekaboo-hand::after {
-  content: "";
+.account-peekaboo-closed-eyes {
   position: absolute;
-  top: 29%;
-  left: 22%;
-  width: 56%;
-  height: 48%;
-  border-radius: 48%;
-  background: radial-gradient(ellipse at 35% 22%, rgba(255,237,218,.35), transparent 58%), linear-gradient(145deg, #edc1a5, #c58b70 72%, #9a624f);
-  box-shadow: inset 0 8px 14px rgba(255,240,223,.2), inset 0 -15px 20px rgba(96,49,40,.18);
-}
-.hand-left {
-  left: -10%;
-  transform: rotate(-8deg);
-  animation: peekaboo-left-hand 2s cubic-bezier(.58,0,.32,1) both;
-}
-.hand-right {
-  right: -10%;
-  transform: rotate(8deg) scaleX(-1);
-  animation: peekaboo-right-hand 2s cubic-bezier(.58,0,.32,1) both;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  color: rgba(255,224,233,.9);
+  font: 600 clamp(35px, 8vw, 76px)/1 sans-serif;
+  letter-spacing: .2em;
+  text-shadow: 0 0 24px rgba(255,172,193,.34);
+  opacity: 0;
+  transform: translate(-50%,-50%) scale(.85);
+  animation: peekaboo-eyes-mark 2s ease-in-out both;
 }
 
 .account-delete-cinema {
@@ -2701,17 +2696,20 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on 1.55s ease-out 
   from { opacity: 0; transform: translateY(7px) scale(.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes peekaboo-cover {
-  0%, 72% { opacity: 1; visibility: visible; }
-  100% { opacity: 0; visibility: hidden; }
+@keyframes peekaboo-blink-top {
+  0%, 8% { transform: translateY(-104%); }
+  22%, 69% { transform: translateY(0); }
+  100% { transform: translateY(-104%); }
 }
-@keyframes peekaboo-left-hand {
-  0%, 68% { transform: translateX(0) rotate(-8deg); }
-  100% { transform: translateX(-125%) rotate(-15deg); }
+@keyframes peekaboo-blink-bottom {
+  0%, 8% { transform: translateY(104%); }
+  22%, 69% { transform: translateY(0); }
+  100% { transform: translateY(104%); }
 }
-@keyframes peekaboo-right-hand {
-  0%, 68% { transform: translateX(0) rotate(8deg) scaleX(-1); }
-  100% { transform: translateX(125%) rotate(15deg) scaleX(-1); }
+@keyframes peekaboo-eyes-mark {
+  0%, 18% { opacity: 0; transform: translate(-50%,-50%) scale(.85); }
+  30%, 65% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  82%, 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.06); }
 }
 @keyframes account-delete-bar-shimmer {
   from { background-position: 100% 0; }
@@ -2843,7 +2841,6 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on 1.55s ease-out 
   .account-center-danger-zone .account-danger-button { width: 100%; }
 
   .account-delete-target { min-width: 112px; min-height: 39px; font-size: 7px; }
-  .account-peekaboo-hand { width: 70vw; }
 }
 @media (prefers-reduced-motion: reduce) {
   .account-center-overlay,
