@@ -132,7 +132,9 @@ test('Account Center removes the fixed profile row and global password banner wh
   assert.doesNotMatch(panel, /account-peekaboo-hand|clipPath|deletePeekSide/);
   assert.ok(panel.includes("setDeleteStage('hands')"));
   assert.ok(panel.includes("const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3)"));
-  assert.ok(panel.includes('rect.right > 0 && rect.left < window.innerWidth'));
+  assert.ok(panel.includes('const content = panel.querySelector(\'.account-center-content\')'));
+  assert.ok(panel.includes('const chosenCard = candidates[Math.floor(Math.random() * candidates.length)]'));
+  assert.ok(panel.includes('content.scrollTop = clamp(centeredTop, 0, maxScroll)'));
   assert.ok(panel.includes('const side = Math.floor(Math.random() * 4)'));
   assert.ok(panel.includes("if (side === 0) { // top edge"));
   assert.ok(panel.includes("} else if (side === 1) { // right edge"));

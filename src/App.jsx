@@ -884,28 +884,38 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     if (!panel) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
 
     // The first three cards are Account Key, Password and Backup Codes.
-    // Pick any currently visible card and one of its four edges.
+    // Select among all three, even when the user has scrolled away from them.
+    const content = panel.querySelector('.account-center-content');
     const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3);
-    const visibleCards = cards
-      .map((card, index) => ({ card, index, rect: card.getBoundingClientRect() }))
-      .filter(({ rect }) => rect.width > 0 && rect.height > 0 &&
-        rect.right > 0 && rect.left < window.innerWidth &&
-        rect.bottom > 0 && rect.top < window.innerHeight);
-    if (!visibleCards.length) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
+    const candidates = cards.filter(card => {
+      const rect = card.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+    if (!candidates.length) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
 
-    const fullyVisibleCards = visibleCards.filter(({ rect }) =>
-      rect.left >= 0 && rect.right <= window.innerWidth &&
-      rect.top >= 0 && rect.bottom <= window.innerHeight
-    );
-    const candidates = fullyVisibleCards.length ? fullyVisibleCards : visibleCards;
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-    const { rect } = chosen;
+    const chosenCard = candidates[Math.floor(Math.random() * candidates.length)];
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    // Reveal the chosen hiding card inside the account panel's own scroll area.
+    // This keeps the game target anchored to a real card even when the user
+    // started the game from the bottom of the settings panel.
+    if (content) {
+      const contentRect = content.getBoundingClientRect();
+      const initialRect = chosenCard.getBoundingClientRect();
+      const cardHeight = Math.min(initialRect.height, content.clientHeight);
+      const centeredTop = content.scrollTop +
+        initialRect.top - contentRect.top -
+        Math.max(0, (content.clientHeight - cardHeight) / 2);
+      const maxScroll = Math.max(0, content.scrollHeight - content.clientHeight);
+      content.scrollTop = clamp(centeredTop, 0, maxScroll);
+    }
+
+    const rect = chosenCard.getBoundingClientRect();
     const buttonWidth = window.innerWidth <= 480 ? 112 : 146;
     const buttonHeight = window.innerWidth <= 480 ? 39 : 41;
     const randomBetween = (min, max) => min <= max
       ? min + Math.random() * (max - min)
       : (min + max) / 2;
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const side = Math.floor(Math.random() * 4);
     let x;
     let y;
@@ -929,7 +939,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     return {
       x: Math.round(clamp(x, buttonWidth * 0.55, window.innerWidth - buttonWidth * 0.55)),
       y: Math.round(clamp(y, buttonHeight * 0.55, window.innerHeight - buttonHeight * 0.55)),
-      cardIndex: chosen.index,
+      cardIndex: cards.indexOf(chosenCard),
       side
     };
   }
