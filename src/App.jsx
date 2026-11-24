@@ -544,7 +544,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   const [deleteStage, setDeleteStage] = useState('idle');
   const [deleteCaught, setDeleteCaught] = useState(0);
   const [deleteSpot, setDeleteSpot] = useState({ x: 160, y: 120 });
-  const [deletePeekSide, setDeletePeekSide] = useState('left');
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
   const [busyAction, setBusyAction] = useState('');
@@ -684,12 +683,28 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   function randomDeletePosition() {
+    const panel = document.querySelector('.account-center-panel');
+    const rect = panel?.getBoundingClientRect();
     const width = window.innerWidth || 1280;
     const height = window.innerHeight || 800;
-    const margin = 22;
+    if (!rect || !rect.width || !rect.height) {
+      return { x: Math.round(width / 2), y: Math.round(height / 2) };
+    }
+
+    const edge = ['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)];
+    const randomBetween = (minimum, maximum) => Math.round(minimum + Math.random() * Math.max(0, maximum - minimum));
+    if (edge === 'left') {
+      return { x: Math.round(rect.left + 34), y: randomBetween(rect.top + 58, rect.bottom - 58) };
+    }
+    if (edge === 'right') {
+      return { x: Math.round(rect.right - 34), y: randomBetween(rect.top + 58, rect.bottom - 58) };
+    }
+    if (edge === 'top') {
+      return { x: randomBetween(rect.left + 110, rect.right - 110), y: Math.round(rect.top + 10) };
+    }
     return {
-      x: Math.round(margin + Math.random() * Math.max(1, width - margin * 2)),
-      y: Math.round(margin + Math.random() * Math.max(1, height - margin * 2))
+      x: randomBetween(rect.left + 110, rect.right - 110),
+      y: Math.round(rect.bottom - 10)
     };
   }
 
@@ -702,7 +717,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   function startDeleteGame() {
     setDeleteCaught(0);
     setDeleteSpot(randomDeletePosition());
-    setDeletePeekSide(['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]);
     setDeleteStage('hands');
     setMessage('');
   }
@@ -717,7 +731,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
       return;
     }
     setDeleteSpot(randomDeletePosition());
-    setDeletePeekSide(['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]);
     setDeleteStage('hands');
   }
 
@@ -837,7 +850,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
   return (
     <>
-    <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && deleteStage !== 'game') closeOverlay(); }}>
+    <div className={'account-center-overlay' + (deleteStage === 'game' || deleteStage === 'hands' ? ' is-delete-hunt' : '')} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && deleteStage !== 'game' && deleteStage !== 'hands') closeOverlay(); }}>
       <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
         <header className="account-center-header">
           <div className="account-center-avatar"><Icon name="account" size={22} /></div>
@@ -924,7 +937,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
           <div className="account-center-danger-zone">
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
-            {deleteStage !== 'game' && <button type="button" className="account-danger-button account-delete-start" onClick={startDeleteGame} data-game-message="Let’s play a game before the end of the account.">Delete account</button>}
+            {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className="account-danger-button account-delete-start" onClick={startDeleteGame} data-game-message="Let’s play a game before the end of the account.">Delete account</button>}
           </div>
         </div>
       </section>
@@ -933,7 +946,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
       <button
         className="account-danger-button account-delete-target"
         type="button"
-        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px', clipPath: deletePeekSide === 'left' ? 'inset(0 68% 0 0)' : deletePeekSide === 'right' ? 'inset(0 0 0 68%)' : deletePeekSide === 'top' ? 'inset(0 0 68% 0)' : 'inset(68% 0 0 0)' }}
+        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
         onPointerDown={event => event.stopPropagation()}
         onClick={catchDeleteTarget}
       >Delete account</button>
