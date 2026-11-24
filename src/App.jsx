@@ -1542,7 +1542,8 @@ export default function App() {
             </>
           )}
           </div>
-          <section className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`} aria-label="Switch source">
+        </section>
+        <section className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`} aria-label="Switch source">
             <button
               className="mode-pull-tab"
               type="button"
@@ -1555,7 +1556,6 @@ export default function App() {
             </button>
 
           </section>
-        </section>
         <div className={`mode-switch-reveal-slot ${modeSwitcherOpen ? 'is-open' : ''}`} aria-hidden={!modeSwitcherOpen}>
             <div
               className="mode-switch-panel"
