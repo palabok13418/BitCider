@@ -86,9 +86,9 @@ a { color: inherit; text-decoration: none; }
 .tiny-dot { width: 6px; height: 6px; border-radius: 50%; background: #94787d; }
 
 .hero {
-  max-width: 1320px; margin: 0 auto; min-height: 610px;
+  max-width: 1320px; margin: 0 auto; min-height: 540px;
   display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
-  align-items: center; gap: clamp(50px, 8vw, 130px); padding: 78px 0 90px;
+  align-items: center; gap: clamp(50px, 8vw, 130px); padding: 48px 0 50px;
 }
 .hero-copy { max-width: 610px; padding-bottom: 15px; }
 .hero-copy, .hero-copy * {
@@ -738,7 +738,23 @@ h1 .bitchord-word {
 /* Keep the footer raised by the same amount in both source experiences. */
 .site-shell.cider-mode .footer,
 .site-shell.mono-mode .footer {
-  margin-top: -5vh;
+  margin-top: -8vh;
+}
+
+/* Lift both desktop hero columns together, without changing their grid slots. */
+@media (min-width: 901px) {
+  .hero-copy,
+  .connection-column {
+    transform: translateY(-1.5vh);
+  }
+}
+
+/* Keep the stacked tablet layout from inheriting the tighter desktop lift. */
+@media (max-width: 900px) {
+  .site-shell.cider-mode .footer,
+  .site-shell.mono-mode .footer {
+    margin-top: -5vh;
+  }
 }
 
 @media (max-width: 900px) {
