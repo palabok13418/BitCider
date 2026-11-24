@@ -123,8 +123,9 @@ function isGoogleChromeBrowser() {
     return brands.some(entry => entry.brand === 'Google Chrome');
   }
   const userAgent = navigator.userAgent || '';
-  return /Chrome\\/\\d+/i.test(userAgent)
-    && !/(Edg|OPR|Opera|Brave|CriOS|SamsungBrowser)\\//i.test(userAgent)
+  const chromiumShell = ['Edg/', 'OPR/', 'Opera/', 'Brave/', 'CriOS/', 'SamsungBrowser/'];
+  return userAgent.includes('Chrome/')
+    && !chromiumShell.some(marker => userAgent.includes(marker))
     && !navigator.brave;
 }
 
