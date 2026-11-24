@@ -535,12 +535,6 @@ function AccountSetupWindow({
 }
 
 
-const ACCOUNT_DELETE_SPOTS = [
-  { x: 16, y: 62 }, { x: 79, y: 67 }, { x: 52, y: 87 },
-  { x: 14, y: 79 }, { x: 86, y: 72 }, { x: 49, y: 61 },
-  { x: 72, y: 88 }, { x: 28, y: 74 }, { x: 88, y: 64 }
-];
-
 function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onStatusRefresh }) {
   const [passwordChangeCurrentPassword, setPasswordChangeCurrentPassword] = useState('');
   const [passkeyPassword, setPasskeyPassword] = useState('');
@@ -549,7 +543,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   const [revealedRecoveryCodes, setRevealedRecoveryCodes] = useState([]);
   const [deleteStage, setDeleteStage] = useState('idle');
   const [deleteCaught, setDeleteCaught] = useState(0);
-  const [deleteSpotIndex, setDeleteSpotIndex] = useState(0);
+  const [deleteSpot, setDeleteSpot] = useState({ x: 160, y: 120 });
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
   const [busyAction, setBusyAction] = useState('');
@@ -688,28 +682,46 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     }
   }
 
+  function randomDeletePosition() {
+    const width = window.innerWidth || 1280;
+    const height = window.innerHeight || 800;
+    const halfButtonWidth = Math.min(88, Math.max(56, width * 0.22));
+    const halfButtonHeight = Math.min(24, Math.max(20, height * 0.06));
+    const minX = halfButtonWidth + 8;
+    const maxX = Math.max(minX, width - halfButtonWidth - 8);
+    const minY = halfButtonHeight + 8;
+    const maxY = Math.max(minY, height - halfButtonHeight - 8);
+    return {
+      x: Math.round(minX + Math.random() * (maxX - minX)),
+      y: Math.round(minY + Math.random() * (maxY - minY))
+    };
+  }
+
+  useEffect(() => {
+    if (deleteStage !== 'game') return undefined;
+    const movement = window.setInterval(() => {
+      setDeleteSpot(randomDeletePosition());
+    }, 900);
+    return () => window.clearInterval(movement);
+  }, [deleteStage]);
+
   function startDeleteGame() {
     setDeleteCaught(0);
-    setDeleteSpotIndex(0);
+    setDeleteSpot(randomDeletePosition());
     setDeleteStage('game');
     setMessage('');
   }
 
-  function missDeleteTarget(event) {
-    if (event.target.closest('.account-delete-target')) return;
-    setDeleteCaught(0);
-    setDeleteSpotIndex(0);
-  }
-
   function catchDeleteTarget(event) {
     event.stopPropagation();
+    if (deleteStage !== 'game') return;
     const nextCatch = deleteCaught + 1;
     setDeleteCaught(nextCatch);
     if (nextCatch >= 5) {
       void executeDeletion();
       return;
     }
-    setDeleteSpotIndex(index => (index + 1) % ACCOUNT_DELETE_SPOTS.length);
+    setDeleteSpot(randomDeletePosition());
   }
 
   async function clearThisOriginData() {
@@ -817,8 +829,9 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   return (
-    <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeOverlay(); }}>
-      <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title" onPointerDown={deleteStage === 'game' ? missDeleteTarget : undefined}>
+    <>
+    <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && deleteStage !== 'game') closeOverlay(); }}>
+      <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
         <header className="account-center-header">
           <div className="account-center-avatar"><Icon name="account" size={22} /></div>
           <div className="account-center-title">
@@ -830,25 +843,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
         </header>
 
         <div className="account-center-content">
-          {deleteStage === 'game' ? (
-            <div className="account-delete-inline">
-              <span className="account-center-kicker">ACCOUNT DELETION</span>
-              <h3>Catch the delete button.</h3>
-              <p>Catch it five times inside this account window. Any other click resets the count.</p>
-              <div className="account-delete-catches" aria-label={deleteCaught + ' of 5 catches'}>
-                {Array.from({ length: 5 }, (_, index) => <i className={index < deleteCaught ? 'is-caught' : ''} key={index} />)}
-              </div>
-              <span className="account-delete-catch-count">{deleteCaught} / 5</span>
-              <button
-                className="account-delete-target"
-                type="button"
-                style={{ left: ACCOUNT_DELETE_SPOTS[deleteSpotIndex].x + '%', top: ACCOUNT_DELETE_SPOTS[deleteSpotIndex].y + '%' }}
-                onPointerDown={event => event.stopPropagation()}
-                onClick={catchDeleteTarget}
-              >DELETE ACCOUNT</button>
-            </div>
-          ) : (
-            <>
           <div className="account-center-grid">
             <section className="account-center-card">
               <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
@@ -925,11 +919,19 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
             <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>
           </div>
-            </>
-          )}
         </div>
       </section>
     </div>
+    {deleteStage === 'game' && (
+      <button
+        className="account-danger-button account-delete-target"
+        type="button"
+        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
+        onPointerDown={event => event.stopPropagation()}
+        onClick={catchDeleteTarget}
+      >Delete account</button>
+    )}
+    </>
   );
 }
 
