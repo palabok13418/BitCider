@@ -212,7 +212,7 @@ test('account center rotates secrets and permanently deletes the account and ori
     method: 'POST',
     cookie,
     csrf: statusAfterPasswordChange.payload.csrfToken,
-    body: { password: initialPassword, confirmation: 'DELETE' }
+    body: { password: initialPassword }
   });
   assert.equal(badDelete.response.status, 401);
   assert.equal(badDelete.payload.error, 'REAUTHENTICATION_REQUIRED');
@@ -224,7 +224,7 @@ test('account center rotates secrets and permanently deletes the account and ori
       'Content-Type': 'application/json',
       'X-BitCider-CSRF': statusAfterPasswordChange.payload.csrfToken
     },
-    body: JSON.stringify({ password: nextPassword, confirmation: 'DELETE' }),
+    body: JSON.stringify({ password: nextPassword }),
     cache: 'no-store'
   });
   assert.equal(deletionResponse.status, 200);
