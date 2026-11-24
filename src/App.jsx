@@ -778,10 +778,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   async function revealSecret(secretType) {
-    if (!(status.passkeys || []).length) {
-      notify('Add a passkey to this account first. A passkey is required to replace and reveal account secrets.', 'warning');
-      return;
-    }
     setBusyAction(secretType);
     setMessage('');
     try {
@@ -885,38 +881,58 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
   function randomDeletePosition() {
     const panel = document.querySelector('.account-center-panel');
-    const panelRect = panel?.getBoundingClientRect();
-    if (!panel || !panelRect?.width || !panelRect?.height) {
-      return { x: 180, y: 150 };
-    }
+    if (!panel) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
 
-    const content = panel.querySelector('.account-center-content');
-    const contentRect = content?.getBoundingClientRect();
-    const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card'));
+    // The first three cards are Account Key, Password and Backup Codes.
+    // Pick any currently visible card and one of its four edges.
+    const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3);
     const visibleCards = cards
-      .map(card => ({ card, rect: card.getBoundingClientRect() }))
-      .filter(({ rect }) => contentRect && rect.width > 0 && rect.height > 0 &&
-        rect.bottom > contentRect.top + 4 && rect.top < contentRect.bottom - 4)
-      .sort((a, b) => a.rect.top - b.rect.top);
-    const cover = visibleCards[0]?.rect || panel.querySelector('.account-center-danger-zone')?.getBoundingClientRect();
-    if (!cover) return { x: Math.round(panelRect.width / 2), y: Math.round(panelRect.height / 2) };
+      .map((card, index) => ({ card, index, rect: card.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.width > 0 && rect.height > 0 &&
+        rect.right > 0 && rect.left < window.innerWidth &&
+        rect.bottom > 0 && rect.top < window.innerHeight);
+    if (!visibleCards.length) return { x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) };
 
+    const fullyVisibleCards = visibleCards.filter(({ rect }) =>
+      rect.left >= 0 && rect.right <= window.innerWidth &&
+      rect.top >= 0 && rect.bottom <= window.innerHeight
+    );
+    const candidates = fullyVisibleCards.length ? fullyVisibleCards : visibleCards;
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    const { rect } = chosen;
     const buttonWidth = window.innerWidth <= 480 ? 112 : 146;
     const buttonHeight = window.innerWidth <= 480 ? 39 : 41;
-    const minX = Math.max(buttonWidth * 0.55, cover.left - panelRect.left + buttonWidth * 0.55);
-    const maxX = Math.min(panelRect.width - buttonWidth * 0.55, cover.right - panelRect.left - buttonWidth * 0.55);
-    const x = minX <= maxX
-      ? Math.round(minX + Math.random() * (maxX - minX))
-      : Math.round(panelRect.width / 2);
-    // Keep only a small top strip exposed. The account card's higher stacking
-    // level conceals most of the target until it darts out to a new position.
-    const y = Math.max(buttonHeight / 2, Math.min(
-      panelRect.height - buttonHeight / 2,
-      cover.top - panelRect.top + buttonHeight * 0.3
-    ));
-    return { x, y: Math.round(y) };
-  }
+    const randomBetween = (min, max) => min <= max
+      ? min + Math.random() * (max - min)
+      : (min + max) / 2;
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const side = Math.floor(Math.random() * 4);
+    let x;
+    let y;
 
+    // The button sits behind the card (z-index 4 vs 5). Its center is nudged
+    // just inside the chosen edge, leaving only a narrow clickable strip out.
+    if (side === 0) { // top edge
+      x = randomBetween(rect.left + buttonWidth * 0.55, rect.right - buttonWidth * 0.55);
+      y = rect.top + buttonHeight * 0.3;
+    } else if (side === 1) { // right edge
+      x = rect.right - buttonWidth * 0.3;
+      y = randomBetween(rect.top + buttonHeight * 0.55, rect.bottom - buttonHeight * 0.55);
+    } else if (side === 2) { // bottom edge
+      x = randomBetween(rect.left + buttonWidth * 0.55, rect.right - buttonWidth * 0.55);
+      y = rect.bottom - buttonHeight * 0.3;
+    } else { // left edge
+      x = rect.left + buttonWidth * 0.3;
+      y = randomBetween(rect.top + buttonHeight * 0.55, rect.bottom - buttonHeight * 0.55);
+    }
+
+    return {
+      x: Math.round(clamp(x, buttonWidth * 0.55, window.innerWidth - buttonWidth * 0.55)),
+      y: Math.round(clamp(y, buttonHeight * 0.55, window.innerHeight - buttonHeight * 0.55)),
+      cardIndex: chosen.index,
+      side
+    };
+  }
   useEffect(() => {
     if (deleteStage === 'intro') {
       const reveal = window.setTimeout(() => setDeleteStage('hands'), 850);
@@ -1090,7 +1106,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
                 <div className="account-center-masked-secret">•••• •••• •••• •••• •••• ••••</div>
               )}
               <p>The existing key is stored as a one-way verifier and cannot be read back. A passkey is required to replace it and reveal the new key.</p>
-              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={busyAction === 'account-key'}>
+              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!(status.passkeys || []).length || busyAction === 'account-key'}>
                 {busyAction === 'account-key' ? 'WAITING FOR PASSKEY…' : revealedAccountKey ? 'REPLACE & REVEAL KEY AGAIN' : 'REPLACE & REVEAL KEY'}
               </button>
             </section>
@@ -1117,7 +1133,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
                 <div className="account-center-masked-secret">•••• •••• •••• ••••</div>
               )}
               <p>Only code hashes are kept on the server. A passkey is required to replace this set and reveal the new codes. Replacing them invalidates every previous code.</p>
-              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={busyAction === 'backup-codes'}>
+              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!(status.passkeys || []).length || busyAction === 'backup-codes'}>
                 {busyAction === 'backup-codes' ? 'WAITING FOR PASSKEY…' : 'REPLACE & REVEAL BACKUP CODES'}
               </button>
             </section>
