@@ -1328,6 +1328,7 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
   // Clear only this origin's HTTP cache and web storage. The session cookie
   // is expired separately below without a broad domain cookie-clearing rule.
   res.set('Clear-Site-Data', '"cache", "storage"');
+  clearSessionCookie(res);
   res.flushHeaders?.();
 
   const sendProgress = (progress, label, type = 'progress') => {
@@ -1373,7 +1374,6 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
   }
 
   sendProgress(92, 'Account credentials, passkeys, recovery codes, Cider link, and device sessions removed');
-  clearSessionCookie(res);
   sendProgress(100, 'This account has been permanently deleted', 'complete');
   return res.end();
 });
