@@ -102,20 +102,22 @@ test('Account Center removes the fixed profile row and global password banner wh
   const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
   const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
   const panelStart = appSource.indexOf('function AccountManagementOverlay(');
-  const panelEnd = appSource.indexOf('\\nexport default function App()', panelStart);
+  const panelEnd = appSource.indexOf('\nexport default function App()', panelStart);
   assert.ok(panelStart >= 0 && panelEnd > panelStart);
   const panel = appSource.slice(panelStart, panelEnd);
 
   assert.doesNotMatch(panel, /Profile image|CONFIRM YOUR PASSWORD FOR SECURITY CHANGES/);
   assert.doesNotMatch(panel, /Enter your current password.*before deleting/i);
-  assert.match(panel, /body: JSON\\.stringify\\(\\{\\}\\)/);
-  assert.match(panel, /startAuthentication\\(\\{ optionsJSON \\}\\)/);
-  assert.match(panel, /startRegistration\\(\\{ optionsJSON \\}\\)/);
-  assert.match(panel, /'\\/api\\/account\\/passkeys\\/register\\/options', \\{ password: passkeyPassword \\}/);
-  assert.match(styleSource, /\\.account-center-content\\s*\\{[\\s\\S]*?scrollbar-width:\\s*none;/);
-  assert.match(styleSource, /\\.account-center-content::\\-webkit-scrollbar/);
-  assert.match(styleSource, /\\.account-center-password-label input/);
+  assert.ok(panel.includes('body: JSON.stringify({})'));
+  assert.ok(panel.includes('startAuthentication({ optionsJSON })'));
+  assert.ok(panel.includes('startRegistration({ optionsJSON })'));
+  assert.ok(panel.includes("'/api/account/passkeys/register/options', { password: passkeyPassword }"));
+  assert.ok(styleSource.includes('.account-center-content {'));
+  assert.ok(styleSource.includes('scrollbar-width: none;'));
+  assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
+  assert.ok(styleSource.includes('.account-center-password-label input'));
 });
+
 
 test('account center rotates secrets and permanently deletes the account and origin session', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-center-'));
