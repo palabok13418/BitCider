@@ -1323,7 +1323,7 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
   res.set('Connection', 'keep-alive');
   res.set('X-Accel-Buffering', 'no');
   // Clear only this origin's HTTP cache and web storage. The session cookie
-  // is expired separately below without a broad domain cookie-clearing rule.
+  // expires the session without clearing cookies belonging to other subdomains.
   res.set('Clear-Site-Data', '"cache", "storage"');
   clearSessionCookie(res);
   res.flushHeaders?.();
