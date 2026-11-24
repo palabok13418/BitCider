@@ -917,7 +917,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
           <div className="account-center-danger-zone">
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
-            <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>
+            {deleteStage !== 'game' && <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>}
           </div>
         </div>
       </section>
