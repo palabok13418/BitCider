@@ -549,8 +549,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   const [deleteStage, setDeleteStage] = useState('idle');
   const [deleteCaught, setDeleteCaught] = useState(0);
   const [deleteSpotIndex, setDeleteSpotIndex] = useState(0);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [deletePhrase, setDeletePhrase] = useState('');
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
   const [busyAction, setBusyAction] = useState('');
@@ -670,18 +668,19 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   function startDeleteGame() {
+    if (!currentPassword) {
+      return notify('Enter your current password in the security field above before deleting your account.', 'warning');
+    }
     setDeleteCaught(0);
     setDeleteSpotIndex(0);
-    setDeletePassword('');
-    setDeletePhrase('');
     setDeleteStage('game');
     setMessage('');
   }
 
   function missDeleteTarget(event) {
-    if (event.target.closest('.account-delete-target, .account-delete-cancel')) return;
+    if (event.target.closest('.account-delete-target')) return;
     setDeleteCaught(0);
-    setDeleteSpotIndex(index => (index + 3) % ACCOUNT_DELETE_SPOTS.length);
+    setDeleteSpotIndex(0);
   }
 
   function catchDeleteTarget(event) {
@@ -689,10 +688,10 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     const nextCatch = deleteCaught + 1;
     setDeleteCaught(nextCatch);
     if (nextCatch >= 5) {
-      setDeleteStage('confirm');
+      void executeDeletion();
       return;
     }
-    setDeleteSpotIndex(index => (index + 3 + nextCatch) % ACCOUNT_DELETE_SPOTS.length);
+    setDeleteSpotIndex(index => (index + 1) % ACCOUNT_DELETE_SPOTS.length);
   }
 
   async function clearThisOriginData() {
@@ -713,24 +712,26 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   async function executeDeletion() {
-    if (!deletePassword || deletePhrase !== 'DELETE') {
-      notify('Enter your current password and type DELETE to continue.', 'warning');
-      setDeleteStage('confirm');
-      return;
+    if (!currentPassword) {
+      setDeleteStage('idle');
+      return notify('Enter your current password in the security field above before deleting your account.', 'warning');
     }
 
     setDeleteStage('crt-off');
-    await new Promise(resolve => window.setTimeout(resolve, 620));
+    document.documentElement.classList.add('bitcider-crt-off');
+    await new Promise(resolve => window.setTimeout(resolve, 820));
+    document.documentElement.classList.remove('bitcider-crt-off');
+
     setDeleteStage('deleting');
-    setDeleteProgress(2);
-    setDeleteProgressLabel('Starting secure account removal');
+    setDeleteProgress(0);
+    setDeleteProgressLabel('Opening the secure deletion process');
 
     try {
       const response = await fetch('/api/account/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
         cache: 'no-store',
-        body: JSON.stringify({ password: deletePassword, confirmation: 'DELETE' })
+        body: JSON.stringify({ password: currentPassword })
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -765,100 +766,46 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
       if (!completed) throw new Error('The server closed the deletion process before confirming completion.');
       setDeleteProgress(100);
-        await clearThisOriginData();
+      await clearThisOriginData();
       await onDeleted();
+
       setDeleteStage('crt-on');
-      await new Promise(resolve => window.setTimeout(resolve, 850));
+      document.documentElement.classList.add('bitcider-crt-on');
+      await new Promise(resolve => window.setTimeout(resolve, 980));
+      document.documentElement.classList.remove('bitcider-crt-on');
       onClose();
     } catch (error) {
-      setDeletePassword('');
-      setDeletePhrase('');
-      notify(error.message || 'Account deletion did not complete. Your account has not been confirmed as deleted.', 'warning');
-      setDeleteStage('confirm');
+      document.documentElement.classList.remove('bitcider-crt-off', 'bitcider-crt-on');
+      setDeleteStage('crt-on');
+      document.documentElement.classList.add('bitcider-crt-on');
+      await new Promise(resolve => window.setTimeout(resolve, 900));
+      document.documentElement.classList.remove('bitcider-crt-on');
+      setDeleteStage('idle');
+      notify(error.message || 'Account deletion could not be completed. Your account is still active.', 'warning');
     }
   }
 
-  if (deleteStage === 'game') {
-    const spot = ACCOUNT_DELETE_SPOTS[deleteSpotIndex];
-    return (
-      <div className="account-delete-game" role="dialog" aria-modal="true" aria-labelledby="account-delete-game-title" onPointerDown={missDeleteTarget}>
-        <div className="account-delete-game-heading">
-          <span className="account-center-kicker">FINAL ACCOUNT CONTROL</span>
-          <h2 id="account-delete-game-title">Catch the button.</h2>
-          <p>Catch the moving delete button five times. Click anywhere else and your count resets.</p>
-          <div className="account-delete-catches" aria-label={deleteCaught + ' of 5 catches'}>
-            {Array.from({ length: 5 }, (_, index) => <i className={index < deleteCaught ? 'is-caught' : ''} key={index} />)}
-          </div>
-          <span className="account-delete-catch-count">{deleteCaught} / 5</span>
-        </div>
-        <button
-          className="account-delete-target"
-          type="button"
-          style={{ left: spot.x + '%', top: spot.y + '%' }}
-          onPointerDown={event => event.stopPropagation()}
-          onClick={catchDeleteTarget}
-        >
-          DELETE
-        </button>
-        <button className="account-delete-cancel" type="button" onClick={() => setDeleteStage('idle')}>Cancel deletion game</button>
-      </div>
-    );
-  }
+  if (deleteStage === 'crt-off' || deleteStage === 'crt-on') return null;
 
-  if (deleteStage === 'confirm') {
+  if (deleteStage === 'deleting') {
     return (
-      <div className="account-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="account-delete-confirm-title">
-        <div className="account-delete-confirm-card">
-          <span className="account-center-kicker">5 / 5 CAUGHT</span>
-          <h2 id="account-delete-confirm-title">One final check.</h2>
-          <p>This permanently removes the BitCider account, saved Cider connection, Account Key verifier, backup-code hashes, password verifier, and all BitCider-linked passkeys and sessions.</p>
-          <label>
-            <span>CURRENT PASSWORD</span>
-            <input type="password" autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} placeholder="Confirm your password" />
-          </label>
-          <label>
-            <span>TYPE DELETE TO CONFIRM</span>
-            <input autoComplete="off" value={deletePhrase} onChange={event => setDeletePhrase(event.target.value)} placeholder="DELETE" />
-          </label>
-          {message && <div className={'account-center-message ' + (messageType === 'warning' ? 'is-warning' : '')}>{message}</div>}
-          <div className="account-delete-confirm-actions">
-            <button className="account-secondary-button" type="button" onClick={() => { setDeleteStage('idle'); setDeleteCaught(0); }}>Cancel</button>
-            <button className="account-danger-button" type="button" onClick={executeDeletion} disabled={!deletePassword || deletePhrase !== 'DELETE'}>Delete account permanently</button>
+      <div className="account-delete-cinema is-black" role="status" aria-live="polite">
+        <div className="account-delete-progress">
+          <span className="account-center-kicker">SECURE DELETION PROCESS</span>
+          <h2>Removing your account.</h2>
+          <p>{deleteProgressLabel}</p>
+          <div className="account-delete-progress-track" role="progressbar" aria-label="Account deletion progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={deleteProgress}>
+            <i style={{ width: deleteProgress + '%' }} />
           </div>
+          <div className="account-delete-progress-meta"><span>BITCIDER / ACCOUNT PURGE</span><span>{Math.round(deleteProgress)}%</span></div>
         </div>
-      </div>
-    );
-  }
-
-  if (deleteStage === 'crt-off' || deleteStage === 'deleting' || deleteStage === 'crt-on') {
-    return (
-      <div className={'account-delete-cinema ' + (deleteStage === 'crt-off' ? 'is-turning-off' : deleteStage === 'crt-on' ? 'is-turning-on' : 'is-black')}>
-        <div className="account-delete-crt-glow" />
-        {deleteStage === 'deleting' && (
-          <div className="account-delete-progress">
-            <span className="account-center-kicker">SECURE DELETION PROCESS</span>
-            <h2>Removing your account.</h2>
-            <p>{deleteProgressLabel}</p>
-            <div className="account-delete-progress-track" role="progressbar" aria-label="Account deletion progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={deleteProgress}>
-              <i style={{ width: deleteProgress + '%' }} />
-            </div>
-            <div className="account-delete-progress-meta"><span>BITCIDER / ACCOUNT PURGE</span><span>{Math.round(deleteProgress)}%</span></div>
-          </div>
-        )}
-        {deleteStage === 'crt-on' && (
-          <div className="account-delete-complete">
-            <span className="account-center-kicker">PROCESS COMPLETE</span>
-            <h2>Account deleted.</h2>
-            <p>Local BitCider site data has been cleared. Returning to a fresh session…</p>
-          </div>
-        )}
       </div>
     );
   }
 
   return (
     <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeOverlay(); }}>
-      <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
+      <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title" onPointerDown={deleteStage === 'game' ? missDeleteTarget : undefined}>
         <header className="account-center-header">
           <div className="account-center-avatar"><Icon name="account" size={22} /></div>
           <div className="account-center-title">
@@ -870,6 +817,25 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
         </header>
 
         <div className="account-center-content">
+          {deleteStage === 'game' ? (
+            <div className="account-delete-inline">
+              <span className="account-center-kicker">ACCOUNT DELETION</span>
+              <h3>Catch the delete button.</h3>
+              <p>Catch it five times inside this account window. Any other click resets the count.</p>
+              <div className="account-delete-catches" aria-label={deleteCaught + ' of 5 catches'}>
+                {Array.from({ length: 5 }, (_, index) => <i className={index < deleteCaught ? 'is-caught' : ''} key={index} />)}
+              </div>
+              <span className="account-delete-catch-count">{deleteCaught} / 5</span>
+              <button
+                className="account-delete-target"
+                type="button"
+                style={{ left: ACCOUNT_DELETE_SPOTS[deleteSpotIndex].x + '%', top: ACCOUNT_DELETE_SPOTS[deleteSpotIndex].y + '%' }}
+                onPointerDown={event => event.stopPropagation()}
+                onClick={catchDeleteTarget}
+              >DELETE ACCOUNT</button>
+            </div>
+          ) : (
+            <>
           <div className="account-center-profile-note">
             <span className="account-center-profile-mark"><Icon name="account" size={18} /></span>
             <div><strong>Profile image</strong><p>This account icon is fixed and cannot be changed.</p></div>
@@ -955,6 +921,8 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
             <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>
           </div>
+            </>
+          )}
         </div>
       </section>
     </div>
