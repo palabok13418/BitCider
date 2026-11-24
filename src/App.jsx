@@ -862,7 +862,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
               )}
               <p>The existing key is stored as a one-way verifier and cannot be read back. A passkey is required to replace it and reveal the new key.</p>
               <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!(status.passkeys || []).length || busyAction === 'account-key'}>
-                {busyAction === 'account-key' ? 'WAITING FOR PASSKEY…' : revealedAccountKey ? 'REPLACE & REVEAL KEY AGAIN' : 'REVEAL ACCOUNT KEY'}
+                {busyAction === 'account-key' ? 'WAITING FOR PASSKEY…' : revealedAccountKey ? 'REPLACE & REVEAL KEY AGAIN' : 'REPLACE & REVEAL KEY'}
               </button>
             </section>
 
@@ -889,7 +889,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
               )}
               <p>Only code hashes are kept on the server. A passkey is required to replace this set and reveal the new codes. Replacing them invalidates every previous code.</p>
               <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!(status.passkeys || []).length || busyAction === 'backup-codes'}>
-                {busyAction === 'backup-codes' ? 'WAITING FOR PASSKEY…' : revealedRecoveryCodes.length ? 'REPLACE CODE SET' : 'REVEAL BACKUP CODES'}
+                {busyAction === 'backup-codes' ? 'WAITING FOR PASSKEY…' : 'REPLACE & REVEAL BACKUP CODES'}
               </button>
             </section>
 
