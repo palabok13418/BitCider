@@ -4,7 +4,7 @@ import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-23-account-key-v11';
+const API_VERSION = '2026-11-24-account-center-v12';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -12,6 +12,7 @@ function Icon({ name, size = 18 }) {
   if (name === 'copy') return <svg {...common}><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></svg>;
   if (name === 'check') return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
   if (name === 'music') return <svg {...common}><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>;
+  if (name === 'account') return <svg {...common}><circle cx="12" cy="8" r="3.3" /><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0" /><circle cx="12" cy="12" r="10" /></svg>;
   if (name === 'link') return <svg {...common}><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" /><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1.1-1.1" /></svg>;
   if (name === 'shield') return <svg {...common}><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg>;
   if (name === 'external') return <svg {...common}><path d="M14 3h7v7M10 14 21 3" /><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></svg>;
@@ -533,9 +534,436 @@ function AccountSetupWindow({
   );
 }
 
+
+const ACCOUNT_DELETE_SPOTS = [
+  { x: 16, y: 28 }, { x: 79, y: 22 }, { x: 52, y: 78 },
+  { x: 14, y: 74 }, { x: 86, y: 63 }, { x: 49, y: 43 },
+  { x: 72, y: 84 }, { x: 28, y: 56 }, { x: 88, y: 34 }
+];
+
+function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onStatusRefresh }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [revealedAccountKey, setRevealedAccountKey] = useState('');
+  const [revealedRecoveryCodes, setRevealedRecoveryCodes] = useState([]);
+  const [deleteStage, setDeleteStage] = useState('idle');
+  const [deleteCaught, setDeleteCaught] = useState(0);
+  const [deleteSpotIndex, setDeleteSpotIndex] = useState(0);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePhrase, setDeletePhrase] = useState('');
+  const [deleteProgress, setDeleteProgress] = useState(0);
+  const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
+  const [busyAction, setBusyAction] = useState('');
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('info');
+
+  const accountDate = status.account?.createdAt
+    ? new Date(status.account.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    : 'Available';
+
+  async function accountRequest(path, payload) {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
+      cache: 'no-store',
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(getErrorMessage(result, 'The account security action could not be completed.'));
+    return result;
+  }
+
+  function notify(text, type = 'info') {
+    setMessage(text);
+    setMessageType(type);
+  }
+
+  function closeOverlay() {
+    setCurrentPassword('');
+    setNewPassword('');
+    setRevealedAccountKey('');
+    setRevealedRecoveryCodes([]);
+    onClose();
+  }
+
+  async function rotateAccountKey() {
+    if (!currentPassword) return notify('Enter your current password to replace the Account Key.', 'warning');
+    setBusyAction('key');
+    setMessage('');
+    try {
+      const result = await accountRequest('/api/account/key/rotate', { password: currentPassword });
+      setRevealedAccountKey(result.accountKey || '');
+      await onStatusRefresh();
+      notify('Your new Account Key is ready. Copy it now, because it cannot be shown again.', 'success');
+    } catch (error) {
+      notify(error.message || 'Could not replace your Account Key.', 'warning');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function rotateRecoveryCodes() {
+    if (!currentPassword) return notify('Enter your current password to replace your backup codes.', 'warning');
+    setBusyAction('recovery');
+    setMessage('');
+    try {
+      const result = await accountRequest('/api/account/recovery-codes/rotate', { password: currentPassword });
+      setRevealedRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+      await onStatusRefresh();
+      notify('Your new backup codes are ready. The previous set is no longer valid.', 'success');
+    } catch (error) {
+      notify(error.message || 'Could not replace your backup codes.', 'warning');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function updatePassword() {
+    if (!currentPassword || !newPassword) return notify('Enter your current password and a new password.', 'warning');
+    setBusyAction('password');
+    setMessage('');
+    try {
+      const result = await accountRequest('/api/account/password/change', { currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      await onStatusRefresh();
+      notify(
+        result.revokedDevices
+          ? 'Password updated. Other signed-in devices were signed out.'
+          : 'Your password has been updated.',
+        'success'
+      );
+    } catch (error) {
+      notify(error.message || 'Could not update your password.', 'warning');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function removePasskey(credentialId) {
+    if (!currentPassword) return notify('Enter your current password to remove a passkey.', 'warning');
+    setBusyAction('passkey:' + credentialId);
+    setMessage('');
+    try {
+      await accountRequest('/api/account/passkeys/remove', {
+        credentialId,
+        password: currentPassword
+      });
+      setCurrentPassword('');
+      await onStatusRefresh();
+      notify('Passkey removed from your BitCider account.', 'success');
+    } catch (error) {
+      notify(error.message || 'Could not remove that passkey.', 'warning');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function copyValue(value, label) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      notify(label + ' copied. Store it somewhere private.', 'success');
+    } catch {
+      notify('Clipboard access was blocked. Select and copy it manually.', 'warning');
+    }
+  }
+
+  function startDeleteGame() {
+    setDeleteCaught(0);
+    setDeleteSpotIndex(0);
+    setDeletePassword('');
+    setDeletePhrase('');
+    setDeleteStage('game');
+    setMessage('');
+  }
+
+  function missDeleteTarget(event) {
+    if (event.target.closest('.account-delete-target, .account-delete-cancel')) return;
+    setDeleteCaught(0);
+    setDeleteSpotIndex(index => (index + 3) % ACCOUNT_DELETE_SPOTS.length);
+  }
+
+  function catchDeleteTarget(event) {
+    event.stopPropagation();
+    const nextCatch = deleteCaught + 1;
+    setDeleteCaught(nextCatch);
+    if (nextCatch >= 5) {
+      setDeleteStage('confirm');
+      return;
+    }
+    setDeleteSpotIndex(index => (index + 3 + nextCatch) % ACCOUNT_DELETE_SPOTS.length);
+  }
+
+  async function clearThisOriginData() {
+    try { window.localStorage.clear(); } catch {}
+    try { window.sessionStorage.clear(); } catch {}
+    try {
+      if ('caches' in window) {
+        const cacheNames = await window.caches.keys();
+        await Promise.all(cacheNames.map(name => window.caches.delete(name)));
+      }
+    } catch {}
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(registration => registration.unregister()));
+      }
+    } catch {}
+  }
+
+  async function executeDeletion() {
+    if (!deletePassword || deletePhrase !== 'DELETE') {
+      notify('Enter your current password and type DELETE to continue.', 'warning');
+      setDeleteStage('confirm');
+      return;
+    }
+
+    setDeleteStage('crt-off');
+    await new Promise(resolve => window.setTimeout(resolve, 620));
+    setDeleteStage('deleting');
+    setDeleteProgress(2);
+    setDeleteProgressLabel('Starting secure account removal');
+
+    try {
+      const response = await fetch('/api/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
+        cache: 'no-store',
+        body: JSON.stringify({ password: deletePassword, confirmation: 'DELETE' })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(payload, 'Account deletion could not be started.'));
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('This browser could not read the live account deletion status.');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let completed = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const dataLine = block.split('\n').find(line => line.startsWith('data:'));
+          if (dataLine) {
+            const event = JSON.parse(dataLine.slice(5).trim());
+            if (typeof event.progress === 'number') setDeleteProgress(event.progress);
+            if (event.label) setDeleteProgressLabel(event.label);
+            if (event.type === 'error') throw new Error(event.label || 'Account deletion was interrupted.');
+            if (event.type === 'complete') completed = true;
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+        if (done) break;
+      }
+
+      if (!completed) throw new Error('The server closed the deletion process before confirming completion.');
+      setDeleteProgress(100);
+      await clearThisOriginData();
+      setDeleteStage('crt-on');
+      await new Promise(resolve => window.setTimeout(resolve, 850));
+      await onDeleted();
+    } catch (error) {
+      setDeletePassword('');
+      setDeletePhrase('');
+      notify(error.message || 'Account deletion did not complete. Your account has not been confirmed as deleted.', 'warning');
+      setDeleteStage('confirm');
+    }
+  }
+
+  if (deleteStage === 'game') {
+    const spot = ACCOUNT_DELETE_SPOTS[deleteSpotIndex];
+    return (
+      <div className="account-delete-game" role="dialog" aria-modal="true" aria-labelledby="account-delete-game-title" onPointerDown={missDeleteTarget}>
+        <div className="account-delete-game-heading">
+          <span className="account-center-kicker">FINAL ACCOUNT CONTROL</span>
+          <h2 id="account-delete-game-title">Catch the button.</h2>
+          <p>Catch the moving delete button five times. Click anywhere else and your count resets.</p>
+          <div className="account-delete-catches" aria-label={deleteCaught + ' of 5 catches'}>
+            {Array.from({ length: 5 }, (_, index) => <i className={index < deleteCaught ? 'is-caught' : ''} key={index} />)}
+          </div>
+          <span className="account-delete-catch-count">{deleteCaught} / 5</span>
+        </div>
+        <button
+          className="account-delete-target"
+          type="button"
+          style={{ left: spot.x + '%', top: spot.y + '%' }}
+          onPointerDown={event => event.stopPropagation()}
+          onClick={catchDeleteTarget}
+        >
+          DELETE
+        </button>
+        <button className="account-delete-cancel" type="button" onClick={() => setDeleteStage('idle')}>Cancel deletion game</button>
+      </div>
+    );
+  }
+
+  if (deleteStage === 'confirm') {
+    return (
+      <div className="account-delete-confirm" role="dialog" aria-modal="true" aria-labelledby="account-delete-confirm-title">
+        <div className="account-delete-confirm-card">
+          <span className="account-center-kicker">5 / 5 CAUGHT</span>
+          <h2 id="account-delete-confirm-title">One final check.</h2>
+          <p>This permanently removes the BitCider account, saved Cider connection, Account Key verifier, backup-code hashes, password verifier, and all BitCider-linked passkeys and sessions.</p>
+          <label>
+            <span>CURRENT PASSWORD</span>
+            <input type="password" autoComplete="current-password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} placeholder="Confirm your password" />
+          </label>
+          <label>
+            <span>TYPE DELETE TO CONFIRM</span>
+            <input autoComplete="off" value={deletePhrase} onChange={event => setDeletePhrase(event.target.value)} placeholder="DELETE" />
+          </label>
+          {message && <div className={'account-center-message ' + (messageType === 'warning' ? 'is-warning' : '')}>{message}</div>}
+          <div className="account-delete-confirm-actions">
+            <button className="account-secondary-button" type="button" onClick={() => { setDeleteStage('idle'); setDeleteCaught(0); }}>Cancel</button>
+            <button className="account-danger-button" type="button" onClick={executeDeletion} disabled={!deletePassword || deletePhrase !== 'DELETE'}>Delete account permanently</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (deleteStage === 'crt-off' || deleteStage === 'deleting' || deleteStage === 'crt-on') {
+    return (
+      <div className={'account-delete-cinema ' + (deleteStage === 'crt-off' ? 'is-turning-off' : deleteStage === 'crt-on' ? 'is-turning-on' : 'is-black')}>
+        <div className="account-delete-crt-glow" />
+        {deleteStage === 'deleting' && (
+          <div className="account-delete-progress">
+            <span className="account-center-kicker">SECURE DELETION PROCESS</span>
+            <h2>Removing your account.</h2>
+            <p>{deleteProgressLabel}</p>
+            <div className="account-delete-progress-track" role="progressbar" aria-label="Account deletion progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={deleteProgress}>
+              <i style={{ width: deleteProgress + '%' }} />
+            </div>
+            <div className="account-delete-progress-meta"><span>BITCIDER / ACCOUNT PURGE</span><span>{Math.round(deleteProgress)}%</span></div>
+          </div>
+        )}
+        {deleteStage === 'crt-on' && (
+          <div className="account-delete-complete">
+            <span className="account-center-kicker">PROCESS COMPLETE</span>
+            <h2>Account deleted.</h2>
+            <p>Local BitCider site data has been cleared. Returning to a fresh session…</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeOverlay(); }}>
+      <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
+        <header className="account-center-header">
+          <div className="account-center-avatar"><Icon name="account" size={22} /></div>
+          <div className="account-center-title">
+            <span className="account-center-kicker">BITCIDER ACCOUNT</span>
+            <h2 id="account-center-title">Account & security</h2>
+            <p>Created {accountDate}</p>
+          </div>
+          <button className="account-center-close" type="button" onClick={closeOverlay} aria-label="Close account settings">×</button>
+        </header>
+
+        <div className="account-center-content">
+          <div className="account-center-profile-note">
+            <span className="account-center-profile-mark"><Icon name="account" size={18} /></span>
+            <div><strong>Profile image</strong><p>This account icon is fixed and cannot be changed.</p></div>
+            <span className="account-center-fixed">FIXED</span>
+          </div>
+
+          <div className="account-center-reauth">
+            <label>
+              <span>CONFIRM YOUR PASSWORD FOR SECURITY CHANGES</span>
+              <input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} placeholder="Current BitCider password" />
+            </label>
+            <p>Your password is never displayed or stored in readable form. It is only used to verify sensitive changes.</p>
+          </div>
+
+          <div className="account-center-grid">
+            <section className="account-center-card">
+              <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
+              {revealedAccountKey ? (
+                <div className="account-center-secret">
+                  <code>{revealedAccountKey}</code>
+                  <button type="button" className="account-secondary-button" onClick={() => copyValue(revealedAccountKey, 'Account Key')}>COPY KEY</button>
+                </div>
+              ) : (
+                <div className="account-center-masked-secret">•••• •••• •••• •••• •••• ••••</div>
+              )}
+              <p>The existing key is stored as a one-way verifier and cannot be recovered. Replacing it reveals a new key once.</p>
+              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!currentPassword || busyAction === 'key'}>
+                {busyAction === 'key' ? 'CREATING KEY…' : revealedAccountKey ? 'REPLACE AGAIN' : 'REPLACE & REVEAL KEY'}
+              </button>
+            </section>
+
+            <section className="account-center-card">
+              <div className="account-center-card-head"><span>PASSWORD</span><span className="account-center-state">ENCRYPTED VERIFIER</span></div>
+              <div className="account-center-masked-secret">••••••••••••••••</div>
+              <p>The current password cannot be viewed. You can replace it here. Other signed-in devices will be signed out.</p>
+              <input className="account-center-input" type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} placeholder="New password" />
+              <button type="button" className="account-center-action" onClick={updatePassword} disabled={!currentPassword || !newPassword || busyAction === 'password'}>
+                {busyAction === 'password' ? 'UPDATING…' : 'UPDATE PASSWORD'}
+              </button>
+            </section>
+
+            <section className="account-center-card">
+              <div className="account-center-card-head"><span>BACKUP CODES</span><span className="account-center-state">{status.account?.recoveryCodeCount ?? 0} AVAILABLE</span></div>
+              {revealedRecoveryCodes.length ? (
+                <div className="account-center-recovery-codes">
+                  {revealedRecoveryCodes.map(code => <code key={code}>{code}</code>)}
+                  <button type="button" className="account-secondary-button" onClick={() => copyValue(revealedRecoveryCodes.join('\n'), 'Backup codes')}>COPY ALL CODES</button>
+                </div>
+              ) : (
+                <div className="account-center-masked-secret">•••• •••• •••• ••••</div>
+              )}
+              <p>Only code hashes are kept on the server. Replacing this set invalidates every previous backup code.</p>
+              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!currentPassword || busyAction === 'recovery'}>
+                {busyAction === 'recovery' ? 'CREATING CODES…' : revealedRecoveryCodes.length ? 'REPLACE CODE SET' : 'REPLACE & REVEAL CODES'}
+              </button>
+            </section>
+
+            <section className="account-center-card account-center-passkeys">
+              <div className="account-center-card-head"><span>LINKED PASSKEYS</span><span className="account-center-state">{(status.passkeys || []).length} / {status.passkeyLimit || 5}</span></div>
+              {(status.passkeys || []).length ? (
+                <div className="account-center-passkey-list">
+                  {status.passkeys.map(passkey => (
+                    <div className="account-center-passkey" key={passkey.id}>
+                      <div className="account-center-passkey-icon"><Icon name="shield" size={17} /></div>
+                      <div className="account-center-passkey-copy">
+                        <strong>{passkey.name || 'Passkey'}</strong>
+                        <span>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device-bound passkey'} · {passkey.lastUsedAt ? 'Used ' + new Date(passkey.lastUsedAt).toLocaleDateString() : 'Not used yet'}</span>
+                      </div>
+                      <button type="button" className="account-center-remove" onClick={() => removePasskey(passkey.id)} disabled={!currentPassword || busyAction === 'passkey:' + passkey.id}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="account-center-empty">No passkeys are currently linked to this account.</p>
+              )}
+              <p>Removing a passkey unlinks it from BitCider. It does not delete the credential from your device or password manager.</p>
+            </section>
+          </div>
+
+          {message && <div className={'account-center-message ' + (messageType === 'warning' ? 'is-warning' : '')} role="status">{message}</div>}
+
+          <div className="account-center-danger-zone">
+            <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
+            <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
+  const [accountOverlayOpen, setAccountOverlayOpen] = useState(false);
   const [pageMode, setPageMode] = useState('cider');
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
   const [modeSwitcherOpen, setModeSwitcherOpen] = useState(false);
@@ -1315,6 +1743,11 @@ export default function App() {
       <div className="ambient ambient-two" />
 
       <header className="topbar">
+        {status.account?.authenticated === true && (
+          <button className="account-avatar-trigger" type="button" onClick={() => setAccountOverlayOpen(true)} aria-label="Open account and security settings" title="Account">
+            <Icon name="account" size={21} />
+          </button>
+        )}
         <a className={`brand ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} href="/" aria-label={pageMode === 'mono' ? 'BitMono home' : 'BitCider home'}>
           <span className="brand-logo-stack" aria-hidden="true">
             <img className="brand-logo brand-logo-cider" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
@@ -1326,6 +1759,30 @@ export default function App() {
           </span>
         </a>
       </header>
+
+      {accountOverlayOpen && status.account?.authenticated === true && (
+        <AccountManagementOverlay
+          status={status}
+          csrfToken={csrfToken}
+          onClose={() => setAccountOverlayOpen(false)}
+          onStatusRefresh={refreshStatus}
+          onDeleted={async () => {
+            setAccountOverlayOpen(false);
+            setPageMode('cider');
+            setModeSwitcherOpen(false);
+            setModeDragProgress(null);
+            setInlineAccountFlow(null);
+            setNotice('');
+            setConnectPhase('idle');
+            setRecoveryCodes([]);
+            setSecurityPassword('');
+            setSyncNotificationWatch(false);
+            setStatus({ loading: true, connected: false });
+            setBrowserBridge({ state: 'offline', message: 'Waiting for the local Cider bridge.' });
+            await refreshStatus();
+          }}
+        />
+      )}
 
       <section className="hero">
         <div className="hero-copy">
