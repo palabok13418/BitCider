@@ -117,7 +117,7 @@ test('account center rotates secrets and permanently deletes the account and ori
 
   const initialStatus = await jsonRequest(origin, '/api/status');
   assert.equal(initialStatus.response.status, 200);
-  assert.equal(initialStatus.payload.apiVersion, '2026-11-24-account-center-v12');
+  assert.equal(initialStatus.payload.apiVersion, '2026-11-24-account-center-v13');
   const anonymousCookie = cookieFrom(initialStatus.response);
 
   const linked = await jsonRequest(origin, '/api/connect', {
@@ -139,10 +139,22 @@ test('account center rotates secrets and permanently deletes the account and ori
   assert.match(registration.payload.accountKey, /^[A-Za-z0-9_-]{43}$/);
   const cookie = cookieFrom(registration.response);
 
+  const prePasskeyStatus = await jsonRequest(origin, '/api/status', { cookie });
+  assert.equal(prePasskeyStatus.payload.account.authenticated, true);
+  const revealWithoutPasskey = await jsonRequest(origin, '/api/account/secrets/reveal/options', {
+    method: 'POST',
+    cookie,
+    csrf: prePasskeyStatus.payload.csrfToken,
+    body: { secretType: 'account-key' }
+  });
+  assert.equal(revealWithoutPasskey.response.status, 409);
+  assert.equal(revealWithoutPasskey.payload.error, 'PASSKEY_REQUIRED');
+
   const storePath = path.join(dataDir, 'connection.json');
   const storeWithPasskey = JSON.parse(await fs.readFile(storePath, 'utf8'));
   const accountId = Object.keys(storeWithPasskey.accounts)[0];
   assert.ok(accountId);
+  storeWithPasskey.accounts[accountId].webAuthnUserId = crypto.randomBytes(32).toString('base64url');
   storeWithPasskey.accounts[accountId].passkeys = [{
     id: 'integration-passkey-id',
     publicKey: Buffer.from('integration-public-key').toString('base64url'),
@@ -167,33 +179,63 @@ test('account center rotates secrets and permanently deletes the account and ori
   assert.equal(JSON.stringify(signedInStatus.payload).includes(initialPassword), false);
   assert.equal(JSON.stringify(signedInStatus.payload).includes(registration.payload.accountKey), false);
 
-  const oldAccountKeyHash = storeWithPasskey.accounts[accountId].accountKeyHash;
-  const newKey = await jsonRequest(origin, '/api/account/key/rotate', {
+  const secretRevealWithoutAssertion = await jsonRequest(origin, '/api/account/secrets/reveal', {
+    method: 'POST',
+    cookie,
+    csrf: signedInStatus.payload.csrfToken,
+    body: {}
+  });
+  assert.equal(secretRevealWithoutAssertion.response.status, 400);
+  assert.equal(secretRevealWithoutAssertion.payload.error, 'PASSKEY_CHALLENGE_EXPIRED');
+
+  const keyRevealOptions = await jsonRequest(origin, '/api/account/secrets/reveal/options', {
+    method: 'POST',
+    cookie,
+    csrf: signedInStatus.payload.csrfToken,
+    body: { secretType: 'account-key' }
+  });
+  assert.equal(keyRevealOptions.response.status, 200);
+  assert.equal(keyRevealOptions.payload.userVerification, 'required');
+  assert.equal(keyRevealOptions.payload.allowCredentials[0].id, 'integration-passkey-id');
+  const keyChallengeStore = JSON.parse(await fs.readFile(storePath, 'utf8'));
+  const keyChallenge = keyChallengeStore.webauthnChallenges[crypto.createHash('sha256').update(cookie.split('=')[1]).digest('hex')];
+  assert.equal(keyChallenge.purpose, 'reveal-secret');
+  assert.equal(keyChallenge.accountId, accountId);
+  assert.equal(keyChallenge.secretType, 'account-key');
+
+  const backupRevealOptions = await jsonRequest(origin, '/api/account/secrets/reveal/options', {
+    method: 'POST',
+    cookie,
+    csrf: signedInStatus.payload.csrfToken,
+    body: { secretType: 'backup-codes' }
+  });
+  assert.equal(backupRevealOptions.response.status, 200);
+  assert.equal(backupRevealOptions.payload.userVerification, 'required');
+
+  const addPasskeyWithoutPassword = await jsonRequest(origin, '/api/account/passkeys/register/options', {
+    method: 'POST',
+    cookie,
+    csrf: signedInStatus.payload.csrfToken,
+    body: {}
+  });
+  assert.equal(addPasskeyWithoutPassword.response.status, 401);
+  assert.equal(addPasskeyWithoutPassword.payload.error, 'REAUTHENTICATION_REQUIRED');
+
+  const oldKeyRoute = await jsonRequest(origin, '/api/account/key/rotate', {
     method: 'POST',
     cookie,
     csrf: signedInStatus.payload.csrfToken,
     body: { password: initialPassword }
   });
-  assert.equal(newKey.response.status, 200);
-  assert.match(newKey.payload.accountKey, /^[A-Za-z0-9_-]{43}$/);
-  assert.notEqual(newKey.payload.accountKey, registration.payload.accountKey);
+  assert.equal(oldKeyRoute.response.status, 404);
 
-  const afterKeyRotation = JSON.parse(await fs.readFile(storePath, 'utf8'));
-  assert.notEqual(afterKeyRotation.accounts[accountId].accountKeyHash, oldAccountKeyHash);
-  assert.equal(JSON.stringify(afterKeyRotation).includes(newKey.payload.accountKey), false);
-
-  const oldRecoveryHashes = afterKeyRotation.accounts[accountId].recoveryCodeHashes;
-  const newCodes = await jsonRequest(origin, '/api/account/recovery-codes/rotate', {
+  const oldBackupRoute = await jsonRequest(origin, '/api/account/recovery-codes/rotate', {
     method: 'POST',
     cookie,
     csrf: signedInStatus.payload.csrfToken,
     body: { password: initialPassword }
   });
-  assert.equal(newCodes.response.status, 200);
-  assert.equal(newCodes.payload.recoveryCodes.length, 10);
-  const afterCodeRotation = JSON.parse(await fs.readFile(storePath, 'utf8'));
-  assert.notDeepEqual(afterCodeRotation.accounts[accountId].recoveryCodeHashes, oldRecoveryHashes);
-  assert.equal(JSON.stringify(afterCodeRotation).includes(newCodes.payload.recoveryCodes[0]), false);
+  assert.equal(oldBackupRoute.response.status, 404);
 
   const passwordChange = await jsonRequest(origin, '/api/account/password/change', {
     method: 'POST',
@@ -208,15 +250,6 @@ test('account center rotates secrets and permanently deletes the account and ori
   assert.equal(statusAfterPasswordChange.payload.account.recoveryCodeCount, 10);
   assert.equal(statusAfterPasswordChange.payload.passkeyCount, 1);
 
-  const badDelete = await jsonRequest(origin, '/api/account/delete', {
-    method: 'POST',
-    cookie,
-    csrf: statusAfterPasswordChange.payload.csrfToken,
-    body: { password: initialPassword }
-  });
-  assert.equal(badDelete.response.status, 401);
-  assert.equal(badDelete.payload.error, 'REAUTHENTICATION_REQUIRED');
-
   const deletionResponse = await fetch(origin + '/api/account/delete', {
     method: 'POST',
     headers: {
@@ -224,7 +257,7 @@ test('account center rotates secrets and permanently deletes the account and ori
       'Content-Type': 'application/json',
       'X-BitCider-CSRF': statusAfterPasswordChange.payload.csrfToken
     },
-    body: JSON.stringify({ password: nextPassword }),
+    body: JSON.stringify({}),
     cache: 'no-store'
   });
   assert.equal(deletionResponse.status, 200);
