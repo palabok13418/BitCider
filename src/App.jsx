@@ -1348,9 +1348,7 @@ export default function App() {
           )}
         </div>
 
-        <div
-          className="connection-column"
-        >
+        <div className="connection-column">
         <section className="connection-card" aria-live="polite">
           <div className="source-mode-content">
           {pageMode === 'mono' ? (
