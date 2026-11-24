@@ -1564,8 +1564,8 @@ h1 .bitchord-word {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-  width: 92.4%;
-  margin: -18px auto 0;
+  width: 100%;
+  margin: -16px auto 0;
   overflow: visible;
   transform: translate3d(0, 0, 0);
   transition: transform .5s cubic-bezier(.16,1,.3,1), margin-bottom .5s cubic-bezier(.16,1,.3,1);
@@ -1573,8 +1573,8 @@ h1 .bitchord-word {
 }
 
 .mode-switcher.is-open {
-  transform: translate3d(0, 18px, 0);
-  margin-bottom: 18px;
+  transform: translate3d(0, 16px, 0);
+  margin-bottom: 16px;
 }
 
 .mode-pull-tab {
@@ -1583,19 +1583,19 @@ h1 .bitchord-word {
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 44px;
-  padding: 0 22px;
-  border: 1px solid rgba(255,255,255,.13);
+  min-height: 58px;
+  padding: 0 24px;
+  border: 1px solid rgba(255,214,221,.16);
   border-top: 0;
-  border-radius: 0 0 14px 14px;
-  color: #c5a6ac;
-  background: linear-gradient(180deg, rgba(30,14,18,.98), rgba(18,8,11,.99));
-  box-shadow: 0 9px 22px rgba(0,0,0,.22);
-  font: 9px var(--mono);
-  letter-spacing: .13em;
+  border-radius: 0 0 20px 20px;
+  color: #f0c3cb;
+  background: linear-gradient(145deg, rgba(47,26,30,.94), rgba(25,12,14,.97));
+  box-shadow: 0 22px 62px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.06);
+  font: 10px var(--mono);
+  letter-spacing: .11em;
   text-align: center;
   cursor: pointer;
-  transition: color .22s ease, background .22s ease, border-radius .32s ease;
+  transition: color .22s ease, background .22s ease, border-radius .32s ease, box-shadow .32s ease;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
@@ -1603,9 +1603,9 @@ h1 .bitchord-word {
 
 .mode-pull-tab:hover,
 .mode-pull-tab:focus-visible {
-  color: #c5a6ac;
-  background: linear-gradient(180deg, rgba(30,14,18,.98), rgba(18,8,11,.99));
-  box-shadow: 0 9px 22px rgba(0,0,0,.22);
+  color: #fff0f3;
+  background: linear-gradient(145deg, rgba(55,29,35,.97), rgba(29,13,17,.99));
+  box-shadow: 0 22px 62px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.08);
   outline: none;
 }
 
@@ -1629,8 +1629,8 @@ h1 .bitchord-word {
   overflow: hidden;
   border: 1px solid transparent;
   border-top: 0;
-  border-radius: 0 0 18px 18px;
-  background: linear-gradient(145deg, rgba(40,22,26,.985), rgba(19,9,12,.985));
+  border-radius: 0 0 22px 22px;
+  background: linear-gradient(145deg, rgba(43,24,28,.96), rgba(23,11,14,.98));
   box-shadow: none;
   opacity: 0;
   transform: translate3d(0,-8px,0);
@@ -1640,15 +1640,17 @@ h1 .bitchord-word {
     padding .5s cubic-bezier(.16,1,.3,1),
     opacity .28s ease,
     transform .5s cubic-bezier(.16,1,.3,1),
-    border-color .28s ease;
+    border-color .28s ease,
+    box-shadow .35s ease;
 }
 
 .mode-switcher.is-open .mode-switch-panel {
-  height: 82px;
-  padding: 14px 26px;
-  border-color: rgba(255,255,255,.12);
-  opacity: .98;
+  height: 104px;
+  padding: 17px 26px 19px;
+  border-color: rgba(255,214,221,.15);
+  opacity: 1;
   transform: translate3d(0,0,0);
+  box-shadow: 0 28px 70px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.045);
   pointer-events: auto;
 }
 
@@ -1657,15 +1659,15 @@ h1 .bitchord-word {
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-items: stretch;
-  width: 80%;
+  width: 100%;
   margin-inline: auto;
-  min-height: 50px;
-  padding: 4px;
+  min-height: 62px;
+  padding: 5px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 13px;
-  background: rgba(18,9,11,.82);
-  box-shadow: 0 10px 28px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 15px;
+  background: rgba(15,7,9,.78);
+  box-shadow: 0 12px 30px rgba(0,0,0,.2), inset 0 1px rgba(255,255,255,.065);
   isolation: isolate;
   touch-action: pan-y;
   user-select: none;
@@ -1679,14 +1681,14 @@ h1 .bitchord-word {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 40px;
-  padding: 0 8px;
+  min-height: 50px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 9px;
-  color: #a98c92;
+  border-radius: 11px;
+  color: #b99aa0;
   background: transparent;
   font: 10px var(--mono);
-  letter-spacing: .06em;
+  letter-spacing: .07em;
   text-align: center;
   transition: color .24s ease, text-shadow .24s ease;
 }
@@ -1705,13 +1707,13 @@ h1 .bitchord-word {
 .mode-toggle-thumb {
   position: absolute;
   z-index: 1;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc(50% - 4px);
-  border-radius: 9px;
-  background: linear-gradient(105deg, #f6d8de, #e8a6b1);
-  box-shadow: 0 4px 16px rgba(225,143,158,.2), inset 0 1px rgba(255,255,255,.42);
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc(50% - 5px);
+  border-radius: 11px;
+  background: linear-gradient(105deg, #ffd9df, #f1aab6 65%, #dca0aa);
+  box-shadow: 0 5px 18px rgba(225,143,158,.22), inset 0 1px rgba(255,255,255,.46);
   cursor: grab;
   touch-action: none;
   transition: transform .68s cubic-bezier(.16,1,.3,1), background .36s ease, box-shadow .36s ease, border-radius .3s ease;
@@ -1730,8 +1732,8 @@ h1 .bitchord-word {
 
 .mode-toggle.is-mono .mode-toggle-thumb {
   transform: translateX(100%);
-  background: linear-gradient(105deg, #ededed, #a7a7a7);
-  box-shadow: 0 4px 16px rgba(255,255,255,.13), inset 0 1px rgba(255,255,255,.48);
+  background: linear-gradient(105deg, #f0f0f0, #a9a9a9);
+  box-shadow: 0 5px 18px rgba(255,255,255,.14), inset 0 1px rgba(255,255,255,.5);
 }
 
 .mode-toggle.is-dragging .mode-toggle-thumb {
@@ -1761,28 +1763,30 @@ h1 .bitchord-word {
 }
 
 .site-shell.mono-mode .mode-pull-tab {
-  border-color: rgba(255,255,255,.16);
-  background: linear-gradient(180deg, rgba(14,14,14,.96), rgba(5,5,5,.99));
-  box-shadow: 0 9px 22px rgba(0,0,0,.42);
+  border-color: rgba(255,255,255,.17);
+  background: linear-gradient(145deg, rgba(20,20,20,.97), rgba(7,7,7,.99));
+  color: #eeeeee;
+  box-shadow: 0 22px 62px rgba(0,0,0,.44), inset 0 1px rgba(255,255,255,.055);
 }
 
-.site-shell.mono-mode .mode-pull-tab {
-  color: #d2d2d2;
+.site-shell.mono-mode .mode-pull-tab:hover,
+.site-shell.mono-mode .mode-pull-tab:focus-visible {
+  background: linear-gradient(145deg, rgba(27,27,27,.98), rgba(9,9,9,.99));
 }
 
 .site-shell.mono-mode .mode-switch-panel {
   border-color: rgba(255,255,255,.16);
-  background: linear-gradient(145deg, rgba(27,27,27,.98), rgba(8,8,8,.98));
+  background: linear-gradient(145deg, rgba(25,25,25,.98), rgba(8,8,8,.99));
 }
 
 .site-shell.mono-mode .mode-toggle {
   border-color: rgba(255,255,255,.18);
-  background: rgba(7,7,7,.88);
-  box-shadow: 0 10px 28px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.08);
+  background: rgba(5,5,5,.9);
+  box-shadow: 0 12px 30px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.075);
 }
 
 .site-shell.mono-mode .mode-toggle-option {
-  color: #999;
+  color: #a7a7a7;
 }
 
 .site-shell.mono-mode .mode-toggle-option[aria-pressed="true"] {
@@ -1790,9 +1794,9 @@ h1 .bitchord-word {
 }
 
 @keyframes source-selector-warp {
-  0%, 100% { border-radius: 9px 11px 8px 10px; scale: 1 1; }
-  36% { border-radius: 15px 7px 13px 9px; scale: 1.018 .94; }
-  72% { border-radius: 7px 15px 9px 13px; scale: .99 1.045; }
+  0%, 100% { border-radius: 11px 13px 10px 12px; scale: 1 1; }
+  36% { border-radius: 16px 8px 14px 10px; scale: 1.018 .94; }
+  72% { border-radius: 8px 16px 10px 14px; scale: .99 1.045; }
 }
 
 @keyframes source-selector-glint {
@@ -1801,9 +1805,9 @@ h1 .bitchord-word {
 }
 
 @keyframes source-selector-confirm {
-  0% { scale: .96 1.04; border-radius: 13px; }
-  42% { scale: 1.035 .94; border-radius: 15px 8px 13px 9px; }
-  100% { scale: 1 1; border-radius: 9px; }
+  0% { scale: .96 1.04; border-radius: 15px; }
+  42% { scale: 1.035 .94; border-radius: 16px 9px 14px 10px; }
+  100% { scale: 1 1; border-radius: 11px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1816,9 +1820,13 @@ h1 .bitchord-word {
 }
 
 @media (max-width: 760px) {
-  .mode-switch-panel { padding-left: 20px; padding-right: 20px; }
-  .mode-toggle { min-height: 48px; }
-  .mode-toggle-option { min-height: 38px; font-size: 9px; }
+  .mode-switch-panel { padding-left: 16px; padding-right: 16px; }
+  .mode-switcher.is-open .mode-switch-panel {
+    height: 94px;
+    padding: 12px 16px 16px;
+  }
+  .mode-toggle { min-height: 56px; }
+  .mode-toggle-option { min-height: 44px; font-size: 9px; }
 }
 
 .site-shell.mono-mode .bitmono-quality-note {
