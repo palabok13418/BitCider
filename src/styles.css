@@ -1520,7 +1520,6 @@ h1 .bitchord-word {
   position: relative;
   z-index: 4;
   isolation: isolate;
-  width: 100%;
   width: 80%;
   max-width: 400px;
   justify-self: end;
