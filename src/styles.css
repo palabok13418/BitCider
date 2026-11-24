@@ -30,7 +30,10 @@ a { color: inherit; text-decoration: none; }
 
 .site-shell {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   isolation: isolate;
   padding: 0 clamp(22px, 6vw, 96px);
@@ -86,7 +89,7 @@ a { color: inherit; text-decoration: none; }
 .tiny-dot { width: 6px; height: 6px; border-radius: 50%; background: #94787d; }
 
 .hero {
-  max-width: 1320px; margin: 0 auto; min-height: 540px;
+  max-width: 1320px; width: 100%; flex: 1 0 auto; margin: 0 auto; min-height: 540px;
   display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
   align-items: center; gap: clamp(50px, 8vw, 130px); padding: 48px 0 50px;
 }
@@ -731,14 +734,14 @@ h1 .bitchord-word {
 .network-note { max-width: 1320px; margin: 17px auto 0; padding: 12px 15px; border-radius: 9px; background: rgba(168,133,74,.09); border: 1px solid rgba(196,163,101,.16); color: #c8b994; font-size: 10px; line-height: 1.7; }
 .network-note b { margin-right: 9px; color: #e1c99d; }
 .network-note code { color: #e4d7b9; font: 10px var(--mono); }
-.footer { max-width: 1320px; min-height: 75px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 18px; color: #7c5f64; font-size: 8px; }
+.footer { width: 100%; max-width: 1320px; min-height: 75px; margin: auto auto 0; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 18px; color: #7c5f64; font-size: 8px; }
 .footer a { display: flex; align-items: center; gap: 6px; color: #a8878d; }
 .footer a:hover { color: #f8d2d8; }
 
-/* Keep the footer raised by the same amount in both source experiences. */
+/* Both source experiences let the footer sit after the content at the page bottom. */
 .site-shell.cider-mode .footer,
 .site-shell.mono-mode .footer {
-  margin-top: -8vh;
+  margin-top: auto;
 }
 
 /* Lift both desktop hero columns together, without changing their grid slots. */
@@ -749,11 +752,11 @@ h1 .bitchord-word {
   }
 }
 
-/* Keep the stacked tablet layout from inheriting the tighter desktop lift. */
+/* The footer remains at the true page bottom on compact layouts too. */
 @media (max-width: 900px) {
   .site-shell.cider-mode .footer,
   .site-shell.mono-mode .footer {
-    margin-top: -5vh;
+    margin-top: auto;
   }
 }
 
@@ -1507,6 +1510,38 @@ h1 .bitchord-word {
 }
 .bitmono-card-mark img { width: 29px; height: 29px; object-fit: contain; }
 .bitmono-url-panel { margin: 1px 0 0; }
+.bitmono-url-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bitmono-health-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: #929292;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.045);
+  transition: background-color .2s ease, box-shadow .2s ease;
+}
+.bitmono-health-dot.is-checking {
+  background: #929292;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.045);
+}
+.bitmono-health-dot.is-good {
+  background: #42d78a;
+  box-shadow: 0 0 0 3px rgba(66,215,138,.1), 0 0 12px rgba(66,215,138,.56);
+}
+.bitmono-health-dot.is-slow {
+  background: #efbd48;
+  box-shadow: 0 0 0 3px rgba(239,189,72,.11), 0 0 12px rgba(239,189,72,.55);
+}
+.bitmono-health-dot.is-bad {
+  background: #ff5361;
+  box-shadow: 0 0 0 3px rgba(255,83,97,.11), 0 0 12px rgba(255,83,97,.58);
+}
 .bitmono-url-row { min-width: 0; }
 .bitmono-url-input {
   display: block;
