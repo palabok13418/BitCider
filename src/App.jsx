@@ -170,7 +170,6 @@ function AccountSetupWindow({
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [enrollmentPassword, setEnrollmentPassword] = useState('');
-  const [passwordManagerStatus, setPasswordManagerStatus] = useState('idle');
   const strength = passwordStrength(password);
 
   async function post(path, payload = {}) {
@@ -197,14 +196,10 @@ function AccountSetupWindow({
   }
 
   function saveCredentialsInChrome(accountKeyValue, passwordValue) {
-    if (!accountKeyValue || !passwordValue || !isGoogleChromeBrowser()) {
-      setPasswordManagerStatus('idle');
-      return;
-    }
-    setPasswordManagerStatus('saving');
-    void requestChromePasswordManagerSave(accountKeyValue, passwordValue)
-      .then(() => setPasswordManagerStatus('requested'))
-      .catch(() => setPasswordManagerStatus('unavailable'));
+    if (!accountKeyValue || !passwordValue || !isGoogleChromeBrowser()) return;
+    // Keep the browser-native credential save out of the BitCider UI.
+    // Chrome remains responsible for its own Password Manager prompt and storage.
+    void requestChromePasswordManagerSave(accountKeyValue, passwordValue).catch(() => {});
   }
 
   function finish() {
@@ -459,19 +454,6 @@ function AccountSetupWindow({
               <h1>Save your Account Key and recovery codes.</h1>
               <p>Your Account Key identifies your BitCider account on new devices. It is shown once. Keep it private and store the recovery codes separately.</p>
               <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
-              {passwordManagerStatus !== 'idle' && (
-                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
-                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
-                  <div>
-                    <strong>GOOGLE PASSWORD MANAGER</strong>
-                    <p>{passwordManagerStatus === 'saving'
-                      ? 'Sending your BitCider sign-in to Chrome Password Manager…'
-                      : passwordManagerStatus === 'requested'
-                        ? 'Chrome was asked to save your Account Key as the username and your BitCider password with it. Confirm the browser save prompt to keep it.'
-                        : 'Chrome could not open its credential-save flow here. Copy your Account Key and add it manually in Google Password Manager.'}</p>
-                  </div>
-                </div>
-              )}
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
@@ -559,12 +541,6 @@ function AccountSetupWindow({
               <h1>Save your Account Key.</h1>
               <p>This older account did not have an Account Key yet. It is shown once. Store it privately so you can sign in from other devices.</p>
               <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
-              {passwordManagerStatus !== 'idle' && (
-                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
-                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
-                  <div><strong>GOOGLE PASSWORD MANAGER</strong><p>{passwordManagerStatus === 'saving' ? 'Sending your BitCider sign-in to Chrome Password Manager…' : passwordManagerStatus === 'requested' ? 'Chrome was asked to save your Account Key and password. Confirm the browser prompt to keep them.' : 'Chrome could not open its credential-save flow here. Copy your Account Key and add it manually.'}</p></div>
-                </div>
-              )}
               <button className="account-submit-button" type="button" onClick={finish} disabled={!accountKey}>I SAVED MY ACCOUNT KEY</button>
             </div>
           )}
@@ -575,12 +551,6 @@ function AccountSetupWindow({
               <h1>Save your new recovery codes.</h1>
               <p>Your password and Account Key have been reset. Other active devices were signed out. Save the new key and replacement recovery codes before continuing.</p>
               <div className="account-key-display"><span>NEW ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
-              {passwordManagerStatus !== 'idle' && (
-                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
-                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
-                  <div><strong>GOOGLE PASSWORD MANAGER</strong><p>{passwordManagerStatus === 'saving' ? 'Updating the saved BitCider sign-in in Chrome…' : passwordManagerStatus === 'requested' ? 'Chrome was asked to save the replacement Account Key and password. Confirm its browser prompt.' : 'Chrome could not update the saved credential here. Copy the replacement Account Key and update it in Google Password Manager.'}</p></div>
-                </div>
-              )}
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>

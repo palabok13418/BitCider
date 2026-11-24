@@ -1216,52 +1216,6 @@ h1 .bitchord-word {
   user-select: text;
 }
 
-.account-password-manager-note {
-  display: grid;
-  grid-template-columns: 34px minmax(0,1fr);
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0 12px;
-  padding: 11px 12px;
-  border: 1px solid rgba(156,190,255,.2);
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(66,101,164,.13), rgba(255,255,255,.035));
-  box-shadow: inset 0 1px rgba(255,255,255,.045);
-}
-.account-password-manager-mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid rgba(175,197,255,.24);
-  border-radius: 10px;
-  color: #d6e2ff;
-  background: linear-gradient(145deg, rgba(101,143,224,.23), rgba(66,94,156,.11));
-  font: 8px var(--mono);
-  letter-spacing: .04em;
-}
-.account-password-manager-note strong {
-  display: block;
-  margin-bottom: 4px;
-  color: #dce6ff;
-  font: 8px var(--mono);
-  letter-spacing: .11em;
-}
-.account-password-manager-note p {
-  margin: 0;
-  color: #aebbd8;
-  font-size: 9px;
-  line-height: 1.55;
-}
-.account-password-manager-note.is-unavailable {
-  border-color: rgba(239,190,135,.2);
-  background: linear-gradient(135deg, rgba(145,96,53,.13), rgba(255,255,255,.025));
-}
-.account-password-manager-note.is-unavailable strong { color: #f2d0a5; }
-.account-password-manager-note.is-unavailable p { color: #c8ad8c; }
-
-
-
 /* Keep scroll gestures working without drawing browser-native scrollbars. */
 * {
   scrollbar-width: none;
