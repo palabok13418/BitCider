@@ -422,7 +422,7 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
 });
 
 
-test('header brand stays pinned to the top-left while account actions align right', async () => {
+test('header brand stays pinned left and account actions stay pinned right', async () => {
   const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
   const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
   const headerStart = appSource.indexOf('<header className="topbar">');
@@ -430,7 +430,7 @@ test('header brand stays pinned to the top-left while account actions align righ
   assert.ok(headerStart >= 0 && headerEnd > headerStart);
   const headerSource = appSource.slice(headerStart, headerEnd);
   assert.ok(headerSource.indexOf('<a className={`brand') < headerSource.indexOf('className="account-avatar-trigger"'));
-  assert.match(styleSource, /\.topbar\s*\{\s*width:\s*100%;\s*max-width:\s*1320px;/);
-  assert.match(styleSource, /\.brand\s*\{[^}]*margin-right:\s*auto;/);
-  assert.match(styleSource, /\.account-avatar-trigger\s*\{\s*margin-left:\s*auto;/);
-});
+  assert.match(styleSource, /\.topbar\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s);
+  assert.match(styleSource, /\.brand\s*\{[^}]*justify-self:\s*start;/);
+  assert.match(styleSource, /\.account-avatar-trigger\s*\{\s*justify-self:\s*end;/);
+});;
