@@ -108,14 +108,24 @@ test('Account Center removes the fixed profile row and global password banner wh
 
   assert.doesNotMatch(panel, /Profile image|CONFIRM YOUR PASSWORD FOR SECURITY CHANGES/);
   assert.doesNotMatch(panel, /Enter your current password.*before deleting/i);
+  assert.doesNotMatch(panel, /account-delete-inline|Catch the delete button|Any other click resets/);
   assert.ok(panel.includes('body: JSON.stringify({})'));
   assert.ok(panel.includes('startAuthentication({ optionsJSON })'));
   assert.ok(panel.includes('startRegistration({ optionsJSON })'));
   assert.ok(panel.includes("'/api/account/passkeys/register/options', { password: passkeyPassword }"));
+  assert.ok(panel.includes('const movement = window.setInterval'));
+  assert.ok(panel.includes('}, 900);'));
+  assert.ok(panel.includes('if (nextCatch >= 5)'));
+  assert.ok(panel.includes("deleteStage !== 'game' && <button type=\"button\" className=\"account-danger-button\""));
+  assert.ok(panel.includes('className="account-danger-button account-delete-target"'));
+  assert.ok(panel.includes("style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}"));
   assert.ok(styleSource.includes('.account-center-content {'));
   assert.ok(styleSource.includes('scrollbar-width: none;'));
   assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
   assert.ok(styleSource.includes('.account-center-password-label input'));
+  const movingButtonStyles = styleSource.slice(styleSource.indexOf('.account-delete-target {'), styleSource.indexOf('.account-delete-cinema {'));
+  assert.match(movingButtonStyles, /position:\\s*fixed/);
+  assert.match(movingButtonStyles, /z-index:\\s*2300/);
 });
 
 
