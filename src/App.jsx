@@ -1194,10 +1194,13 @@ export default function App() {
           return;
         }
 
-        const state = payload?.status === 'slow' ? 'slow' : 'good';
-        const message = payload?.statusMessage || (state === 'slow'
-          ? 'BitMono is returning songs, but the live source is degraded or slow.'
-          : 'BitMono live song search returned tracks.');
+        const clientIsSlow = clientLatencyMs >= 2000;
+        const state = payload?.status === 'slow' || clientIsSlow ? 'slow' : 'good';
+        const message = clientIsSlow && payload?.status !== 'slow'
+          ? 'Songs are returning, but the full browser-to-addon health request is taking longer than 2 seconds.'
+          : (payload?.statusMessage || (state === 'slow'
+            ? 'BitMono is returning songs, but the live source is degraded or slow.'
+            : 'BitMono live song search returned tracks.'));
         setBitMonoHealth({ state, message, ...details });
 
         if (state === 'slow') {
