@@ -2118,11 +2118,6 @@ export default function App() {
       <div className="ambient ambient-two" />
 
       <header className="topbar">
-        {status.account?.authenticated === true && (
-          <button className="account-avatar-trigger" type="button" onClick={() => setAccountOverlayOpen(true)} aria-label="Open account and security settings" title="Account">
-            <Icon name="account" size={21} />
-          </button>
-        )}
         <a className={`brand ${pageMode === 'mono' ? 'is-mono' : 'is-cider'}`} href="/" aria-label={pageMode === 'mono' ? 'BitMono home' : 'BitCider home'}>
           <span className="brand-logo-stack" aria-hidden="true">
             <img className="brand-logo brand-logo-cider" src="/favicon.svg?v=bitcider-brand-20261122" alt="" />
@@ -2133,6 +2128,11 @@ export default function App() {
             <span className="brand-word brand-word-mono">Bit<span><CipherText text="Mono" phase={modeTransitionPhase} /></span></span>
           </span>
         </a>
+        {status.account?.authenticated === true && (
+          <button className="account-avatar-trigger" type="button" onClick={() => setAccountOverlayOpen(true)} aria-label="Open account and security settings" title="Account">
+            <Icon name="account" size={21} />
+          </button>
+        )}
       </header>
 
       {accountOverlayOpen && (

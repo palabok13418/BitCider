@@ -420,3 +420,18 @@ test('BitCider accounts restore cloud links across sessions and survive encrypti
   assert.equal(newDeviceStatus.payload.account.authenticated, true);
   assert.equal(newDeviceStatus.payload.addonUrl, savedAddonUrl);
 });
+
+
+test('header brand stays pinned to the top-left while account actions align right', async () => {
+  const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
+  const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
+  const headerStart = appSource.indexOf('<header className="topbar">');
+  const headerEnd = appSource.indexOf('</header>', headerStart);
+  assert.ok(headerStart >= 0 && headerEnd > headerStart);
+  const headerSource = appSource.slice(headerStart, headerEnd);
+  assert.ok(headerSource.indexOf('<a className={`brand') < headerSource.indexOf('className="account-avatar-trigger"'));
+  assert.ok(styleSource.includes('.topbar {\\n  width: 100%;\\n  max-width: 1320px;'));
+  assert.ok(styleSource.includes('justify-content: flex-start;'));
+  assert.ok(styleSource.includes('gap: 11px; margin-right: auto;'));
+  assert.ok(styleSource.includes('.account-avatar-trigger {\\n  margin-left: auto;'));
+});
