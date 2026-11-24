@@ -539,8 +539,6 @@ export default function App() {
   const [pageMode, setPageMode] = useState('cider');
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
   const [modeSwitcherOpen, setModeSwitcherOpen] = useState(false);
-  const [modePullProgress, setModePullProgress] = useState(0);
-  const modePullDragRef = useRef(null);
   const modeDragRef = useRef(null);
   const modeSuppressClickUntilRef = useRef(0);
   const [modeDragProgress, setModeDragProgress] = useState(null);
@@ -1172,51 +1170,6 @@ export default function App() {
     }
   }
 
-  function beginModePull(event) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    modePullDragRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      moved: false
-    };
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch {}
-  }
-
-  function updateModePull(event) {
-    const drag = modePullDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, Math.min(54, event.clientY - drag.startY));
-    if (Math.abs(event.clientY - drag.startY) >= 6) drag.moved = true;
-    if (drag.moved) {
-      event.preventDefault();
-      setModePullProgress(distance / 54);
-    }
-  }
-
-  function finishModePull(event) {
-    const drag = modePullDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const distance = event.clientY - drag.startY;
-    modePullDragRef.current = null;
-    if (drag.moved) {
-      modeSuppressClickUntilRef.current = Date.now() + 350;
-      setModeSwitcherOpen(distance >= 22);
-      setModePullProgress(0);
-    }
-    try {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    } catch {}
-  }
-
-  function cancelModePull(event) {
-    const drag = modePullDragRef.current;
-    if (!drag || (event?.pointerId != null && drag.pointerId !== event.pointerId)) return;
-    modePullDragRef.current = null;
-    setModePullProgress(0);
-  }
-
   function updateModeDrag(event) {
     const drag = modeDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return false;
@@ -1397,7 +1350,6 @@ export default function App() {
 
         <div
           className="connection-column"
-          style={modePullProgress > 0 ? { '--pull-progress': modePullProgress } : undefined}
         >
         <section className="connection-card" aria-live="polite">
           <div className="source-mode-content">
@@ -1593,37 +1545,25 @@ export default function App() {
           )}
           </div>
         </section>
-        <section
+        <div
           className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`}
           aria-label="Switch source"
         >
-            <button
-              className="mode-pull-tab"
-              type="button"
-              onClick={() => {
-                if (Date.now() >= modeSuppressClickUntilRef.current) {
-                  setModeSwitcherOpen(open => !open);
-                }
-              }}
-              onPointerDown={beginModePull}
-              onPointerMove={updateModePull}
-              onPointerUp={finishModePull}
-              onPointerCancel={cancelModePull}
-              onLostPointerCapture={cancelModePull}
-              aria-expanded={modeSwitcherOpen}
-              aria-controls="bitcider-mode-panel"
-            >
-              <span className="mode-pull-label">SWITCH SOURCE</span>
-              <span className="mode-pull-chevron" aria-hidden="true">⌄</span>
-            </button>
-
-          </section>
-        <div className={`mode-switch-reveal-slot ${modeSwitcherOpen ? 'is-open' : ''}`} aria-hidden={!modeSwitcherOpen}>
-            <div
-              className="mode-switch-panel"
-              id="bitcider-mode-panel"
-              aria-hidden={!modeSwitcherOpen}
-            >
+          <button
+            className="mode-pull-tab"
+            type="button"
+            onClick={() => setModeSwitcherOpen(open => !open)}
+            aria-expanded={modeSwitcherOpen}
+            aria-controls="bitcider-mode-panel"
+          >
+            <span className="mode-pull-label">SWITCH SOURCE</span>
+            <span className="mode-pull-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div
+            className="mode-switch-panel"
+            id="bitcider-mode-panel"
+            aria-hidden={!modeSwitcherOpen}
+          >
               <div
                 className={`mode-toggle ${selectorMode === 'mono' ? 'is-mono' : 'is-cider'} ${modeDragProgress !== null ? 'is-dragging' : ''} ${modeTransitionPhase !== 'idle' ? 'is-switching' : ''}`}
                 role="group"
@@ -1666,7 +1606,7 @@ export default function App() {
                   </defs>
                 </svg>
               </div>
-            </div>
+          </div>
         </div>
 
         </div>
