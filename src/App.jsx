@@ -544,6 +544,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   const [deleteStage, setDeleteStage] = useState('idle');
   const [deleteCaught, setDeleteCaught] = useState(0);
   const [deleteSpot, setDeleteSpot] = useState({ x: 160, y: 120 });
+  const [deletePeekSide, setDeletePeekSide] = useState('left');
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
   const [busyAction, setBusyAction] = useState('');
@@ -685,30 +686,24 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   function randomDeletePosition() {
     const width = window.innerWidth || 1280;
     const height = window.innerHeight || 800;
-    const halfButtonWidth = Math.min(88, Math.max(56, width * 0.22));
-    const halfButtonHeight = Math.min(24, Math.max(20, height * 0.06));
-    const minX = halfButtonWidth + 8;
-    const maxX = Math.max(minX, width - halfButtonWidth - 8);
-    const minY = halfButtonHeight + 8;
-    const maxY = Math.max(minY, height - halfButtonHeight - 8);
+    const margin = 22;
     return {
-      x: Math.round(minX + Math.random() * (maxX - minX)),
-      y: Math.round(minY + Math.random() * (maxY - minY))
+      x: Math.round(margin + Math.random() * Math.max(1, width - margin * 2)),
+      y: Math.round(margin + Math.random() * Math.max(1, height - margin * 2))
     };
   }
 
   useEffect(() => {
-    if (deleteStage !== 'game') return undefined;
-    const movement = window.setInterval(() => {
-      setDeleteSpot(randomDeletePosition());
-    }, 900);
-    return () => window.clearInterval(movement);
+    if (deleteStage !== 'hands') return undefined;
+    const reveal = window.setTimeout(() => setDeleteStage('game'), 2000);
+    return () => window.clearTimeout(reveal);
   }, [deleteStage]);
 
   function startDeleteGame() {
     setDeleteCaught(0);
     setDeleteSpot(randomDeletePosition());
-    setDeleteStage('game');
+    setDeletePeekSide(['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]);
+    setDeleteStage('hands');
     setMessage('');
   }
 
@@ -722,6 +717,8 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
       return;
     }
     setDeleteSpot(randomDeletePosition());
+    setDeletePeekSide(['left', 'right', 'top', 'bottom'][Math.floor(Math.random() * 4)]);
+    setDeleteStage('hands');
   }
 
   async function clearThisOriginData() {
@@ -744,7 +741,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   async function executeDeletion() {
     setDeleteStage('crt-off');
     document.documentElement.classList.add('bitcider-crt-off');
-    await new Promise(resolve => window.setTimeout(resolve, 820));
+    await new Promise(resolve => window.setTimeout(resolve, 1450));
     document.documentElement.classList.remove('bitcider-crt-off');
 
     setDeleteStage('deleting');
@@ -806,14 +803,14 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
       setDeleteStage('crt-on');
       document.documentElement.classList.add('bitcider-crt-on');
-      await new Promise(resolve => window.setTimeout(resolve, 980));
+      await new Promise(resolve => window.setTimeout(resolve, 1550));
       document.documentElement.classList.remove('bitcider-crt-on');
       onClose();
     } catch (error) {
       document.documentElement.classList.remove('bitcider-crt-off', 'bitcider-crt-on');
       setDeleteStage('crt-on');
       document.documentElement.classList.add('bitcider-crt-on');
-      await new Promise(resolve => window.setTimeout(resolve, 900));
+      await new Promise(resolve => window.setTimeout(resolve, 1450));
       document.documentElement.classList.remove('bitcider-crt-on');
       setDeleteStage('idle');
       notify(error.message || 'Account deletion could not be completed. Your account is still active.', 'warning');
@@ -826,13 +823,13 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     return (
       <div className="account-delete-cinema is-black" role="status" aria-live="polite">
         <div className="account-delete-progress">
-          <span className="account-center-kicker">SECURE DELETION PROCESS</span>
-          <h2>Removing your account.</h2>
-          <p>{deleteProgressLabel}</p>
           <div className="account-delete-progress-track" role="progressbar" aria-label="Account deletion progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={deleteProgress}>
             <i style={{ width: deleteProgress + '%' }} />
           </div>
-          <div className="account-delete-progress-meta"><span>BITCIDER / ACCOUNT PURGE</span><span>{Math.round(deleteProgress)}%</span></div>
+          <div className="account-delete-progress-meta">
+            <span>{deleteProgressLabel} · BITCIDER / ACCOUNT PURGE</span>
+            <span>{Math.round(deleteProgress)}%</span>
+          </div>
         </div>
       </div>
     );
@@ -927,7 +924,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
           <div className="account-center-danger-zone">
             <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
-            {deleteStage !== 'game' && <button type="button" className="account-danger-button" onClick={startDeleteGame}>Delete account</button>}
+            {deleteStage !== 'game' && <button type="button" className="account-danger-button account-delete-start" onClick={startDeleteGame} data-game-message="Let’s play a game before the end of the account.">Delete account</button>}
           </div>
         </div>
       </section>
@@ -936,10 +933,16 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
       <button
         className="account-danger-button account-delete-target"
         type="button"
-        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
+        style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px', clipPath: deletePeekSide === 'left' ? 'inset(0 68% 0 0)' : deletePeekSide === 'right' ? 'inset(0 0 0 68%)' : deletePeekSide === 'top' ? 'inset(0 0 68% 0)' : 'inset(68% 0 0 0)' }}
         onPointerDown={event => event.stopPropagation()}
         onClick={catchDeleteTarget}
       >Delete account</button>
+    )}
+    {deleteStage === 'hands' && (
+      <div className="account-peekaboo-hands" aria-hidden="true">
+        <span className="account-peekaboo-hand hand-left" />
+        <span className="account-peekaboo-hand hand-right" />
+      </div>
     )}
     </>
   );
