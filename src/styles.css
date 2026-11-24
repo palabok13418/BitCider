@@ -1547,8 +1547,8 @@ h1 .bitchord-word {
   position: relative;
   z-index: 3;
   flex: 0 0 auto;
-  width: calc(100% + var(--connection-card-inset) + var(--connection-card-inset));
-  margin: 0 calc(0px - var(--connection-card-inset));
+  width: 80%;
+  margin: 0 auto;
   overflow: visible;
   border-top: 1px solid rgba(255,255,255,.12);
   border-radius: 0 0 15px 15px;
@@ -1562,8 +1562,7 @@ h1 .bitchord-word {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  width: 80%;
-  margin-inline: auto;
+  width: 100%;
   min-height: 44px;
   padding: 0 22px;
   border: 0;
