@@ -765,10 +765,11 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
       if (!completed) throw new Error('The server closed the deletion process before confirming completion.');
       setDeleteProgress(100);
-      await clearThisOriginData();
+        await clearThisOriginData();
+      await onDeleted();
       setDeleteStage('crt-on');
       await new Promise(resolve => window.setTimeout(resolve, 850));
-      await onDeleted();
+      onClose();
     } catch (error) {
       setDeletePassword('');
       setDeletePhrase('');
@@ -1760,14 +1761,13 @@ export default function App() {
         </a>
       </header>
 
-      {accountOverlayOpen && status.account?.authenticated === true && (
+      {accountOverlayOpen && (
         <AccountManagementOverlay
           status={status}
           csrfToken={csrfToken}
           onClose={() => setAccountOverlayOpen(false)}
           onStatusRefresh={refreshStatus}
           onDeleted={async () => {
-            setAccountOverlayOpen(false);
             setPageMode('cider');
             setModeSwitcherOpen(false);
             setModeDragProgress(null);
