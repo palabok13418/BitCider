@@ -1,3 +1,5 @@
+import { secureResponse } from '../security-hardening.mjs';
+
 const ADDON_ROUTE = /^\/[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/)/;
 
 // Fetch runtimes may transparently decompress an upstream response. Strip
@@ -18,25 +20,33 @@ function relayResponse(upstream) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    const protect = response => secureResponse(response, { isHttps: incoming.protocol === 'https:' });
     const isApi = incoming.pathname.startsWith('/api/');
     const isAddon = ADDON_ROUTE.test(incoming.pathname);
 
     if (!isApi && !isAddon) {
-      return env.ASSETS.fetch(request);
+      return protect(await env.ASSETS.fetch(request));
     }
 
     const backendOrigin = String(env.BITCIDER_BACKEND_ORIGIN || '').replace(/\/+$/, '');
     const proxySecret = String(env.BITCIDER_PROXY_SECRET || '');
     if (!backendOrigin || !proxySecret) {
-      return Response.json(
+      return protect(Response.json(
         { error: 'BACKEND_NOT_CONFIGURED', message: 'Set BITCIDER_BACKEND_ORIGIN and BITCIDER_PROXY_SECRET as Worker variables.' },
         { status: 503 }
-      );
+      ));
     }
 
     const target = new URL(incoming.pathname + incoming.search, backendOrigin);
     const headers = new Headers(request.headers);
     headers.delete('host');
+    // Rebuild forwarded metadata from Cloudflare's request context instead of
+    // trusting visitor-supplied X-Forwarded-* headers at the backend.
+    headers.set('x-forwarded-host', incoming.host);
+    headers.set('x-forwarded-proto', incoming.protocol.slice(0, -1));
+    const clientIp = request.headers.get('cf-connecting-ip');
+    if (clientIp) headers.set('x-forwarded-for', clientIp);
+    else headers.delete('x-forwarded-for');
     // Request an uncompressed upstream representation to avoid stale
     // compression metadata after the runtime decodes the body.
     headers.set('accept-encoding', 'identity');
@@ -50,14 +60,14 @@ export default {
         redirect: 'manual'
       };
       if (!['GET', 'HEAD'].includes(request.method)) init.body = request.body;
-      return relayResponse(await fetch(new Request(target, init), {
+      return protect(relayResponse(await fetch(new Request(target, init), {
         cf: { cacheTtl: 0, cacheEverything: false }
-      }));
+      })));
     } catch {
-      return Response.json(
+      return protect(Response.json(
         { error: 'BACKEND_UNAVAILABLE', message: 'The Deplexo BitCider backend could not be reached.' },
         { status: 502 }
-      );
+      ));
     }
   }
 };
