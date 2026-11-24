@@ -542,7 +542,8 @@ const ACCOUNT_DELETE_SPOTS = [
 ];
 
 function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onStatusRefresh }) {
-  const [currentPassword, setCurrentPassword] = useState('');
+  const [passwordChangeCurrentPassword, setPasswordChangeCurrentPassword] = useState('');
+  const [passkeyPassword, setPasskeyPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [revealedAccountKey, setRevealedAccountKey] = useState('');
   const [revealedRecoveryCodes, setRevealedRecoveryCodes] = useState([]);
@@ -577,52 +578,51 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   function closeOverlay() {
-    setCurrentPassword('');
+    setPasswordChangeCurrentPassword('');
+    setPasskeyPassword('');
     setNewPassword('');
     setRevealedAccountKey('');
     setRevealedRecoveryCodes([]);
     onClose();
   }
 
-  async function rotateAccountKey() {
-    if (!currentPassword) return notify('Enter your current password to replace the Account Key.', 'warning');
-    setBusyAction('key');
+  async function revealSecret(secretType) {
+    setBusyAction(secretType);
     setMessage('');
     try {
-      const result = await accountRequest('/api/account/key/rotate', { password: currentPassword });
-      setRevealedAccountKey(result.accountKey || '');
+      const optionsJSON = await accountRequest('/api/account/secrets/reveal/options', { secretType });
+      const assertion = await startAuthentication({ optionsJSON });
+      const result = await accountRequest('/api/account/secrets/reveal', assertion);
+      if (secretType === 'account-key') {
+        setRevealedAccountKey(result.accountKey || '');
+        notify('Your replacement Account Key is ready. Copy it now, because it cannot be shown again.', 'success');
+      } else {
+        setRevealedRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+        notify('Your replacement backup codes are ready. The previous set is no longer valid.', 'success');
+      }
       await onStatusRefresh();
-      notify('Your new Account Key is ready. Copy it now, because it cannot be shown again.', 'success');
     } catch (error) {
-      notify(error.message || 'Could not replace your Account Key.', 'warning');
+      notify(error.message || 'Passkey verification could not authorize this secret.', 'warning');
     } finally {
       setBusyAction('');
     }
+  }
+
+  async function rotateAccountKey() {
+    return revealSecret('account-key');
   }
 
   async function rotateRecoveryCodes() {
-    if (!currentPassword) return notify('Enter your current password to replace your backup codes.', 'warning');
-    setBusyAction('recovery');
-    setMessage('');
-    try {
-      const result = await accountRequest('/api/account/recovery-codes/rotate', { password: currentPassword });
-      setRevealedRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
-      await onStatusRefresh();
-      notify('Your new backup codes are ready. The previous set is no longer valid.', 'success');
-    } catch (error) {
-      notify(error.message || 'Could not replace your backup codes.', 'warning');
-    } finally {
-      setBusyAction('');
-    }
+    return revealSecret('backup-codes');
   }
 
   async function updatePassword() {
-    if (!currentPassword || !newPassword) return notify('Enter your current password and a new password.', 'warning');
+    if (!passwordChangeCurrentPassword || !newPassword) return notify('Enter your current password and a new password.', 'warning');
     setBusyAction('password');
     setMessage('');
     try {
-      const result = await accountRequest('/api/account/password/change', { currentPassword, newPassword });
-      setCurrentPassword('');
+      const result = await accountRequest('/api/account/password/change', { currentPassword: passwordChangeCurrentPassword, newPassword });
+      setPasswordChangeCurrentPassword('');
       setNewPassword('');
       await onStatusRefresh();
       notify(
@@ -638,16 +638,37 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     }
   }
 
+  async function addPasskey() {
+    if (!passkeyPassword) return notify('Enter your current password before adding a passkey.', 'warning');
+    setBusyAction('passkey-add');
+    setMessage('');
+    try {
+      const optionsJSON = await accountRequest('/api/account/passkeys/register/options', { password: passkeyPassword });
+      const registration = await startRegistration({ optionsJSON });
+      const result = await accountRequest('/api/account/passkeys/register/verify', {
+        ...registration,
+        deviceName: 'Passkey ' + ((status.passkeys || []).length + 1)
+      });
+      setPasskeyPassword('');
+      await onStatusRefresh();
+      notify('Passkey added to your BitCider account.', 'success');
+    } catch (error) {
+      notify(error.message || 'Could not add this passkey.', 'warning');
+    } finally {
+      setBusyAction('');
+    }
+  }
+
   async function removePasskey(credentialId) {
-    if (!currentPassword) return notify('Enter your current password to remove a passkey.', 'warning');
+    if (!passkeyPassword) return notify('Enter your current password before removing a passkey.', 'warning');
     setBusyAction('passkey:' + credentialId);
     setMessage('');
     try {
       await accountRequest('/api/account/passkeys/remove', {
         credentialId,
-        password: currentPassword
+        password: passkeyPassword
       });
-      setCurrentPassword('');
+      setPasskeyPassword('');
       await onStatusRefresh();
       notify('Passkey removed from your BitCider account.', 'success');
     } catch (error) {
@@ -668,9 +689,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   function startDeleteGame() {
-    if (!currentPassword) {
-      return notify('Enter your current password in the security field above before deleting your account.', 'warning');
-    }
     setDeleteCaught(0);
     setDeleteSpotIndex(0);
     setDeleteStage('game');
@@ -712,11 +730,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
   }
 
   async function executeDeletion() {
-    if (!currentPassword) {
-      setDeleteStage('idle');
-      return notify('Enter your current password in the security field above before deleting your account.', 'warning');
-    }
-
     setDeleteStage('crt-off');
     document.documentElement.classList.add('bitcider-crt-off');
     await new Promise(resolve => window.setTimeout(resolve, 820));
@@ -731,7 +744,7 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
         cache: 'no-store',
-        body: JSON.stringify({ password: currentPassword })
+        body: JSON.stringify({})
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -836,20 +849,6 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
             </div>
           ) : (
             <>
-          <div className="account-center-profile-note">
-            <span className="account-center-profile-mark"><Icon name="account" size={18} /></span>
-            <div><strong>Profile image</strong><p>This account icon is fixed and cannot be changed.</p></div>
-            <span className="account-center-fixed">FIXED</span>
-          </div>
-
-          <div className="account-center-reauth">
-            <label>
-              <span>CONFIRM YOUR PASSWORD FOR SECURITY CHANGES</span>
-              <input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} placeholder="Current BitCider password" />
-            </label>
-            <p>Your password is never displayed or stored in readable form. It is only used to verify sensitive changes.</p>
-          </div>
-
           <div className="account-center-grid">
             <section className="account-center-card">
               <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
@@ -861,18 +860,19 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
               ) : (
                 <div className="account-center-masked-secret">•••• •••• •••• •••• •••• ••••</div>
               )}
-              <p>The existing key is stored as a one-way verifier and cannot be recovered. Replacing it reveals a new key once.</p>
-              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!currentPassword || busyAction === 'key'}>
-                {busyAction === 'key' ? 'CREATING KEY…' : revealedAccountKey ? 'REPLACE AGAIN' : 'REPLACE & REVEAL KEY'}
+              <p>The existing key is stored as a one-way verifier and cannot be read back. A passkey is required to replace it and reveal the new key.</p>
+              <button type="button" className="account-center-action" onClick={rotateAccountKey} disabled={!(status.passkeys || []).length || busyAction === 'account-key'}>
+                {busyAction === 'account-key' ? 'WAITING FOR PASSKEY…' : revealedAccountKey ? 'REPLACE & REVEAL KEY AGAIN' : 'REVEAL ACCOUNT KEY'}
               </button>
             </section>
 
             <section className="account-center-card">
               <div className="account-center-card-head"><span>PASSWORD</span><span className="account-center-state">ENCRYPTED VERIFIER</span></div>
               <div className="account-center-masked-secret">••••••••••••••••</div>
-              <p>The current password cannot be viewed. You can replace it here. Other signed-in devices will be signed out.</p>
+              <p>The current password cannot be viewed. Enter it here to set a new one. Other signed-in devices will be signed out.</p>
+              <label className="account-center-password-label"><span>CURRENT PASSWORD</span><input type="password" autoComplete="current-password" value={passwordChangeCurrentPassword} onChange={event => setPasswordChangeCurrentPassword(event.target.value)} placeholder="Current password" /></label>
               <input className="account-center-input" type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} placeholder="New password" />
-              <button type="button" className="account-center-action" onClick={updatePassword} disabled={!currentPassword || !newPassword || busyAction === 'password'}>
+              <button type="button" className="account-center-action" onClick={updatePassword} disabled={!passwordChangeCurrentPassword || !newPassword || busyAction === 'password'}>
                 {busyAction === 'password' ? 'UPDATING…' : 'UPDATE PASSWORD'}
               </button>
             </section>
@@ -887,9 +887,9 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
               ) : (
                 <div className="account-center-masked-secret">•••• •••• •••• ••••</div>
               )}
-              <p>Only code hashes are kept on the server. Replacing this set invalidates every previous backup code.</p>
-              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!currentPassword || busyAction === 'recovery'}>
-                {busyAction === 'recovery' ? 'CREATING CODES…' : revealedRecoveryCodes.length ? 'REPLACE CODE SET' : 'REPLACE & REVEAL CODES'}
+              <p>Only code hashes are kept on the server. A passkey is required to replace this set and reveal the new codes. Replacing them invalidates every previous code.</p>
+              <button type="button" className="account-center-action" onClick={rotateRecoveryCodes} disabled={!(status.passkeys || []).length || busyAction === 'backup-codes'}>
+                {busyAction === 'backup-codes' ? 'WAITING FOR PASSKEY…' : revealedRecoveryCodes.length ? 'REPLACE CODE SET' : 'REVEAL BACKUP CODES'}
               </button>
             </section>
 
@@ -904,14 +904,18 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
                         <strong>{passkey.name || 'Passkey'}</strong>
                         <span>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device-bound passkey'} · {passkey.lastUsedAt ? 'Used ' + new Date(passkey.lastUsedAt).toLocaleDateString() : 'Not used yet'}</span>
                       </div>
-                      <button type="button" className="account-center-remove" onClick={() => removePasskey(passkey.id)} disabled={!currentPassword || busyAction === 'passkey:' + passkey.id}>Remove</button>
+                      <button type="button" className="account-center-remove" onClick={() => removePasskey(passkey.id)} disabled={!passkeyPassword || busyAction === 'passkey:' + passkey.id}>Remove</button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="account-center-empty">No passkeys are currently linked to this account.</p>
               )}
-              <p>Removing a passkey unlinks it from BitCider. It does not delete the credential from your device or password manager.</p>
+              <p>Enter your account password before adding or removing a passkey. Removing one unlinks it from BitCider but does not delete it from your device or password manager.</p>
+              <label className="account-center-password-label"><span>PASSWORD REQUIRED FOR PASSKEY CHANGES</span><input type="password" autoComplete="current-password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} placeholder="Current password" /></label>
+              <button type="button" className="account-center-action" onClick={addPasskey} disabled={!passkeyPassword || busyAction === 'passkey-add' || (status.passkeys || []).length >= (status.passkeyLimit || 5)}>
+                {busyAction === 'passkey-add' ? 'WAITING FOR AUTHENTICATOR…' : (status.passkeys || []).length >= (status.passkeyLimit || 5) ? 'PASSKEY LIMIT REACHED' : 'ADD PASSKEY'}
+              </button>
             </section>
           </div>
 
