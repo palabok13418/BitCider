@@ -1308,15 +1308,10 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
 });
 
 app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async (req, res) => {
-  const { user, sessionId, accountId, authenticated } = getUserSession(req, res);
+  const { sessionId, accountId, authenticated } = getUserSession(req, res);
   if (!authenticated || !accountId) {
     return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before deleting this account.' });
   }
-  if (!await verifyPassword(req.body?.password, user.password)) {
-    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
-  }
-
-  const passwordHash = user.password?.hash;
   res.status(200);
   res.set('Content-Type', 'text/event-stream; charset=utf-8');
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, no-transform');
@@ -1344,7 +1339,7 @@ app.post('/api/account/delete', localOnly, authRateLimit(2), requireCsrf, async 
   sendProgress(24, 'Revoking passkeys, backup codes, Account Key, and device sessions');
   const deletion = await updateStore(store => {
     const account = store.accounts[accountId];
-    if (!account || account.password?.hash !== passwordHash) {
+    if (!account) {
       return { ok: false, write: false };
     }
     for (const [sessionHash, entry] of Object.entries(store.authSessions)) {
@@ -1490,55 +1485,130 @@ app.post('/api/account/password/change', localOnly, authRateLimit(5), requireCsr
   return res.json({ ok: true, revokedDevices: result.revokedDevices });
 });
 
-app.post('/api/account/key/rotate', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
-  const { user, accountId, authenticated } = getUserSession(req, res);
+app.post('/api/account/secrets/reveal/options', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const { sessionId, user, accountId, authenticated } = getUserSession(req, res);
   if (!authenticated || !accountId) {
-    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before replacing your Account Key.' });
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before accessing account secrets.' });
   }
-  if (!await verifyPassword(req.body?.password, user.password)) {
-    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+  const secretType = req.body?.secretType;
+  if (secretType !== 'account-key' && secretType !== 'backup-codes') {
+    return res.status(400).json({ error: 'INVALID_SECRET_TYPE', message: 'Choose a valid account secret.' });
   }
 
-  const previousHash = user.password?.hash;
-  const accountKey = createAccountKey();
-  const accountKeyHash = hashAccountKey(accountKey);
-  const result = await updateStore(store => {
-    const account = store.accounts[accountId];
-    if (!account || account.password?.hash !== previousHash) {
-      return { status: 409, error: 'ACCOUNT_CHANGED', message: 'Your account changed during this request. Refresh and try again.', write: false };
-    }
-    account.accountKeyHash = accountKeyHash;
-    return { ok: true };
-  });
-  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
-  res.set('Cache-Control', 'no-store');
-  res.set('Pragma', 'no-cache');
-  return res.json({ ok: true, accountKey });
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+
+  const passkeys = (user.passkeys || []).filter(passkey => passkey.rpID === context.rpID);
+  if (!user.webAuthnUserId || !passkeys.length) {
+    return res.status(409).json({ error: 'PASSKEY_REQUIRED', message: 'Add a passkey before revealing or replacing account secrets.' });
+  }
+
+  try {
+    const options = await generateAuthenticationOptions({
+      rpID: context.rpID,
+      allowCredentials: passkeys.map(passkey => ({
+        id: passkey.id,
+        transports: passkey.transports || []
+      })),
+      userVerification: 'required'
+    });
+    await saveWebAuthnChallenge(sessionId, {
+      purpose: 'reveal-secret',
+      accountId,
+      secretType,
+      challenge: options.challenge,
+      origin: context.origin,
+      rpID: context.rpID
+    });
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    return res.json(options);
+  } catch (error) {
+    console.error('BitCider secret reveal challenge failed:', error.message);
+    return res.status(500).json({ error: 'PASSKEY_REVEAL_FAILED', message: 'Could not start passkey verification. Try again.' });
+  }
 });
 
-app.post('/api/account/recovery-codes/rotate', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
-  const { user, accountId, authenticated } = getUserSession(req, res);
+app.post('/api/account/secrets/reveal', localOnly, authRateLimit(5), requireCsrf, async (req, res) => {
+  const { sessionId, accountId, authenticated } = getUserSession(req, res);
   if (!authenticated || !accountId) {
-    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before replacing your recovery codes.' });
-  }
-  if (!await verifyPassword(req.body?.password, user.password)) {
-    return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Your current password is incorrect.' });
+    return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before accessing account secrets.' });
   }
 
-  const previousHash = user.password?.hash;
-  const recovery = createRecoveryCodes();
-  const result = await updateStore(store => {
-    const account = store.accounts[accountId];
-    if (!account || account.password?.hash !== previousHash) {
-      return { status: 409, error: 'ACCOUNT_CHANGED', message: 'Your account changed during this request. Refresh and try again.', write: false };
+  const challenge = await consumeWebAuthnChallenge(sessionId, 'reveal-secret', accountId);
+  if (!challenge || !['account-key', 'backup-codes'].includes(challenge.secretType)) {
+    return res.status(400).json({ error: 'PASSKEY_CHALLENGE_EXPIRED', message: 'Passkey verification expired. Start again.' });
+  }
+
+  let context;
+  try { context = webAuthnContext(req); }
+  catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+  if (context.origin !== challenge.origin || context.rpID !== challenge.rpID) {
+    return res.status(400).json({ error: 'PASSKEY_ORIGIN_MISMATCH', message: 'Passkey verification must finish on the same BitCider website where it started.' });
+  }
+
+  const snapshot = readStore();
+  const matchedAccount = snapshot.accounts[accountId];
+  const credentialId = typeof req.body?.id === 'string' ? req.body.id : '';
+  const userHandle = typeof req.body?.response?.userHandle === 'string' ? req.body.response.userHandle : '';
+  const matchedPasskey = (matchedAccount?.passkeys || []).find(entry => (
+    entry.id === credentialId && entry.rpID === challenge.rpID
+  ));
+  if (!matchedAccount || !matchedPasskey || !matchedAccount.webAuthnUserId
+    || (userHandle && !secureStringEqual(userHandle, matchedAccount.webAuthnUserId))) {
+    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for this BitCider account.' });
+  }
+
+  try {
+    const verification = await verifyAuthenticationResponse({
+      response: req.body,
+      expectedChallenge: challenge.challenge,
+      expectedOrigin: challenge.origin,
+      expectedRPID: challenge.rpID,
+      credential: {
+        id: matchedPasskey.id,
+        publicKey: new Uint8Array(Buffer.from(matchedPasskey.publicKey, 'base64url')),
+        counter: Number(matchedPasskey.counter || 0),
+        transports: matchedPasskey.transports || []
+      },
+      requireUserVerification: true
+    });
+    if (!verification.verified || verification.authenticationInfo?.userVerified !== true) {
+      return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'Passkey user verification was not completed.' });
     }
-    account.recoveryCodeHashes = recovery.hashes;
-    return { ok: true };
-  });
-  if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
-  res.set('Cache-Control', 'no-store');
-  res.set('Pragma', 'no-cache');
-  return res.json({ ok: true, recoveryCodes: recovery.codes });
+
+    const accountKey = challenge.secretType === 'account-key' ? createAccountKey() : null;
+    const recovery = challenge.secretType === 'backup-codes' ? createRecoveryCodes() : null;
+    const result = await updateStore(store => {
+      const account = store.accounts[accountId];
+      if (!account || account.webAuthnUserId !== matchedAccount.webAuthnUserId) {
+        return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for this BitCider account.', write: false };
+      }
+      const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
+      if (!passkey || Number(passkey.counter || 0) !== Number(matchedPasskey.counter || 0)) {
+        return { status: 401, error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for this BitCider account.', write: false };
+      }
+
+      passkey.counter = Number(verification.authenticationInfo.newCounter || 0);
+      passkey.lastUsedAt = new Date().toISOString();
+      if (challenge.secretType === 'account-key') {
+        account.accountKeyHash = hashAccountKey(accountKey);
+      } else {
+        account.recoveryCodeHashes = recovery.hashes;
+      }
+      return { ok: true };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    if (accountKey) return res.json({ ok: true, accountKey });
+    return res.json({ ok: true, recoveryCodes: recovery.codes });
+  } catch (error) {
+    console.error('BitCider secret reveal passkey verification failed:', error.message);
+    return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'Passkey verification failed. Try again.' });
+  }
 });
 
 app.post('/api/account/passkeys/register/options', localOnly, authRateLimit(5), requireCsrf, requireDedicatedTokenEncryption, async (req, res) => {
