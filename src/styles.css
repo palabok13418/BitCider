@@ -2472,78 +2472,10 @@ h1 .bitchord-word {
 .site-shell.mono-mode .account-center-secret code,
 .site-shell.mono-mode .account-center-recovery-codes code { color: #ededed; border-color: rgba(255,255,255,.17); background: rgba(255,255,255,.045); }
 
-.account-delete-inline {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  min-height: 352px;
-  padding: 31px 22px 24px;
-  overflow: hidden;
-  border: 1px solid rgba(229,142,163,.2);
-  border-radius: 17px;
-  color: #f8e9ed;
-  text-align: center;
-  background:
-    radial-gradient(ellipse at 50% 0%, rgba(213,104,130,.18), transparent 55%),
-    linear-gradient(145deg, rgba(42,21,28,.72), rgba(11,7,10,.92));
-  box-shadow: inset 0 1px rgba(255,255,255,.055), 0 18px 50px rgba(0,0,0,.23);
-  animation: account-delete-panel-in .32s cubic-bezier(.2,.8,.2,1) both;
-}
-.account-delete-inline::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  opacity: .24;
-  background:
-    repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.025) 4px),
-    radial-gradient(ellipse at 50% 100%, rgba(200,106,130,.1), transparent 60%);
-  pointer-events: none;
-}
-.account-delete-inline > .account-center-kicker { color: #c995a1; }
-.account-delete-inline h3 {
-  margin: 10px 0 7px;
-  color: #fff4f6;
-  font-size: 23px;
-  line-height: 1.15;
-  letter-spacing: -.055em;
-}
-.account-delete-inline > p {
-  width: min(100%, 390px);
-  margin: 0;
-  color: #af969c;
-  font-size: 10px;
-  line-height: 1.65;
-}
-.account-delete-catches {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin: 17px 0 7px;
-}
-.account-delete-catches i {
-  width: 34px;
-  height: 4px;
-  border-radius: 5px;
-  background: rgba(255,255,255,.15);
-  transition: background .2s ease, box-shadow .2s ease, transform .2s ease;
-}
-.account-delete-catches i.is-caught {
-  background: #efb7c2;
-  box-shadow: 0 0 13px rgba(239,183,194,.4);
-}
-.account-delete-catch-count {
-  color: #a78c93;
-  font: 8px var(--mono);
-  letter-spacing: .13em;
-}
 .account-delete-target {
-  position: absolute;
-  z-index: 2;
-  min-width: 124px;
+  position: fixed;
+  z-index: 2300;
+  min-width: 146px;
   min-height: 41px;
   padding: 0 16px;
   border: 1px solid rgba(255,178,194,.55);
@@ -2557,8 +2489,8 @@ h1 .bitchord-word {
   cursor: pointer;
   touch-action: manipulation;
   transition:
-    left .34s cubic-bezier(.16,1,.3,1),
-    top .34s cubic-bezier(.16,1,.3,1),
+    left .48s cubic-bezier(.16,1,.3,1),
+    top .48s cubic-bezier(.16,1,.3,1),
     filter .16s ease,
     box-shadow .16s ease;
   animation: delete-target-glimmer 2.8s ease-in-out infinite;
@@ -2810,21 +2742,11 @@ html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out b
   .account-center-card { padding: 14px; }
   .account-center-danger-zone { align-items: flex-start; flex-direction: column; }
   .account-center-danger-zone .account-danger-button { width: 100%; }
-  .account-delete-inline { min-height: 340px; padding: 26px 15px 20px; }
-  .account-delete-inline h3 { font-size: 21px; }
+
   .account-delete-target { min-width: 112px; min-height: 39px; font-size: 7px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .account-center-overlay,
   .account-center-panel,
-  .account-delete-inline,
-  .account-delete-target,
-  .account-delete-progress,
-  html.bitcider-crt-off .site-shell,
-  html.bitcider-crt-on .site-shell,
-  html.bitcider-crt-off::after,
-  html.bitcider-crt-on::after {
-    animation-duration: .01ms !important;
-    transition-duration: .01ms !important;
-  }
+
 }
