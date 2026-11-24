@@ -117,6 +117,32 @@ function passwordStrength(value) {
   return { level: 3, label: 'Hard · Good', note: 'Looks harder to guess. Keep it unique to BitCider.' };
 }
 
+function isGoogleChromeBrowser() {
+  const brands = navigator.userAgentData?.brands;
+  if (Array.isArray(brands) && brands.length) {
+    return brands.some(entry => entry.brand === 'Google Chrome');
+  }
+  const userAgent = navigator.userAgent || '';
+  return /Chrome\\/\\d+/i.test(userAgent)
+    && !/(Edg|OPR|Opera|Brave|CriOS|SamsungBrowser)\\//i.test(userAgent)
+    && !navigator.brave;
+}
+
+async function requestChromePasswordManagerSave(accountKey, password) {
+  if (!window.isSecureContext
+    || typeof window.PasswordCredential !== 'function'
+    || typeof navigator.credentials?.store !== 'function') {
+    throw new Error('The browser credential-save API is unavailable.');
+  }
+  const credential = new window.PasswordCredential({
+    id: accountKey,
+    password,
+    name: 'BitCider Account',
+    iconURL: new URL('/favicon.svg', window.location.origin).href
+  });
+  await navigator.credentials.store(credential);
+}
+
 function AccountSetupWindow({
   inline = false,
   initialFlow = null,
@@ -143,6 +169,7 @@ function AccountSetupWindow({
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [enrollmentPassword, setEnrollmentPassword] = useState('');
+  const [passwordManagerStatus, setPasswordManagerStatus] = useState('idle');
   const strength = passwordStrength(password);
 
   async function post(path, payload = {}) {
@@ -166,6 +193,17 @@ function AccountSetupWindow({
     setPasskeyLimit(Number(result.passkeyLimit || 5));
     setTokenEncryptionConfigured(result.tokenEncryptionConfigured === true);
     return result;
+  }
+
+  function saveCredentialsInChrome(accountKeyValue, passwordValue) {
+    if (!accountKeyValue || !passwordValue || !isGoogleChromeBrowser()) {
+      setPasswordManagerStatus('idle');
+      return;
+    }
+    setPasswordManagerStatus('saving');
+    void requestChromePasswordManagerSave(accountKeyValue, passwordValue)
+      .then(() => setPasswordManagerStatus('requested'))
+      .catch(() => setPasswordManagerStatus('unavailable'));
   }
 
   function finish() {
@@ -242,6 +280,7 @@ function AccountSetupWindow({
       const result = await post('/api/account/login', { accountKey: accountKey.trim(), password });
       if (result.accountKey) {
         setAccountKey(result.accountKey);
+        saveCredentialsInChrome(result.accountKey, password);
         setStage('account-key');
         setInfo('A new Account Key was created for this older account. Save it before continuing.');
       } else {
@@ -264,9 +303,11 @@ function AccountSetupWindow({
     setError('');
     try {
       const result = await post('/api/account/register', { password });
+      const createdAccountKey = result.accountKey || '';
       setEnrollmentPassword(password);
-      setAccountKey(result.accountKey || '');
+      setAccountKey(createdAccountKey);
       setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+      saveCredentialsInChrome(createdAccountKey, password);
       setPassword('');
       setPasswordConfirm('');
       setStage('recovery');
@@ -289,8 +330,10 @@ function AccountSetupWindow({
     setError('');
     try {
       const result = await post('/api/account/recover', { recoveryCode, newPassword: password });
-      setAccountKey(result.accountKey || '');
+      const recoveredAccountKey = result.accountKey || '';
+      setAccountKey(recoveredAccountKey);
       setRecoveryCodes(Array.isArray(result.recoveryCodes) ? result.recoveryCodes : []);
+      saveCredentialsInChrome(recoveredAccountKey, password);
       setPassword('');
       setPasswordConfirm('');
       setRecoveryCode('');
@@ -389,10 +432,10 @@ function AccountSetupWindow({
               {!tokenEncryptionConfigured && (
                 <div className="account-popup-warning">Secure cloud storage is not configured on the BitCider backend yet. Account setup is unavailable until Deplexo has the encryption secret.</div>
               )}
-              <form className="account-popup-form" onSubmit={createAccount}>
+              <form className="account-popup-form" id="account-create-form" autoComplete="on" onSubmit={createAccount}>
                 <label>
                   <span>CREATE A PASSWORD</span>
-                  <input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose any password" required />
+                  <input id="new-password" name="new-password" type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Choose any password" required />
                 </label>
                 <div className={strengthClass} aria-live="polite">
                   <div className="password-strength-bars"><i /><i /><i /></div>
@@ -401,7 +444,7 @@ function AccountSetupWindow({
                 </div>
                 <label>
                   <span>CONFIRM PASSWORD</span>
-                  <input type="password" autoComplete="new-password" value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} placeholder="Type it again" required />
+                  <input id="confirm-password" name="confirm-password" type="password" autoComplete="new-password" value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} placeholder="Type it again" required />
                 </label>
                 <p className="account-popup-footnote">There is no password character-count rule. The strength indicator is only a live estimate and will never block a password by itself.</p>
                 <button className="account-submit-button" type="submit" disabled={!canSubmitCreate || !tokenEncryptionConfigured}>{busy ? 'CREATING ACCOUNT…' : 'CREATE ACCOUNT'}</button>
@@ -415,6 +458,19 @@ function AccountSetupWindow({
               <h1>Save your Account Key and recovery codes.</h1>
               <p>Your Account Key identifies your BitCider account on new devices. It is shown once. Keep it private and store the recovery codes separately.</p>
               <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
+              {passwordManagerStatus !== 'idle' && (
+                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
+                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
+                  <div>
+                    <strong>GOOGLE PASSWORD MANAGER</strong>
+                    <p>{passwordManagerStatus === 'saving'
+                      ? 'Sending your BitCider sign-in to Chrome Password Manager…'
+                      : passwordManagerStatus === 'requested'
+                        ? 'Chrome was asked to save your Account Key as the username and your BitCider password with it. Confirm the browser save prompt to keep it.'
+                        : 'Chrome could not open its credential-save flow here. Copy your Account Key and add it manually in Google Password Manager.'}</p>
+                  </div>
+                </div>
+              )}
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>
@@ -452,14 +508,14 @@ function AccountSetupWindow({
                 <button className="account-passkey-button" type="button" onClick={signInWithPasskey} disabled={busy || !csrfToken}>{busy ? 'WAITING FOR PASSKEY…' : 'CONTINUE WITH PASSKEY'}</button>
               </div>
               <div className="account-popup-divider"><span>OR USE YOUR PASSWORD</span></div>
-              <form className="account-popup-form" onSubmit={signInWithPassword}>
+              <form className="account-popup-form" id="account-login-form" autoComplete="on" onSubmit={signInWithPassword}>
                 <label>
                   <span>ACCOUNT KEY</span>
-                  <input autoComplete="off" spellCheck={false} value={accountKey} onChange={event => setAccountKey(event.target.value)} placeholder={ciderLinked ? 'Optional on this already-linked device' : 'Paste your saved Account Key'} required={!ciderLinked} />
+                  <input id="account-key" name="username" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={accountKey} onChange={event => setAccountKey(event.target.value)} placeholder={ciderLinked ? 'Optional on this already-linked device' : 'Paste your saved Account Key'} required={!ciderLinked} />
                 </label>
                 <label>
                   <span>PASSWORD</span>
-                  <input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Your BitCider password" required />
+                  <input id="account-password" name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Your BitCider password" required />
                 </label>
                 <button className="account-submit-button" type="submit" disabled={!canSubmitLogin}>{busy ? 'SIGNING IN…' : 'SIGN IN'}</button>
               </form>
@@ -502,6 +558,12 @@ function AccountSetupWindow({
               <h1>Save your Account Key.</h1>
               <p>This older account did not have an Account Key yet. It is shown once. Store it privately so you can sign in from other devices.</p>
               <div className="account-key-display"><span>ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
+              {passwordManagerStatus !== 'idle' && (
+                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
+                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
+                  <div><strong>GOOGLE PASSWORD MANAGER</strong><p>{passwordManagerStatus === 'saving' ? 'Sending your BitCider sign-in to Chrome Password Manager…' : passwordManagerStatus === 'requested' ? 'Chrome was asked to save your Account Key and password. Confirm the browser prompt to keep them.' : 'Chrome could not open its credential-save flow here. Copy your Account Key and add it manually.'}</p></div>
+                </div>
+              )}
               <button className="account-submit-button" type="button" onClick={finish} disabled={!accountKey}>I SAVED MY ACCOUNT KEY</button>
             </div>
           )}
@@ -512,6 +574,12 @@ function AccountSetupWindow({
               <h1>Save your new recovery codes.</h1>
               <p>Your password and Account Key have been reset. Other active devices were signed out. Save the new key and replacement recovery codes before continuing.</p>
               <div className="account-key-display"><span>NEW ACCOUNT KEY</span><code>{accountKey}</code><button className="account-secondary-button" type="button" onClick={copyAccountKey} disabled={!accountKey}>COPY ACCOUNT KEY</button></div>
+              {passwordManagerStatus !== 'idle' && (
+                <div className={'account-password-manager-note is-' + passwordManagerStatus} role="status" aria-live="polite">
+                  <span className="account-password-manager-mark" aria-hidden="true">KEY</span>
+                  <div><strong>GOOGLE PASSWORD MANAGER</strong><p>{passwordManagerStatus === 'saving' ? 'Updating the saved BitCider sign-in in Chrome…' : passwordManagerStatus === 'requested' ? 'Chrome was asked to save the replacement Account Key and password. Confirm its browser prompt.' : 'Chrome could not update the saved credential here. Copy the replacement Account Key and update it in Google Password Manager.'}</p></div>
+                </div>
+              )}
               <div className="popup-recovery-codes">{recoveryCodes.map(code => <code key={code}>{code}</code>)}</div>
               <div className="account-popup-actions">
                 <button className="account-secondary-button" type="button" onClick={copyRecoveryCodes} disabled={!recoveryCodes.length}>COPY CODES</button>

@@ -107,6 +107,22 @@ async function connectExistingCiderToken(origin, cookie, csrf, token) {
   });
 }
 
+test('Account setup offers the Account Key and passphrase to Chrome Password Manager', async () => {
+  const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
+  const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
+  assert.ok(appSource.includes("entry.brand === 'Google Chrome'"));
+  assert.ok(appSource.includes('new window.PasswordCredential({'));
+  assert.ok(appSource.includes('id: accountKey,'));
+  assert.ok(appSource.includes("name: 'BitCider Account'"));
+  assert.ok(appSource.includes("navigator.credentials.store(credential)"));
+  assert.ok(appSource.includes('saveCredentialsInChrome(createdAccountKey, password)'));
+  assert.ok(appSource.includes('id="account-key" name="username" type="text" autoComplete="username"'));
+  assert.ok(appSource.includes('id="account-password" name="password" type="password" autoComplete="current-password"'));
+  assert.ok(appSource.includes('GOOGLE PASSWORD MANAGER'));
+  assert.ok(styleSource.includes('.account-password-manager-note {'));
+  assert.ok(appSource.includes("setPasswordManagerStatus('unavailable')"));
+});
+
 test('BitCider accounts restore cloud links across sessions and survive encryption-key migration', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-flow-'));
   const port = await freePort();
