@@ -1562,7 +1562,8 @@ h1 .bitchord-word {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  width: 100%;
+  width: 80%;
+  margin-inline: auto;
   min-height: 44px;
   padding: 0 22px;
   border: 0;
