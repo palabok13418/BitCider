@@ -400,6 +400,7 @@ function authRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
 }
 
 const bitMonoSearchRateLimit = createIpRateLimiter({ limit: 45, windowMs: 60_000 });
+const bitMonoHealthRateLimit = createIpRateLimiter({ limit: 30, windowMs: 60_000 });
 const bitMonoStreamRateLimit = createIpRateLimiter({ limit: 12, windowMs: 60_000 });
 const bitMonoAudioRateLimit = createIpRateLimiter({ limit: 360, windowMs: 60_000 });
 const personalAddonSearchRateLimit = createIpRateLimiter({
@@ -2069,6 +2070,13 @@ function bitMonoLogText(value, maxLength = 120) {
     .slice(0, maxLength);
 }
 
+function bitMonoPushDiagnostic(requestContext, event, fields = {}) {
+  const diagnostics = requestContext?.diagnostics;
+  if (!Array.isArray(diagnostics)) return;
+  diagnostics.push({ event, ...fields });
+  if (diagnostics.length > 32) diagnostics.splice(0, diagnostics.length - 32);
+}
+
 function bitMonoRememberTrack(id, metadata) {
   bitMonoTrackMetadata.set(id, metadata);
   if (bitMonoTrackMetadata.size > 500) {
@@ -2289,6 +2297,9 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
           contentType: response.headers.get('content-type') || '',
           durationMs,
         });
+        bitMonoPushDiagnostic(requestContext, 'monochrome.http_error', {
+          endpoint, attempt, status: response.status, durationMs
+        });
         lastError = error;
         if ((response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500) && attempt < 2) {
           await new Promise(resolve => setTimeout(resolve, 300 * attempt));
@@ -2311,6 +2322,9 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
           bodyLength: rawBody.length,
           durationMs
         });
+        bitMonoPushDiagnostic(requestContext, 'monochrome.invalid_json', {
+          endpoint, attempt, status: response.status, durationMs, bodyLength: rawBody.length
+        });
         throw error;
       }
 
@@ -2328,11 +2342,21 @@ async function fetchBitMonoSearchEndpoint(endpoint, query, requestId, requestCon
         resultArrays: summary.resultArrays,
         candidateCount: candidates.length
       });
+      bitMonoPushDiagnostic(requestContext, 'monochrome.response', {
+        endpoint, attempt, status: response.status, durationMs, candidateCount: candidates.length
+      });
 
       return { endpoint, payload, candidates, status: response.status, durationMs };
     } catch (error) {
       lastError = error;
       const durationMs = Date.now() - startedAt;
+      bitMonoPushDiagnostic(requestContext, 'monochrome.failed', {
+        endpoint,
+        attempt,
+        status: Number.isInteger(error?.status) ? error.status : null,
+        durationMs,
+        error: bitMonoLogText(error?.message || error, 180)
+      });
       const retryable = !Number.isInteger(error?.status)
         || error.status === 408
         || error.status === 425
@@ -2391,6 +2415,13 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
       endpointsSucceeded: successes.map(response => response.endpoint),
       endpointFailures: failures,
       rawCandidateCount: successes.reduce((total, response) => total + response.candidates.length, 0)
+    });
+    bitMonoPushDiagnostic(requestContext, 'monochrome.variant', {
+      variant,
+      endpointSuccessCount: successes.length,
+      endpointFailureCount: failures.length,
+      candidateCount: successes.reduce((total, response) => total + response.candidates.length, 0),
+      failures
     });
 
     return { successes, failures };
@@ -2498,6 +2529,7 @@ async function fetchBitMonoTracksSearch(query, requestId, requestContext = {}) {
 const BITMONO_DEEZER_API_BASE = String(process.env.BITMONO_DEEZER_API_BASE || 'https://dzr.tabs-vs-spaces.wtf');
 
 async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {}) {
+  const startedAt = Date.now();
   const url = new URL('/search', BITMONO_DEEZER_API_BASE);
   url.searchParams.set('q', query);
   url.searchParams.set('quality', 'HIGH');
@@ -2506,6 +2538,9 @@ async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {})
     const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(BITMONO_UPSTREAM_TIMEOUT_MS) });
     if (!response.ok) {
       bitMonoLog('warn', 'fallback.deezer.http_error', { requestId, status: response.status });
+      bitMonoPushDiagnostic(requestContext, 'deezer.http_error', {
+        status: response.status, durationMs: Date.now() - startedAt
+      });
       return [];
     }
     const payload = await response.json();
@@ -2526,10 +2561,18 @@ async function fetchBitMonoDeezerFallback(query, requestId, requestContext = {})
       bitMonoRememberTrack(id, { source: 'deezer', upstreamId: rawId, title, artist, album, artworkURL, duration, streamURL: item.streamURL || item.url || null });
       tracks.push({ id, title, artist, album, duration, artworkURL, format: item.format || 'mp3', audioQuality: item.audioQuality || item.quality || 'HIGH', audioMode: item.audioMode || 'STEREO', audioModes: Array.isArray(item.audioModes) ? item.audioModes : ['STEREO'] });
     }
-    bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'fallback.deezer.complete' : 'fallback.deezer.empty', { requestId, candidateCount: candidates.length, resultCount: tracks.length });
+    const durationMs = Date.now() - startedAt;
+    bitMonoLog(tracks.length ? 'info' : 'warn', tracks.length ? 'fallback.deezer.complete' : 'fallback.deezer.empty', { requestId, candidateCount: candidates.length, resultCount: tracks.length, durationMs });
+    bitMonoPushDiagnostic(requestContext, tracks.length ? 'deezer.response' : 'deezer.empty', {
+      status: response.status, durationMs, candidateCount: candidates.length, resultCount: tracks.length
+    });
     return tracks.slice(0, 60);
   } catch (error) {
-    bitMonoLog('warn', 'fallback.deezer.failed', { requestId, error: bitMonoLogText(error?.message || error, 180) });
+    const durationMs = Date.now() - startedAt;
+    bitMonoLog('warn', 'fallback.deezer.failed', { requestId, error: bitMonoLogText(error?.message || error, 180), durationMs });
+    bitMonoPushDiagnostic(requestContext, 'deezer.failed', {
+      durationMs, error: bitMonoLogText(error?.message || error, 180)
+    });
     return [];
   }
 }
@@ -2892,6 +2935,93 @@ async function serveBitMonoCachedAudio(req, res) {
   });
   return stream.pipe(res);
 }
+
+app.get('/api/bitmono/health', bitMonoHealthRateLimit, async (_req, res) => {
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  const query = 'Daft Punk';
+  const diagnostics = [];
+
+  res.set('Cache-Control', 'no-store');
+  res.set('X-BitMono-Request-Id', requestId);
+  bitMonoLog('info', 'health.received', { requestId, query, probe: 'live-song-search' });
+
+  try {
+    // This deliberately bypasses the normal search cache and runs the same
+    // Monochrome + Deezer search pipeline used by BitChord's BitMono addon.
+    const tracks = await fetchBitMonoTracksSearch(query, requestId, { diagnostics, probe: true });
+    const durationMs = Date.now() - startedAt;
+
+    if (!tracks.length) {
+      const message = 'The live Monochrome and Deezer searches completed, but neither returned a usable track.';
+      bitMonoLog('warn', 'health.no_results', { requestId, query, durationMs, diagnostics });
+      return res.status(503).json({
+        ok: false,
+        status: 'bad',
+        error: 'BITMONO_NO_TRACKS',
+        message,
+        requestId,
+        durationMs,
+        resultCount: 0,
+        diagnostics
+      });
+    }
+
+    const provider = tracks.some(track => String(track.id || '').startsWith('dzr_'))
+      ? 'deezer'
+      : 'monochrome';
+    const monochromeIssues = diagnostics.some(entry => (
+      entry.event === 'monochrome.http_error'
+      || entry.event === 'monochrome.failed'
+      || entry.event === 'monochrome.invalid_json'
+    ));
+    const isSlow = durationMs >= 2000;
+    const degraded = provider === 'deezer' || monochromeIssues || isSlow;
+    const status = degraded ? 'slow' : 'good';
+    const statusMessage = provider === 'deezer'
+      ? 'Monochrome did not return usable tracks, but the Deezer fallback is returning songs.'
+      : monochromeIssues
+        ? 'Songs are returning, but at least one Monochrome search endpoint is degraded.'
+        : isSlow
+          ? 'Songs are returning, but the live search is taking longer than 2 seconds.'
+          : 'The live Monochrome song search is returning track results.';
+
+    bitMonoLog(degraded ? 'warn' : 'info', 'health.complete', {
+      requestId, query, provider, durationMs, resultCount: tracks.length, status, diagnostics
+    });
+
+    return res.json({
+      ok: true,
+      status,
+      statusMessage,
+      requestId,
+      query,
+      provider,
+      durationMs,
+      resultCount: tracks.length,
+      sampleTracks: tracks.slice(0, 3).map(track => ({
+        title: bitMonoLogText(track.title, 90),
+        artist: bitMonoLogText(track.artist, 90),
+        provider: String(track.id || '').startsWith('dzr_') ? 'deezer' : 'monochrome'
+      })),
+      diagnostics
+    });
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const message = bitMonoLogText(error?.message || error, 260) || 'The live BitMono song search failed.';
+    bitMonoPushDiagnostic({ diagnostics }, 'health.failed', { error: message, durationMs });
+    bitMonoLog('error', 'health.failed', { requestId, query, durationMs, error: message, diagnostics });
+    return res.status(503).json({
+      ok: false,
+      status: 'bad',
+      error: 'BITMONO_HEALTH_CHECK_FAILED',
+      message,
+      requestId,
+      durationMs,
+      diagnostics
+    });
+  }
+});
 
 app.get('/bitmono/manifest.json', (_req, res) => {
   res.set('Cache-Control', 'public, max-age=300');
