@@ -42,7 +42,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-24-account-center-v12';
+const API_VERSION = '2026-11-24-account-center-v13';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
 const browserBridges = new Map();
