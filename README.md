@@ -86,6 +86,9 @@ For the Deplexo backend, use `npm start`. Deplexo supplies port 3000 through its
 
 ## Security
 
+- The Deplexo backend and both static frontend gateways apply a restrictive Content Security Policy, clickjacking protection, MIME-sniffing protection, a strict referrer policy, and browser permission restrictions. HSTS is enabled on HTTPS responses.
+- Cloudflare and Netlify overwrite forwarded host/protocol metadata from the incoming platform request rather than trusting visitor-supplied `X-Forwarded-*` values. Their gateways also pass the platform-provided client IP to the backend for rate limiting.
+- Public BitMono search and stream routes and personal addon search/stream routes have bounded per-client throttles. Cached audio range requests have a separate higher ceiling. Account connect/disconnect actions are rate-limited in addition to the account-authentication limits.
 - Never commit Cider app tokens or `BITCIDER_PROXY_SECRET`.
 - The frontend gateway secret must be configured as a secret on Netlify and Cloudflare, not as a public build-time variable.
 - The Deplexo app uses the durable `/data/bitcider` directory.
