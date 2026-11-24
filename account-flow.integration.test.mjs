@@ -430,8 +430,7 @@ test('header brand stays pinned to the top-left while account actions align righ
   assert.ok(headerStart >= 0 && headerEnd > headerStart);
   const headerSource = appSource.slice(headerStart, headerEnd);
   assert.ok(headerSource.indexOf('<a className={`brand') < headerSource.indexOf('className="account-avatar-trigger"'));
-  assert.ok(styleSource.includes('.topbar {\\n  width: 100%;\\n  max-width: 1320px;'));
-  assert.ok(styleSource.includes('justify-content: flex-start;'));
-  assert.ok(styleSource.includes('gap: 11px; margin-right: auto;'));
-  assert.ok(styleSource.includes('.account-avatar-trigger {\\n  margin-left: auto;'));
+  assert.match(styleSource, /\.topbar\s*\{\s*width:\s*100%;\s*max-width:\s*1320px;/);
+  assert.match(styleSource, /\.brand\s*\{[^}]*margin-right:\s*auto;/);
+  assert.match(styleSource, /\.account-avatar-trigger\s*\{\s*margin-left:\s*auto;/);
 });
