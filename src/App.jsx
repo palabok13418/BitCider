@@ -1545,7 +1545,7 @@ export default function App() {
         </section>
         <div
           className={`mode-switcher ${modeSwitcherOpen ? 'is-open' : ''}`}
-          aria-label="Switch source"
+          aria-label="Music sources"
         >
           <button
             className="mode-pull-tab"
@@ -1554,7 +1554,7 @@ export default function App() {
             aria-expanded={modeSwitcherOpen}
             aria-controls="bitcider-mode-panel"
           >
-            <span className="mode-pull-label">SWITCH SOURCE</span>
+            <span className="mode-pull-label">Music Sources</span>
           </button>
           <div
             className="mode-switch-panel"
