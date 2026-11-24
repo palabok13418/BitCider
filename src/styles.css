@@ -2524,109 +2524,103 @@ h1 .bitchord-word {
 .site-shell.mono-mode .account-center-secret code,
 .site-shell.mono-mode .account-center-recovery-codes code { color: #ededed; border-color: rgba(255,255,255,.17); background: rgba(255,255,255,.045); }
 
-.account-delete-game,
-.account-delete-confirm {
-  position: fixed;
-  z-index: 2200;
-  inset: 0;
-  display: grid;
-  place-items: center;
+.account-delete-inline {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 352px;
+  padding: 31px 22px 24px;
   overflow: hidden;
-  padding: 24px;
-  background:
-    radial-gradient(ellipse at 50% 45%, rgba(78,37,46,.3), transparent 58%),
-    rgba(5,3,4,.98);
-  color: #faeef1;
-  animation: account-center-backdrop-in .2s ease both;
-}
-.account-delete-game-heading {
-  position: absolute;
-  top: clamp(30px, 8vh, 74px);
-  left: 50%;
-  width: min(470px, calc(100% - 44px));
+  border: 1px solid rgba(229,142,163,.2);
+  border-radius: 17px;
+  color: #f8e9ed;
   text-align: center;
-  transform: translateX(-50%);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(213,104,130,.18), transparent 55%),
+    linear-gradient(145deg, rgba(42,21,28,.72), rgba(11,7,10,.92));
+  box-shadow: inset 0 1px rgba(255,255,255,.055), 0 18px 50px rgba(0,0,0,.23);
+  animation: account-delete-panel-in .32s cubic-bezier(.2,.8,.2,1) both;
 }
-.account-delete-game-heading h2,
-.account-delete-confirm-card h2,
-.account-delete-progress h2,
-.account-delete-complete h2 {
-  margin: 9px 0 8px;
+.account-delete-inline::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  opacity: .24;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.025) 4px),
+    radial-gradient(ellipse at 50% 100%, rgba(200,106,130,.1), transparent 60%);
+  pointer-events: none;
+}
+.account-delete-inline > .account-center-kicker { color: #c995a1; }
+.account-delete-inline h3 {
+  margin: 10px 0 7px;
   color: #fff4f6;
-  font-size: clamp(27px, 4vw, 38px);
-  letter-spacing: -.06em;
+  font-size: 23px;
+  line-height: 1.15;
+  letter-spacing: -.055em;
 }
-.account-delete-game-heading p,
-.account-delete-confirm-card > p,
-.account-delete-progress > p,
-.account-delete-complete > p {
+.account-delete-inline > p {
+  width: min(100%, 390px);
   margin: 0;
-  color: #b499a0;
-  font-size: 11px;
-  line-height: 1.7;
+  color: #af969c;
+  font-size: 10px;
+  line-height: 1.65;
 }
 .account-delete-catches {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin: 20px 0 8px;
+  margin: 17px 0 7px;
 }
 .account-delete-catches i {
-  width: 42px;
+  width: 34px;
   height: 4px;
   border-radius: 5px;
-  background: rgba(255,255,255,.16);
-  transition: background .2s ease, box-shadow .2s ease;
+  background: rgba(255,255,255,.15);
+  transition: background .2s ease, box-shadow .2s ease, transform .2s ease;
 }
 .account-delete-catches i.is-caught {
-  background: #eeaab7;
-  box-shadow: 0 0 14px rgba(238,170,183,.32);
+  background: #efb7c2;
+  box-shadow: 0 0 13px rgba(239,183,194,.4);
 }
-.account-delete-catch-count { color: #a98c93; font: 9px var(--mono); letter-spacing: .1em; }
+.account-delete-catch-count {
+  color: #a78c93;
+  font: 8px var(--mono);
+  letter-spacing: .13em;
+}
 .account-delete-target {
   position: absolute;
   z-index: 2;
-  min-width: 128px;
-  min-height: 43px;
-  padding: 0 18px;
-  border: 1px solid rgba(255,164,181,.56);
-  border-radius: 10px;
-  color: #230c12;
-  background: linear-gradient(110deg, #ffd7df, #ea95a6);
-  box-shadow: 0 9px 26px rgba(218,89,117,.28), inset 0 1px rgba(255,255,255,.5);
+  min-width: 124px;
+  min-height: 41px;
+  padding: 0 16px;
+  border: 1px solid rgba(255,178,194,.55);
+  border-radius: 9px;
+  color: #250c13;
+  background: linear-gradient(110deg, #ffdce3, #eaa0b0 70%, #d78c9e);
+  box-shadow: 0 8px 25px rgba(218,89,117,.25), inset 0 1px rgba(255,255,255,.62);
   transform: translate(-50%,-50%);
-  font: 10px var(--mono);
+  font: 8px var(--mono);
   letter-spacing: .12em;
-  transition: left .27s cubic-bezier(.18,.82,.24,1), top .27s cubic-bezier(.18,.82,.24,1), scale .18s ease, filter .18s ease;
-  animation: delete-target-glimmer 2.4s ease-in-out infinite;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    left .34s cubic-bezier(.16,1,.3,1),
+    top .34s cubic-bezier(.16,1,.3,1),
+    filter .16s ease,
+    box-shadow .16s ease;
+  animation: delete-target-glimmer 2.8s ease-in-out infinite;
 }
-.account-delete-target:hover { scale: 1.045; filter: brightness(1.07); }
-.account-delete-cancel {
-  position: absolute;
-  bottom: 28px;
-  left: 50%;
-  padding: 8px 12px;
-  border: 0;
-  color: #8f777d;
-  background: transparent;
-  font-size: 10px;
-  transform: translateX(-50%);
+.account-delete-target:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 11px 32px rgba(218,89,117,.36), inset 0 1px rgba(255,255,255,.72);
 }
-.account-delete-cancel:hover { color: #d2bbc0; }
-.account-delete-confirm-card {
-  width: min(100%, 450px);
-  display: grid;
-  gap: 14px;
-  padding: 27px;
-  border: 1px solid rgba(255,211,219,.15);
-  border-radius: 21px;
-  background: linear-gradient(145deg, rgba(43,25,30,.99), rgba(15,9,12,.995));
-  box-shadow: 0 30px 100px rgba(0,0,0,.6), inset 0 1px rgba(255,255,255,.06);
-}
-.account-delete-confirm-card h2 { margin: 0; }
-.account-delete-confirm-card > p { margin: -3px 0 3px; }
-.account-delete-confirm-actions { display: grid; grid-template-columns: .8fr 1.2fr; gap: 9px; margin-top: 3px; }
-.account-delete-confirm-actions button { min-height: 40px; font-size: 8px; }
+.account-delete-target:active { filter: brightness(.94); }
+
 .account-delete-cinema {
   position: fixed;
   z-index: 2500;
@@ -2634,43 +2628,39 @@ h1 .bitchord-word {
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: transparent;
+  background: #000;
   color: #f7edf0;
 }
 .account-delete-cinema::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 0;
-  background: #000;
-  transform-origin: center;
-}
-.account-delete-cinema.is-turning-off::before { animation: account-crt-turn-off .62s cubic-bezier(.76,0,.24,1) both; }
-.account-delete-cinema.is-black::before { transform: scaleY(1); }
-.account-delete-cinema.is-turning-on::before { animation: account-crt-turn-on .82s cubic-bezier(.2,.8,.2,1) both; }
-.account-delete-crt-glow {
-  position: absolute;
-  z-index: 1;
-  width: 100%;
-  height: 1px;
-  opacity: 0;
-  background: rgba(220,241,255,.9);
-  box-shadow: 0 0 18px 5px rgba(190,220,255,.34);
+  opacity: .12;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse at center, rgba(190,164,176,.08), transparent 68%);
   pointer-events: none;
 }
-.account-delete-cinema.is-turning-off .account-delete-crt-glow { animation: account-crt-line-off .62s ease both; }
-.account-delete-cinema.is-turning-on .account-delete-crt-glow { animation: account-crt-line-on .82s ease both; }
-.account-delete-progress,
-.account-delete-complete {
+.account-delete-progress {
   position: relative;
   z-index: 2;
   width: min(460px, calc(100% - 44px));
   text-align: center;
   animation: account-delete-copy-in .55s cubic-bezier(.2,.8,.2,1) both;
 }
-.account-delete-progress h2,
-.account-delete-complete h2 { font-size: clamp(26px, 4vw, 36px); }
-.account-delete-progress > p { min-height: 21px; margin-top: 15px; }
+.account-delete-progress h2 {
+  margin: 9px 0 8px;
+  color: #fff4f6;
+  font-size: clamp(26px, 4vw, 36px);
+  letter-spacing: -.06em;
+}
+.account-delete-progress > p {
+  min-height: 21px;
+  margin: 15px 0 0;
+  color: #b499a0;
+  font-size: 11px;
+  line-height: 1.7;
+}
 .account-delete-progress-track {
   width: 100%;
   height: 5px;
@@ -2684,7 +2674,7 @@ h1 .bitchord-word {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #c77d90, #f4c8d2);
+  background: linear-gradient(90deg, #b86e82, #f4c8d2);
   box-shadow: 0 0 17px rgba(233,164,180,.38);
   transition: width .58s cubic-bezier(.18,.82,.24,1);
 }
@@ -2697,35 +2687,158 @@ h1 .bitchord-word {
   font: 8px var(--mono);
   letter-spacing: .11em;
 }
-.account-delete-complete { animation: account-delete-copy-in .48s ease both; }
-@keyframes account-center-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes account-center-panel-in {
-  from { opacity: 0; transform: translateY(12px) scale(.985); filter: blur(5px); }
+
+/* Animate the actual site surface, not a black card pretending to be a CRT. */
+html.bitcider-crt-off,
+html.bitcider-crt-on {
+  overflow: hidden !important;
+  background: #000 !important;
+}
+html.bitcider-crt-off body,
+html.bitcider-crt-on body {
+  overflow: hidden !important;
+  background: #000 !important;
+}
+html.bitcider-crt-off .site-shell {
+  transform-origin: 50% 50%;
+  animation: account-crt-power-down .82s cubic-bezier(.62,.02,.82,.28) both;
+  will-change: transform, filter, opacity;
+}
+html.bitcider-crt-on .site-shell {
+  transform-origin: 50% 50%;
+  animation: account-crt-power-up .98s cubic-bezier(.16,.88,.22,1) both;
+  will-change: transform, filter, opacity;
+}
+html.bitcider-crt-off::after,
+html.bitcider-crt-on::after {
+  content: "";
+  position: fixed;
+  z-index: 99999;
+  inset: 0;
+  opacity: .28;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px),
+    linear-gradient(90deg, rgba(255,30,80,.045), transparent 24%, transparent 76%, rgba(75,150,255,.045)),
+    radial-gradient(ellipse at center, rgba(235,220,230,.11), transparent 70%);
+}
+html.bitcider-crt-off::after { animation: account-crt-phosphor-off .82s ease-out both; }
+html.bitcider-crt-on::after { animation: account-crt-phosphor-on .98s ease-out both; }
+
+@keyframes account-delete-panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(.99); filter: blur(3px); }
   to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
 @keyframes delete-target-glimmer {
-  0%,100% { box-shadow: 0 9px 26px rgba(218,89,117,.22), inset 0 1px rgba(255,255,255,.45); }
-  50% { box-shadow: 0 11px 34px rgba(218,89,117,.38), 0 0 20px rgba(255,166,186,.12), inset 0 1px rgba(255,255,255,.65); }
+  0%,100% { box-shadow: 0 8px 25px rgba(218,89,117,.2), inset 0 1px rgba(255,255,255,.55); }
+  50% { box-shadow: 0 11px 34px rgba(218,89,117,.36), 0 0 18px rgba(255,166,186,.14), inset 0 1px rgba(255,255,255,.74); }
 }
-@keyframes account-crt-turn-off {
-  0% { transform: scaleY(0); filter: brightness(1.6); }
-  52% { transform: scaleY(1); filter: brightness(1.12); }
-  78% { transform: scaleY(.012); filter: brightness(1.45); }
-  100% { transform: scaleY(0); filter: brightness(0); }
+
+/* Classic CRT shutdown: full picture -> bright horizontal phosphor line -> center dot. */
+@keyframes account-crt-power-down {
+  0% {
+    transform: scale(1,1);
+    opacity: 1;
+    filter: brightness(1) contrast(1) saturate(1);
+  }
+  12% {
+    transform: scale(1.002,1);
+    opacity: 1;
+    filter: brightness(1.14) contrast(1.08) saturate(1.12);
+  }
+  29% {
+    transform: scale(1,.995);
+    opacity: 1;
+    filter: brightness(.96) contrast(1.12);
+  }
+  43% {
+    transform: scale(1,.99) translateX(-1px);
+    opacity: 1;
+    filter: brightness(1.08) contrast(1.18);
+  }
+  62% {
+    transform: scale(1,.42);
+    opacity: 1;
+    filter: brightness(1.65) contrast(1.45) saturate(1.35);
+  }
+  75% {
+    transform: scale(1,.012);
+    opacity: 1;
+    filter: brightness(2.3) contrast(1.8);
+  }
+  86% {
+    transform: scale(.42,.006);
+    opacity: .98;
+    filter: brightness(3.2) contrast(2);
+  }
+  94% {
+    transform: scale(.055,.002);
+    opacity: .92;
+    filter: brightness(4.4);
+  }
+  100% {
+    transform: scale(0,.001);
+    opacity: 0;
+    filter: brightness(5);
+  }
 }
-@keyframes account-crt-line-off {
-  0%,45% { opacity: 0; }
-  58% { opacity: 1; }
-  82%,100% { opacity: 0; }
+
+/* CRT wake-up runs the same physical sequence in reverse with phosphor bloom. */
+@keyframes account-crt-power-up {
+  0% {
+    transform: scale(0,.001);
+    opacity: .1;
+    filter: brightness(6) contrast(2);
+  }
+  7% {
+    transform: scale(.055,.002);
+    opacity: .95;
+    filter: brightness(4.8) contrast(1.8);
+  }
+  16% {
+    transform: scale(.42,.006);
+    opacity: 1;
+    filter: brightness(3.4) contrast(1.65);
+  }
+  29% {
+    transform: scale(1,.012);
+    opacity: 1;
+    filter: brightness(2.55) contrast(1.45);
+  }
+  53% {
+    transform: scale(1,.46);
+    opacity: 1;
+    filter: brightness(1.85) contrast(1.26);
+  }
+  72% {
+    transform: scale(1,1.018);
+    opacity: 1;
+    filter: brightness(1.35) contrast(1.12);
+  }
+  86% {
+    transform: scale(1,.997);
+    opacity: 1;
+    filter: brightness(1.08) contrast(1.04);
+  }
+  100% {
+    transform: scale(1,1);
+    opacity: 1;
+    filter: brightness(1) contrast(1) saturate(1);
+  }
 }
-@keyframes account-crt-turn-on {
-  0% { transform: scaleY(.008); filter: brightness(2); }
-  22% { transform: scaleY(.008); filter: brightness(1.4); }
-  100% { transform: scaleY(0); filter: brightness(0); }
+@keyframes account-crt-phosphor-off {
+  0%,36% { opacity: .12; }
+  60% { opacity: .6; }
+  76% { opacity: .95; }
+  88% { opacity: .55; }
+  100% { opacity: 0; }
 }
-@keyframes account-crt-line-on {
-  0% { opacity: 1; }
-  22% { opacity: .8; }
+@keyframes account-crt-phosphor-on {
+  0% { opacity: .98; }
+  16% { opacity: .9; }
+  30% { opacity: .7; }
+  53% { opacity: .42; }
+  72% { opacity: .25; }
   100% { opacity: 0; }
 }
 @keyframes account-delete-copy-in {
@@ -2750,20 +2863,20 @@ h1 .bitchord-word {
   .account-center-card { padding: 14px; }
   .account-center-danger-zone { align-items: flex-start; flex-direction: column; }
   .account-center-danger-zone .account-danger-button { width: 100%; }
-  .account-delete-confirm-card { padding: 20px; }
-  .account-delete-confirm-actions { grid-template-columns: 1fr; }
-  .account-delete-game-heading { top: 24px; }
+  .account-delete-inline { min-height: 340px; padding: 26px 15px 20px; }
+  .account-delete-inline h3 { font-size: 21px; }
+  .account-delete-target { min-width: 112px; min-height: 39px; font-size: 7px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .account-center-overlay,
   .account-center-panel,
-  .account-delete-game,
-  .account-delete-confirm,
+  .account-delete-inline,
   .account-delete-target,
-  .account-delete-cinema::before,
-  .account-delete-cinema .account-delete-crt-glow,
   .account-delete-progress,
-  .account-delete-complete {
+  html.bitcider-crt-off .site-shell,
+  html.bitcider-crt-on .site-shell,
+  html.bitcider-crt-off::after,
+  html.bitcider-crt-on::after {
     animation-duration: .01ms !important;
     transition-duration: .01ms !important;
   }
