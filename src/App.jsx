@@ -1557,7 +1557,6 @@ export default function App() {
             aria-controls="bitcider-mode-panel"
           >
             <span className="mode-pull-label">SWITCH SOURCE</span>
-            <span className="mode-pull-chevron" aria-hidden="true">⌄</span>
           </button>
           <div
             className="mode-switch-panel"
