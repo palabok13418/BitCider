@@ -536,9 +536,9 @@ function AccountSetupWindow({
 
 
 const ACCOUNT_DELETE_SPOTS = [
-  { x: 16, y: 28 }, { x: 79, y: 22 }, { x: 52, y: 78 },
-  { x: 14, y: 74 }, { x: 86, y: 63 }, { x: 49, y: 43 },
-  { x: 72, y: 84 }, { x: 28, y: 56 }, { x: 88, y: 34 }
+  { x: 16, y: 62 }, { x: 79, y: 67 }, { x: 52, y: 87 },
+  { x: 14, y: 79 }, { x: 86, y: 72 }, { x: 49, y: 61 },
+  { x: 72, y: 88 }, { x: 28, y: 74 }, { x: 88, y: 64 }
 ];
 
 function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onStatusRefresh }) {
