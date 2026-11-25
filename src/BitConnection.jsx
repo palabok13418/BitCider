@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
-import { startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
+import { startBitConnectionGuestTransport, startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
 
@@ -33,6 +33,51 @@ function openCreateWindow() {
     'popup=yes,width=620,height=780,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
   );
   if (!popup) window.location.assign(CREATE_URL);
+}
+
+function openAccountWindow() {
+  const popup = window.open(
+    '/bitconnection/?account=1',
+    'bitconnection-account',
+    'popup=yes,width=620,height=760,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
+  );
+  if (!popup) window.location.assign('/bitconnection/?account=1');
+}
+
+function openJoinWindow(roomId) {
+  const popup = window.open(
+    '/bitconnection/?join=' + encodeURIComponent(roomId),
+    'bitconnection-join-' + String(roomId).slice(0, 16),
+    'popup=yes,width=560,height=700,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
+  );
+  if (!popup) window.location.assign('/bitconnection/?join=' + encodeURIComponent(roomId));
+}
+
+function PublicPartyCard({ room, featured = false, onJoin }) {
+  const count = Number(room.participantCount || 0);
+  const capacity = Number(room.partySize || 0);
+  const track = room.currentTrack?.title;
+  return (
+    <article className="bc-public-party-card">
+      <div className="bc-public-party-topline">
+        <span className="bc-public-live"><i /> LIVE NOW</span>
+        {featured && <span className="bc-public-featured">FEATURED</span>}
+      </div>
+      <h3>{room.roomName}</h3>
+      <p className="bc-public-host">Hosted by <strong>{room.hostUsername || 'BitConnection host'}</strong></p>
+      {track && (
+        <p className="bc-public-track">
+          <span>NOW PLAYING</span>
+          <strong>{track}</strong>
+          {room.currentTrack?.artist && <small>{room.currentTrack.artist}</small>}
+        </p>
+      )}
+      <div className="bc-public-party-bottom">
+        <span>{count} / {capacity} here</span>
+        <button type="button" onClick={() => onJoin(room.roomId)}>Join party <span aria-hidden="true">↗</span></button>
+      </div>
+    </article>
+  );
 }
 
 function identityHeaders(identityMode, account) {
@@ -530,6 +575,417 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
         <button className="bc-primary-button" type="button" disabled={!confirmedSaved} onClick={onContinue}>Continue to room setup</button>
       </div>
     </section>
+  );
+}
+
+function AccountManagementWindow() {
+  const [account, setAccount] = useState(null);
+  const [identityMode, setIdentityMode] = useState('bitconnection');
+  const [profile, setProfile] = useState(null);
+  const [passkeys, setPasskeys] = useState([]);
+  const [stage, setStage] = useState('loading');
+  const [recoveryCodes, setRecoveryCodes] = useState([]);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [passkeyPassword, setPasskeyPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function loadAccount(mode = 'bitconnection') {
+    const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
+    const payload = await readResponse(await fetch('/api/bitconnection/account', {
+      headers, cache: 'no-store', credentials: 'same-origin'
+    }), 'Could not load your account.');
+    if (mode === 'bitconnection' && !payload.authenticated && payload.bitCiderAccountAvailable) {
+      return loadAccount('bitcider');
+    }
+    setAccount(payload);
+    setIdentityMode(mode);
+    setProfile(payload.profile || null);
+    if (payload.authenticated && mode === 'bitconnection') {
+      const passkeyPayload = await readResponse(await fetch('/api/bitconnection/passkeys', {
+        cache: 'no-store', credentials: 'same-origin'
+      }), 'Could not load your passkeys.');
+      setPasskeys(passkeyPayload.passkeys || []);
+    } else {
+      setPasskeys([]);
+    }
+    setStage(!payload.authenticated ? 'auth' : payload.profile?.username ? 'manage' : 'profile');
+    return payload;
+  }
+
+  useEffect(() => {
+    let active = true;
+    loadAccount().catch(loadError => {
+      if (!active) return;
+      setError(loadError.message || 'Could not connect to your account.');
+      setStage('error');
+    });
+    return () => { active = false; };
+  }, []);
+
+  function closeWindow() {
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) window.location.assign('/bitconnection/');
+    }, 120);
+  }
+
+  function handleAuthenticated(payload) {
+    if (payload.recoveryCodes?.length) {
+      setRecoveryPassword(payload.password || '');
+      setRecoveryCodes(payload.recoveryCodes);
+      setStage('recovery');
+      return;
+    }
+    loadAccount('bitconnection').catch(loadError => {
+      setError(loadError.message || 'Could not refresh your account.');
+    });
+  }
+
+  function handleRecovery(payload) {
+    setRecoveryPassword(payload.password || '');
+    setRecoveryCodes(payload.recoveryCodes || []);
+    setStage('recovery');
+  }
+
+  async function signInWithPasskey() {
+    setBusy(true);
+    setError('');
+    try {
+      const optionsJSON = await readResponse(await fetch('/api/bitconnection/passkeys/auth/options', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-BitConnection-CSRF': account?.csrfToken || '' }
+      }), 'Could not start passkey sign-in.');
+      const authentication = await startAuthentication({ optionsJSON });
+      await readResponse(await fetch('/api/bitconnection/passkeys/auth/verify', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-BitConnection-CSRF': account?.csrfToken || '' },
+        body: JSON.stringify(authentication)
+      }), 'Could not verify your passkey.');
+      await loadAccount('bitconnection');
+    } catch (passkeyError) {
+      setError(passkeyError.message || 'Passkey sign-in failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addPasskey() {
+    if (!passkeyPassword) {
+      setError('Enter your account password to add a passkey.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const optionsJSON = await readResponse(await fetch('/api/bitconnection/passkeys/register/options', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-BitConnection-CSRF': account?.csrfToken || '' },
+        body: JSON.stringify({ password: passkeyPassword })
+      }), 'Could not start passkey setup.');
+      const registration = await startRegistration({ optionsJSON });
+      await readResponse(await fetch('/api/bitconnection/passkeys/register/verify', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-BitConnection-CSRF': account?.csrfToken || '' },
+        body: JSON.stringify({ ...registration, deviceName: navigator.userAgent })
+      }), 'Could not save this passkey.');
+      await loadAccount('bitconnection');
+      setPasskeyPassword('');
+      setNotice('Passkey added to your BitConnection account.');
+    } catch (passkeyError) {
+      setError(passkeyError.message || 'Passkey setup was cancelled.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePasskey(credentialId) {
+    if (!passkeyPassword) {
+      setError('Enter your account password before removing a passkey.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await readResponse(await fetch('/api/bitconnection/passkeys/remove', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-BitConnection-CSRF': account?.csrfToken || '' },
+        body: JSON.stringify({ password: passkeyPassword, credentialId })
+      }), 'Could not remove this passkey.');
+      await loadAccount('bitconnection');
+      setPasskeyPassword('');
+      setNotice('Passkey removed.');
+    } catch (removeError) {
+      setError(removeError.message || 'Could not remove this passkey.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    setBusy(true);
+    setError('');
+    try {
+      await readResponse(await fetch('/api/bitconnection/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-BitConnection-CSRF': account?.csrfToken || '' }
+      }), 'Could not sign out.');
+      setAccount(null);
+      setProfile(null);
+      setPasskeys([]);
+      setStage('signedout');
+    } catch (logoutError) {
+      setError(logoutError.message || 'Could not sign out.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="bc-window-shell bc-account-window">
+      <Suspense fallback={null}>
+        <Grainient
+          className="bitconnection-grainient"
+          colors={['#10070b', '#2a0b17', '#76203b', '#d62e5b', '#f49aad']}
+          type="linear" angle={42} bands={1.2} speed={0.22} flow={0.82}
+          scale={1.08} softness={0.76} silk={0.7} grainAmount={0.045}
+          grainSize={1.15} grainAnimated contrast={1.08} saturation={0.82}
+          variation={28} interactive stir={0.7} clickSwirl intro lightMode={false} dpr={1.2}
+        />
+      </Suspense>
+      {stage === 'loading' && <section className="bc-window-state"><span className="bc-loading-orbit" /><p>Loading your account…</p></section>}
+      {stage === 'auth' && account && (
+        <AccountAuth
+          account={account}
+          initialMode="login"
+          onAuthenticated={handleAuthenticated}
+          onRecovery={handleRecovery}
+          onPasskeySignIn={signInWithPasskey}
+        />
+      )}
+      {stage === 'recovery' && recoveryCodes.length > 0 && (
+        <RecoveryCodes
+          recoveryCodes={recoveryCodes}
+          account={account}
+          password={recoveryPassword}
+          onContinue={() => {
+            setRecoveryCodes([]);
+            loadAccount('bitconnection').catch(loadError => setError(loadError.message || 'Could not load your account.'));
+          }}
+        />
+      )}
+      {stage === 'profile' && (
+        <ProfileSetup
+          account={account}
+          identityMode={identityMode}
+          onBack={() => setStage(account?.authenticated ? 'manage' : 'auth')}
+          onSaved={saved => { setProfile(saved); setStage('manage'); }}
+        />
+      )}
+      {stage === 'manage' && profile && (
+        <section className="bc-window-state bc-account-manage">
+          <div className="bc-window-kicker">BITCONNECTION ACCOUNT CENTER</div>
+          <div className="bc-account-heading">
+            <span className="bc-account-avatar">
+              {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" /> : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>}
+            </span>
+            <div><h1>{profile.username}</h1><p>{identityMode === 'bitcider' ? 'Using your signed-in BitCider account' : 'BitConnection account'}</p></div>
+          </div>
+          <div className="bc-account-actions">
+            <button className="bc-secondary-button" type="button" onClick={() => setStage('profile')}>Edit profile</button>
+            <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
+          </div>
+          {identityMode === 'bitconnection' ? (
+            <div className="bc-account-security">
+              <div className="bc-account-section-heading"><strong>Passkeys</strong><small>{passkeys.length} / 5 registered</small></div>
+              <p>Use a device passkey to sign in without typing your password.</p>
+              <label className="bc-field-card">
+                <span className="bc-field-label">ACCOUNT PASSWORD <small>REQUIRED FOR PASSKEY CHANGES</small></span>
+                <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} autoComplete="current-password" placeholder="Confirm your password" />
+              </label>
+              <button className="bc-primary-button bc-account-add-passkey" type="button" onClick={addPasskey} disabled={busy || passkeys.length >= 5 || !passkeyPassword}>Add a passkey</button>
+              {passkeys.length > 0 ? passkeys.map((passkey, index) => (
+                <div className="bc-account-passkey" key={passkey.id}>
+                  <span><strong>{passkey.name || 'Passkey ' + (index + 1)}</strong><small>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device passkey'}</small></span>
+                  <button className="bc-secondary-button" type="button" onClick={() => removePasskey(passkey.id)} disabled={busy || !passkeyPassword}>Remove</button>
+                </div>
+              )) : <div className="bc-account-empty">No passkeys added yet.</div>}
+            </div>
+          ) : (
+            <div className="bc-account-security"><p>Your existing BitCider sign-in is being used for this profile. BitConnection will not sign you out of BitCider or change its credentials here.</p></div>
+          )}
+          {error && <div className="bc-form-error" role="alert">{error}</div>}
+          {notice && <div className="bc-account-notice" role="status">{notice}</div>}
+          <div className="bc-window-actions">
+            {identityMode === 'bitconnection' && <button className="bc-secondary-button" type="button" onClick={signOut} disabled={busy}>Sign out</button>}
+            <button className="bc-secondary-button" type="button" onClick={closeWindow} disabled={busy}>Done</button>
+          </div>
+        </section>
+      )}
+      {stage === 'signedout' && (
+        <section className="bc-window-state">
+          <div className="bc-window-kicker">ACCOUNT SIGNED OUT</div>
+          <h1>See you next time.</h1>
+          <p>Your BitConnection session has been signed out on this device.</p>
+          <button className="bc-primary-button" type="button" onClick={closeWindow}>Close</button>
+        </section>
+      )}
+      {stage === 'error' && (
+        <section className="bc-window-state">
+          <div className="bc-window-kicker">ACCOUNT UNAVAILABLE</div>
+          <h1>Could not load your account.</h1>
+          <p>{error}</p>
+          <button className="bc-primary-button" type="button" onClick={() => window.location.reload()}>Try again</button>
+        </section>
+      )}
+      {stage !== 'error' && stage !== 'loading' && stage !== 'signedout' && error && stage !== 'manage' && <div className="bc-global-error" role="alert">{error}</div>}
+    </main>
+  );
+}
+
+function JoinPublicPartyWindow({ roomId }) {
+  const [csrfToken, setCsrfToken] = useState('');
+  const [room, setRoom] = useState(null);
+  const [roomState, setRoomState] = useState(null);
+  const [stage, setStage] = useState('loading');
+  const [error, setError] = useState('');
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const audioRef = useRef(null);
+  const sessionRef = useRef(null);
+  const transportRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    async function loadRoom() {
+      try {
+        const account = await readResponse(await fetch('/api/bitconnection/account', {
+          cache: 'no-store', credentials: 'same-origin'
+        }), 'Could not prepare a guest session.');
+        const directory = await readResponse(await fetch('/api/bitconnection/rooms/public', {
+          cache: 'no-store', credentials: 'same-origin'
+        }), 'Could not load public parties.');
+        const found = (directory.rooms || []).find(item => item.roomId === roomId);
+        if (!found) throw new Error('That public party is no longer live.');
+        if (!active) return;
+        setCsrfToken(account.csrfToken || '');
+        setRoom(found);
+        setStage('ready');
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError.message || 'Could not load that party.');
+        setStage('error');
+      }
+    }
+    loadRoom();
+    return () => { active = false; };
+  }, [roomId]);
+
+  useEffect(() => () => {
+    const transport = transportRef.current;
+    const session = sessionRef.current;
+    transportRef.current = null;
+    sessionRef.current = null;
+    if (transport) void transport.stop({ leave: true });
+    else if (session) void session.leave();
+  }, []);
+
+  async function joinParty() {
+    if (stage !== 'ready') return;
+    setStage('joining');
+    setError('');
+    try {
+      const client = new BitConnectionApiClient({ csrfToken });
+      const joined = await client.joinRoom({ roomId });
+      if (!joined.session) throw new Error('The room did not return a guest connection.');
+      sessionRef.current = joined.session;
+      setRoom(joined.room || room);
+      const transport = await startBitConnectionGuestTransport({
+        session: joined.session,
+        audioElement: audioRef.current,
+        onRoomState: state => {
+          setRoomState(state);
+          if (state.room) setRoom(state.room);
+        },
+        onAudioPlaybackBlocked: () => setAudioBlocked(true),
+        onError: transportError => setError(transportError.message || 'The party connection encountered an error.')
+      });
+      transportRef.current = transport;
+      setStage('connected');
+    } catch (joinError) {
+      setError(joinError.message || 'Could not join this party.');
+      setStage('error');
+    }
+  }
+
+  async function playAudio() {
+    try {
+      await transportRef.current?.playAudio();
+      setAudioBlocked(false);
+    } catch {
+      setAudioBlocked(true);
+    }
+  }
+
+  async function leaveParty() {
+    const transport = transportRef.current;
+    const session = sessionRef.current;
+    transportRef.current = null;
+    sessionRef.current = null;
+    if (transport) await transport.stop({ leave: true });
+    else if (session) await session.leave().catch(() => {});
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) window.location.assign('/bitconnection/');
+    }, 120);
+  }
+
+  const playback = roomState?.playbackState;
+  return (
+    <main className="bc-window-shell bc-join-window">
+      <Suspense fallback={null}>
+        <Grainient
+          className="bitconnection-grainient"
+          colors={['#10070b', '#2a0b17', '#76203b', '#d62e5b', '#f49aad']}
+          type="linear" angle={42} bands={1.2} speed={0.22} flow={0.82}
+          scale={1.08} softness={0.76} silk={0.7} grainAmount={0.045}
+          grainSize={1.15} grainAnimated contrast={1.08} saturation={0.82}
+          variation={28} interactive stir={0.7} clickSwirl intro lightMode={false} dpr={1.2}
+        />
+      </Suspense>
+      <section className="bc-window-state">
+        <div className="bc-window-kicker">{stage === 'connected' ? 'CONNECTED TO PUBLIC PARTY' : 'PUBLIC LISTENING PARTY'}</div>
+        <h1>{room?.roomName || (stage === 'loading' ? 'Finding the party…' : 'Join the party.')}</h1>
+        {room && <p>Hosted by <strong>{room.hostUsername}</strong> · {room.participantCount || roomState?.participants?.length || 0} / {room.partySize} people</p>}
+        {stage === 'ready' && <button className="bc-primary-button" type="button" onClick={joinParty}>Join party</button>}
+        {stage === 'joining' && <p>Connecting to the room and preparing audio…</p>}
+        {stage === 'connected' && (
+          <>
+            <div className="bc-party-playback">
+              <span>{playback?.isPlaying ? 'NOW PLAYING' : 'WAITING FOR PLAYBACK'}</span>
+              <strong>{playback?.track?.title || 'Waiting for the host to share BitChord audio'}</strong>
+              {playback?.track?.artist && <small>{playback.track.artist}</small>}
+            </div>
+            <p>Your guest connection is active. Audio plays directly from the host through WebRTC.</p>
+            {audioBlocked && <button className="bc-primary-button" type="button" onClick={playAudio}>Play party audio</button>}
+          </>
+        )}
+        {stage === 'loading' && <span className="bc-loading-orbit" />}
+        {error && <div className="bc-form-error" role="alert">{error}</div>}
+        {(stage === 'error' || stage === 'ready' || stage === 'connected') && (
+          <div className="bc-window-actions"><button className="bc-secondary-button" type="button" onClick={leaveParty}>{stage === 'connected' ? 'Leave party' : 'Close'}</button></div>
+        )}
+        <audio ref={audioRef} autoPlay playsInline />
+      </section>
+    </main>
   );
 }
 
