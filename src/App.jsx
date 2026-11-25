@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
+import BitConnectionEntrance from './BitConnectionEntrance.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-24-account-center-v13';
@@ -2539,7 +2540,7 @@ export default function App() {
       )}
 
       <footer className="footer">
-        <span>{pageMode === 'mono' ? 'BITMONO' : 'BITCIDER'}</span>
+        <span className="footer-brand-group"><span className="footer-brand-name">{pageMode === 'mono' ? 'BITMONO' : 'BITCIDER'}</span><BitConnectionEntrance /></span>
         <span>{pageMode === 'mono' ? 'MADE FOR BITCHORD · POWERED BY MONOCHROME' : 'MADE FOR BITCHORD · POWERED BY CIDER'}</span>
         <a href="https://bitchord.kushagrasingh.in/docs" target="_blank" rel="noreferrer">ADDON PROTOCOL <Icon name="external" size={12} /></a>
       </footer>

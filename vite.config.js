@@ -11,7 +11,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(projectRoot, 'index.html'),
-        bitmono: resolve(projectRoot, 'bitmono/index.html')
+        bitmono: resolve(projectRoot, 'bitmono/index.html'),
+        bitconnection: resolve(projectRoot, 'bitconnection/index.html')
       }
     }
   },

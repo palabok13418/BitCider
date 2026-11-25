@@ -33,6 +33,7 @@ import {
   streamMetadata
 } from './audio-quality.mjs';
 import { applySecurityHeaders, createIpRateLimiter } from './security-hardening.mjs';
+import { createBitConnectionRouter } from './bitconnection/api.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
@@ -68,6 +69,9 @@ app.use('/api', (_req, res, next) => {
   res.set('Pragma', 'no-cache');
   next();
 });
+
+// BitConnection runs as a separate product namespace on the Deplexo primary API.
+app.use('/api/bitconnection', createBitConnectionRouter());
 
 
 function ensureSecret() {
@@ -3352,6 +3356,12 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, personalAddonStreamRateLimi
 
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST, { index: false, maxAge: '1h' }));
+  app.get(['/bitconnection', '/bitconnection/'], (req, res) => {
+    if (req.path === '/bitconnection') return res.redirect(308, '/bitconnection/');
+    const entry = path.join(DIST, 'bitconnection', 'index.html');
+    if (fs.existsSync(entry)) return res.sendFile(entry);
+    return res.status(503).type('text').send('BitConnection UI has not been built yet. Run npm run build.');
+  });
   app.get('/', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
 } else {
   app.get('/', (_req, res) => res.status(503).type('text').send('BitCider UI has not been built yet. Run npm run build.'));

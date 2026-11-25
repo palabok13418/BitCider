@@ -1,0 +1,109 @@
+.footer-brand-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  min-width: 0;
+}
+
+.footer-brand-name {
+  flex: 0 0 auto;
+}
+
+.bitconnection-footer-link {
+  display: inline-flex !important;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(18px);
+  color: #f0a6b7 !important;
+  font: 600 8px/1 var(--mono);
+  letter-spacing: .08em;
+  text-transform: none;
+  transition:
+    max-width .48s cubic-bezier(.18,.82,.24,1),
+    margin-left .48s cubic-bezier(.18,.82,.24,1),
+    opacity .32s ease,
+    transform .48s cubic-bezier(.18,.82,.24,1);
+}
+
+.bitconnection-footer-link.is-revealed {
+  max-width: 130px;
+  margin-left: 12px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.bitconnection-footer-link:hover {
+  color: #fff0f4 !important;
+  text-shadow: 0 0 14px rgba(255,107,145,.55);
+}
+
+.bitconnection-footer-link:focus-visible {
+  outline: 1px solid rgba(255,190,207,.8);
+  outline-offset: 5px;
+  border-radius: 2px;
+}
+
+.site-shell.bitconnection-unlock-shake {
+  animation: bitconnection-site-shake .68s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes bitconnection-site-shake {
+  0%, 100% { transform: translate3d(0,0,0) rotate(0); }
+  12% { transform: translate3d(-7px,2px,0) rotate(-.18deg); }
+  25% { transform: translate3d(8px,-2px,0) rotate(.2deg); }
+  38% { transform: translate3d(-6px,1px,0) rotate(-.14deg); }
+  51% { transform: translate3d(5px,-1px,0) rotate(.12deg); }
+  64% { transform: translate3d(-3px,1px,0) rotate(-.06deg); }
+  78% { transform: translate3d(2px,0,0) rotate(.03deg); }
+}
+
+.bitconnection-launch-cover {
+  position: fixed;
+  z-index: 999999;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+}
+
+.bitconnection-launch-circle {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: #000;
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: center;
+  animation: bitconnection-launch-expand .78s cubic-bezier(.72,.02,.2,1) forwards;
+  will-change: transform;
+}
+
+@keyframes bitconnection-launch-expand {
+  0% { transform: translate(-50%, -50%) scale(0); }
+  62% { transform: translate(-50%, -50%) scale(1.035); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@media (max-width: 600px) {
+  .footer-brand-group { gap: 0; }
+  .bitconnection-footer-link.is-revealed { margin-left: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bitconnection-footer-link,
+  .bitconnection-footer-link.is-revealed {
+    transition: none;
+    transform: none;
+  }
+  .site-shell.bitconnection-unlock-shake,
+  .bitconnection-launch-circle {
+    animation: none !important;
+  }
+}

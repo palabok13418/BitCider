@@ -1,0 +1,365 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  color-scheme: dark;
+  font-family: 'Space Grotesk', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+body { min-width: 320px; background: #10070b; }
+button, a { font: inherit; }
+a { color: inherit; text-decoration: none; }
+
+.bitconnection-shell {
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  padding: 0 clamp(22px, 6vw, 94px);
+  color: #fff4f6;
+  background:
+    radial-gradient(ellipse at 50% 44%, rgba(191,39,80,.2), transparent 54%),
+    linear-gradient(145deg, #10070b 0%, #1a080f 52%, #0d070a 100%);
+}
+
+.bitconnection-grainient {
+  position: fixed !important;
+  z-index: -1;
+  inset: 0;
+  width: 100%;
+  height: 100vh !important;
+  height: 100dvh !important;
+  opacity: .82;
+  pointer-events: none;
+}
+
+.bitconnection-header,
+.bitconnection-footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(1320px, 100%);
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-inline: auto;
+}
+
+.bitconnection-header {
+  min-height: 92px;
+  border-bottom: 1px solid rgba(255,220,228,.1);
+}
+
+.bitconnection-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff3f6;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.045em;
+}
+
+.bitconnection-mark {
+  position: relative;
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid rgba(255,185,202,.5);
+  border-radius: 8px;
+  background: rgba(255,255,255,.045);
+  box-shadow: 0 0 24px rgba(236,57,102,.12), inset 0 1px rgba(255,255,255,.14);
+}
+
+.bitconnection-mark i {
+  display: block;
+  width: 2px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffd6df, #ff4e7d);
+}
+.bitconnection-mark i:nth-child(1) { height: 8px; }
+.bitconnection-mark i:nth-child(2) { height: 14px; }
+.bitconnection-mark i:nth-child(3) { height: 10px; }
+
+.bitconnection-back-link {
+  color: rgba(255,224,232,.62);
+  font-size: 11px;
+  transition: color .2s ease;
+}
+.bitconnection-back-link:hover { color: #fff; }
+
+.bitconnection-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(1320px, 100%);
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  padding: clamp(84px, 14vh, 150px) 0 clamp(90px, 15vh, 160px);
+}
+
+.bitconnection-eyebrow,
+.bitconnection-dialog-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #e5a4b4;
+  font: 10px/1.5 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .16em;
+}
+
+.bitconnection-eyebrow > span {
+  width: 22px;
+  height: 1px;
+  background: #ef7896;
+  box-shadow: 0 0 12px rgba(255,92,133,.8);
+}
+
+.bitconnection-hero h1 {
+  max-width: 850px;
+  margin: 30px 0 24px;
+  color: #fff5f7;
+  font-size: clamp(62px, 9vw, 124px);
+  font-weight: 600;
+  letter-spacing: -.085em;
+  line-height: .91;
+}
+
+.bitconnection-hero h1 em {
+  color: #ff527d;
+  font-style: normal;
+  text-shadow: 0 0 55px rgba(238,47,98,.24);
+}
+
+.bitconnection-intro {
+  max-width: 460px;
+  margin: 0;
+  color: rgba(255,231,237,.72);
+  font-size: clamp(14px, 1.4vw, 17px);
+  line-height: 1.8;
+}
+
+.bitconnection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  margin-top: 36px;
+}
+
+.bitconnection-create-button {
+  display: inline-flex;
+  min-width: 196px;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 18px 0 21px;
+  border: 1px solid rgba(255,191,207,.34);
+  border-radius: 12px;
+  color: #fff7f9;
+  background: linear-gradient(115deg, #ec3d6c, #ad214c);
+  box-shadow: 0 14px 42px rgba(176,27,70,.22), inset 0 1px rgba(255,255,255,.2);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: transform .22s ease, box-shadow .22s ease, filter .22s ease;
+}
+.bitconnection-create-button:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 18px 50px rgba(176,27,70,.3), inset 0 1px rgba(255,255,255,.24);
+}
+.bitconnection-create-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bitconnection-source-note {
+  color: rgba(255,224,232,.53);
+  font: 10px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .04em;
+}
+
+.bitconnection-api-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 9px;
+  margin-top: 52px;
+  color: rgba(255,229,235,.6);
+  font: 9px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.bitconnection-api-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c8a66c;
+  box-shadow: 0 0 10px rgba(200,166,108,.5);
+}
+.bitconnection-api-status.is-online .bitconnection-api-dot {
+  background: #70d6a0;
+  box-shadow: 0 0 11px rgba(112,214,160,.55);
+}
+.bitconnection-api-status.is-offline .bitconnection-api-dot {
+  background: #ef667b;
+  box-shadow: 0 0 11px rgba(239,102,123,.48);
+}
+
+.bitconnection-footer {
+  min-height: 74px;
+  color: rgba(255,215,225,.38);
+  font: 9px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+
+.bitconnection-dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(4,2,3,.68);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: bitconnection-dialog-fade .2s ease both;
+}
+
+.bitconnection-host-dialog {
+  width: min(460px, 100%);
+  padding: 32px;
+  border: 1px solid rgba(255,202,215,.19);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(45,18,28,.97), rgba(19,9,14,.98));
+  box-shadow: 0 28px 95px rgba(0,0,0,.52), inset 0 1px rgba(255,255,255,.06);
+  animation: bitconnection-dialog-rise .36s cubic-bezier(.18,.82,.24,1) both;
+}
+
+.bitconnection-host-dialog h2 {
+  margin: 20px 0 12px;
+  color: #fff4f7;
+  font-size: 29px;
+  letter-spacing: -.06em;
+  line-height: 1.05;
+}
+.bitconnection-host-dialog p {
+  margin: 0;
+  color: rgba(255,228,235,.7);
+  font-size: 13px;
+  line-height: 1.75;
+}
+.bitconnection-host-dialog button {
+  min-height: 42px;
+  margin-top: 25px;
+  padding: 0 20px;
+  border: 1px solid rgba(255,203,217,.22);
+  border-radius: 9px;
+  color: #fff1f5;
+  background: rgba(255,255,255,.08);
+  cursor: pointer;
+  font-size: 12px;
+}
+.bitconnection-host-dialog button:hover { background: rgba(255,255,255,.13); }
+
+.bitconnection-entry-cover {
+  position: fixed;
+  z-index: 1000000;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  pointer-events: all;
+}
+.bitconnection-flame-wrap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 80px;
+  height: 100px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+.bitconnection-entry-flame {
+  width: 44px;
+  height: 58px;
+  overflow: visible;
+  filter: drop-shadow(0 0 10px rgba(255,105,35,.95)) drop-shadow(0 0 29px rgba(255,49,22,.78));
+  animation: bitconnection-flame-flicker .16s ease-in-out infinite alternate;
+}
+.bitconnection-flame-outer { fill: #ff5b22; }
+.bitconnection-flame-inner { fill: #fff1a7; }
+
+.bitconnection-entry-cover.is-searching .bitconnection-flame-wrap {
+  animation: bitconnection-flame-search 2.6s cubic-bezier(.48,.02,.46,.98) 2 both;
+}
+.bitconnection-entry-cover.is-holding .bitconnection-flame-wrap {
+  top: 50%;
+  left: 50%;
+  animation: none;
+}
+.bitconnection-entry-cover.is-burning {
+  animation: bitconnection-burn-away 1.35s cubic-bezier(.18,.78,.24,1) forwards;
+}
+
+@keyframes bitconnection-flame-search {
+  0%, 8% { left: 50%; }
+  43% { left: calc(50% + 62vw); }
+  44% { left: calc(50% - 62vw); }
+  80%, 100% { left: 50%; }
+}
+@keyframes bitconnection-flame-flicker {
+  from { transform: translateY(1px) scale(.95,.98) rotate(-2deg); }
+  to { transform: translateY(-2px) scale(1.04,1.03) rotate(2deg); }
+}
+@keyframes bitconnection-burn-away {
+  from { clip-path: circle(155vmax at 50% 50%); }
+  to { clip-path: circle(0 at 50% 50%); opacity: .96; }
+}
+@keyframes bitconnection-dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bitconnection-dialog-rise {
+  from { opacity: 0; transform: translateY(13px) scale(.975); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 680px) {
+  .bitconnection-header { min-height: 76px; }
+  .bitconnection-hero { padding: 82px 0 96px; }
+  .bitconnection-hero h1 { font-size: clamp(58px, 15vw, 86px); }
+  .bitconnection-intro { max-width: 370px; }
+  .bitconnection-actions { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .bitconnection-api-status { margin-top: 42px; }
+  .bitconnection-footer { min-height: 68px; font-size: 8px; }
+  .bitconnection-host-dialog { padding: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
