@@ -63,7 +63,6 @@ app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
 app.use(applySecurityHeaders);
-app.use(express.json({ limit: '256kb' }));
 app.use('/api', (_req, res, next) => {
   res.set('Cache-Control', 'no-store');
   res.set('Pragma', 'no-cache');
@@ -71,13 +70,16 @@ app.use('/api', (_req, res, next) => {
 });
 
 // BitConnection runs as a separate product namespace on the Deplexo primary API.
-app.use('/api/bitconnection', createBitConnectionRouter({
+app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectionRouter({
   getUserSession,
   requireCsrf,
   csrfTokenForSession,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
   maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10)
 }));
+
+// Preserve the smaller JSON limit for all other BitCider API routes.
+app.use(express.json({ limit: '256kb' }));
 
 
 function ensureSecret() {

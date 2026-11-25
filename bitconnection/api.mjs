@@ -37,7 +37,7 @@ function cleanImageDataUrl(value) {
   const match = value.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+=*)$/);
   if (!match) return undefined;
   const bytes = Buffer.from(match[2], 'base64');
-  return bytes.length > 0 && bytes.length <= 170 * 1024 ? value : undefined;
+  return bytes.length > 0 && bytes.length <= 1024 * 1024 ? value : undefined;
 }
 
 function createRoomCode(existing) {
@@ -125,7 +125,7 @@ export function createBitConnectionRouter({
     if (avatarDataUrl === undefined) {
       return res.status(400).json({
         error: 'INVALID_PROFILE_IMAGE',
-        message: 'Use a PNG, JPEG, or WebP profile picture up to 170 KB.'
+        message: 'Use a PNG, JPEG, or WebP profile picture up to 1 MB.'
       });
     }
 
