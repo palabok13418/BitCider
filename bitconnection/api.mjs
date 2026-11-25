@@ -21,7 +21,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-25-independent-accounts-01';
+export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-foundation-01';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -237,7 +237,7 @@ export function bitConnectionHealthPayload(maxPartySize = 10) {
     service: 'BitConnection',
     apiVersion: BITCONNECTION_API_VERSION,
     deployment: 'Deplexo',
-    stage: 'independent-accounts-and-rooms',
+    stage: 'live-room-membership-signaling-and-sync',
     capabilities: {
       independentAccounts: 'enabled',
       bitCiderAccountLinking: 'explicit-choice',
@@ -246,8 +246,10 @@ export function bitConnectionHealthPayload(maxPartySize = 10) {
       roomCreation: 'enabled',
       passkeys: 'enabled',
       recoveryCodes: 'enabled',
-      realtimeRooms: 'not-yet-enabled',
-      privateRoomVerification: 'not-yet-enabled'
+      realtimeRooms: 'polling-and-webrtc-signaling-enabled',
+      playbackSync: 'youtube-music-through-bitchord-web',
+      privateRoomVerification: 'proximity-or-host-one-time-code',
+      audioRelay: 'never-server-side'
     },
     limits: { maxPartySize }
   };
@@ -277,6 +279,13 @@ export function createBitConnectionRouter({
   const rateLogin = createRateLimit(10);
   const rateRecover = createRateLimit(5);
   const ratePasskey = createRateLimit(8);
+  const rateJoin = createRateLimit(24, 60 * 1000);
+  const rateSignal = createRateLimit(180, 60 * 1000);
+  const hostLocations = new Map();
+  const pendingVerificationCodes = new Map();
+  const PRESENCE_TTL_MS = 75 * 1000;
+  const HOST_LOCATION_TTL_MS = 60 * 1000;
+  const PRIVATE_ROOM_RADIUS_METERS = 20;
 
   function bitConnectionCsrf(req, res, next) {
     const sessionId = ensureSessionId(req, res);
@@ -335,6 +344,148 @@ export function createBitConnectionRouter({
   function identityCsrf(req, res, next) {
     if (req.get('x-bitconnection-identity') === 'bitcider') return requireCiderCsrf(req, res, next);
     return bitConnectionCsrf(req, res, next);
+  }
+
+  function sha256(value) {
+    return crypto.createHash('sha256').update(String(value)).digest('hex');
+  }
+
+  function bearerCredential(req) {
+    const header = String(req.get('authorization') || '');
+    return /^Bearer [A-Za-z0-9_-]{32,100}$/.test(header) ? header.slice(7) : '';
+  }
+
+  function participantForRoom(room, req, res) {
+    const credential = bearerCredential(req);
+    if (credential) {
+      const credentialHash = sha256(credential);
+      const match = Object.values(room.participants || {}).find(item => (
+        item?.credentialHash && secureEqual(item.credentialHash, credentialHash) && item.status !== 'left'
+      ));
+      if (match) return match;
+    }
+    const identity = identityForRequest(req, res);
+    if (identity?.identityId && identity.identityId === room.hostIdentityId) {
+      return room.participants?.[room.hostParticipantId] || {
+        participantId: room.hostParticipantId,
+        username: room.hostUsername,
+        role: 'host',
+        status: 'connected',
+        identityId: room.hostIdentityId
+      };
+    }
+    return null;
+  }
+
+  function isRoomOwner(room, participant) {
+    return Boolean(participant && participant.role === 'host' && participant.identityId === room.hostIdentityId);
+  }
+
+  function participantCount(room) {
+    const now = Date.now();
+    return Object.values(room.participants || {}).filter(item => (
+      item?.status !== 'left'
+      && Date.parse(item?.lastSeenAt || 0) > now - PRESENCE_TTL_MS
+    )).length;
+  }
+
+  function createParticipant(room, { username, role = 'guest', identityId = null }) {
+    const credential = crypto.randomBytes(32).toString('base64url');
+    const participantId = crypto.randomBytes(12).toString('hex');
+    const participant = {
+      participantId,
+      username,
+      role,
+      identityId,
+      credentialHash: sha256(credential),
+      status: 'connected',
+      joinedAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString()
+    };
+    room.participants ||= {};
+    room.participants[participantId] = participant;
+    return { participant, credential };
+  }
+
+  const guestAdjectives = [
+    'Velvet', 'Quiet', 'Golden', 'Silver', 'Cosmic', 'Mellow', 'Neon', 'Lucky',
+    'Sunny', 'Misty', 'Fuzzy', 'Crystal', 'Indigo', 'Gentle', 'Dizzy', 'Hidden',
+    'Turbo', 'Lucky', 'Clever', 'Sleepy', 'Static', 'Pixel', 'Marble', 'Echo'
+  ];
+  const guestNouns = [
+    'Comet', 'Otter', 'Falcon', 'Koala', 'Panda', 'Badger', 'Orchid', 'Raven',
+    'Meteor', 'Mango', 'Pebble', 'Tiger', 'Robin', 'Clover', 'Badger', 'Penguin',
+    'Lantern', 'Dolphin', 'Moth', 'Fox', 'Nebula', 'Bumblebee', 'Waffle', 'Pigeon'
+  ];
+
+  function temporaryGuestName(room) {
+    const used = new Set(Object.values(room.participants || {}).map(item => item?.username));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const adjective = guestAdjectives[crypto.randomInt(guestAdjectives.length)];
+      const noun = guestNouns[crypto.randomInt(guestNouns.length)];
+      const digits = String(crypto.randomInt(1000)).padStart(3, '0');
+      const candidate = adjective + noun + digits;
+      if (!used.has(candidate)) return candidate;
+    }
+    return 'Guest' + crypto.randomInt(100000, 999999);
+  }
+
+  function cleanCoordinates(value) {
+    const latitude = Number(value?.latitude);
+    const longitude = Number(value?.longitude);
+    const accuracy = Number(value?.accuracy);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
+      || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+      || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 1000) return null;
+    return { latitude, longitude, accuracy };
+  }
+
+  function distanceMeters(left, right) {
+    const radians = degrees => degrees * Math.PI / 180;
+    const dLat = radians(right.latitude - left.latitude);
+    const dLon = radians(right.longitude - left.longitude);
+    const lat1 = radians(left.latitude);
+    const lat2 = radians(right.latitude);
+    const haversine = Math.sin(dLat / 2) ** 2
+      + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+  }
+
+  function publicParticipant(item, now = Date.now()) {
+    return {
+      participantId: item.participantId,
+      username: item.username,
+      role: item.role,
+      status: item.status === 'left'
+        ? 'left'
+        : Date.parse(item.lastSeenAt || 0) > now - PRESENCE_TTL_MS ? 'connected' : 'disconnected',
+      joinedAt: item.joinedAt
+    };
+  }
+
+  function publicRoom(room) {
+    return {
+      roomId: room.roomId,
+      roomCode: room.roomCode,
+      roomName: room.roomName,
+      visibility: room.visibility,
+      partySize: room.partySize,
+      ownerOnlyControls: room.ownerOnlyControls,
+      hostUsername: room.hostUsername,
+      status: room.status,
+      createdAt: room.createdAt,
+      updatedAt: room.updatedAt
+    };
+  }
+
+  function roomResponse(room, participant) {
+    return {
+      room: publicRoom(room),
+      participant: publicParticipant(participant),
+      participants: Object.values(room.participants || {})
+        .filter(item => item?.status !== 'left')
+        .map(item => publicParticipant(item))
+    };
   }
 
   async function saveChallenge(sessionId, record) {
@@ -775,7 +926,7 @@ export function createBitConnectionRouter({
     const visibility = req.body?.visibility;
     const partySize = Number(req.body?.partySize);
     const ownerOnlyControls = req.body?.ownerOnlyControls;
-    if (!roomName || Array.from(roomName).length > 48 || /[\u0000-\u001f\u007f]/u.test(roomName)) {
+    if (!roomName || Array.from(roomName).length > 48 || /[\\u0000-\\u001f\\u007f]/u.test(roomName)) {
       return res.status(400).json({ error: 'INVALID_ROOM_NAME', message: 'Room names must contain 1 to 48 characters.' });
     }
     if (!['public', 'private'].includes(visibility)) return res.status(400).json({ error: 'INVALID_VISIBILITY', message: 'Choose public or private visibility.' });
@@ -784,35 +935,59 @@ export function createBitConnectionRouter({
 
     const roomId = crypto.randomBytes(16).toString('hex');
     const roomCode = createRoomCode(data.rooms);
+    const inviteToken = visibility === 'private' ? crypto.randomBytes(32).toString('base64url') : null;
     const now = new Date().toISOString();
     const room = {
       roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls,
       hostIdentityId: identity.identityId,
       hostIdentityType: identity.type,
       hostUsername: profile.username,
+      hostParticipantId: null,
+      inviteTokenHash: inviteToken ? sha256(inviteToken) : null,
+      participants: {},
+      playbackState: {
+        source: 'youtube-music',
+        track: null,
+        isPlaying: false,
+        positionSeconds: 0,
+        volume: 1,
+        updatedAt: now
+      },
+      signalSequence: 0,
+      signals: [],
+      joinRequests: {},
       status: 'open',
       createdAt: now,
       updatedAt: now
     };
-    await store.update(latest => {
+    const host = createParticipant(room, {
+      username: profile.username,
+      role: 'host',
+      identityId: identity.identityId
+    });
+    room.hostParticipantId = host.participant.participantId;
+
+    const saved = await store.update(latest => {
       if (Object.values(latest.rooms).some(item => item.roomCode === roomCode && item.status === 'open')) {
         return { status: 409, error: 'ROOM_CODE_COLLISION', message: 'Could not allocate a room code. Try again.' };
       }
       latest.rooms[roomId] = room;
       return { ok: true };
-    }).then(result => {
-      if (result.status) throw Object.assign(new Error(result.message), { status: result.status });
-    }).catch(error => {
-      if (error.status) throw error;
-      throw error;
     });
+    if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
+
+    res.set('Cache-Control', 'no-store');
     return res.status(201).json({
       ok: true,
       room: {
         roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls,
         hostUsername: profile.username, status: room.status, createdAt: now
       },
-      realtimeReady: false
+      hostParticipantId: host.participant.participantId,
+      hostCredential: host.credential,
+      ...(inviteToken ? { inviteToken } : {}),
+      realtimeReady: true,
+      audioTransport: 'direct-webrtc'
     });
   });
 
@@ -825,10 +1000,363 @@ export function createBitConnectionRouter({
       if (room.hostIdentityId !== identity.identityId) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
       room.status = 'closed';
       room.updatedAt = new Date().toISOString();
+      for (const participant of Object.values(room.participants || {})) participant.status = 'left';
+      hostLocations.delete(room.roomId);
       return { ok: true, roomId: room.roomId, roomStatus: room.status };
     });
     if (result.status) return res.status(result.status).json({ error: result.error });
     return res.json({ ok: true, roomId: result.roomId, status: result.roomStatus });
+  });
+
+
+  router.post('/rooms/:roomId/location', identityCsrf, async (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const host = participantForRoom(room, req, res);
+    if (!isRoomOwner(room, host)) return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED' });
+    const coordinates = cleanCoordinates(req.body?.location);
+    if (!coordinates) return res.status(400).json({ error: 'INVALID_LOCATION', message: 'A valid approximate device location is required.' });
+    // Coordinates live only in this process memory and expire after one minute.
+    // They are never written to the BitConnection database or returned to clients.
+    hostLocations.set(room.roomId, { ...coordinates, recordedAt: Date.now() });
+    return res.json({ ok: true, expiresInSeconds: Math.floor(HOST_LOCATION_TTL_MS / 1000) });
+  });
+
+  router.post('/rooms/:roomId/join', bitConnectionCsrf, rateJoin, async (req, res) => {
+    const snapshot = store.read();
+    const room = Object.values(snapshot.rooms).find(item => (
+      item?.roomId === String(req.params.roomId || '')
+      || item?.roomCode === String(req.body?.roomCode || '').trim().toUpperCase()
+    ));
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND', message: 'That room is not available.' });
+    if (room.visibility === 'private') {
+      const inviteToken = String(req.body?.inviteToken || '');
+      if (!inviteToken || !room.inviteTokenHash || !secureEqual(room.inviteTokenHash, sha256(inviteToken))) {
+        return res.status(403).json({ error: 'PRIVATE_INVITE_REQUIRED', message: 'This private room needs its invitation link or QR code.' });
+      }
+    }
+    if (participantCount(room) >= room.partySize) {
+      return res.status(409).json({ error: 'ROOM_FULL', message: 'This listening party has reached its participant limit.' });
+    }
+
+    let closeEnough = false;
+    if (room.visibility === 'private') {
+      const guestLocation = cleanCoordinates(req.body?.location);
+      const hostLocation = hostLocations.get(room.roomId);
+      const hostLocationFresh = hostLocation && Date.now() - hostLocation.recordedAt <= HOST_LOCATION_TTL_MS;
+      if (guestLocation && guestLocation.accuracy <= 30 && hostLocationFresh && hostLocation.accuracy <= 30) {
+        closeEnough = distanceMeters(guestLocation, hostLocation) <= PRIVATE_ROOM_RADIUS_METERS;
+      }
+    }
+
+    if (room.visibility === 'private' && !closeEnough) {
+      const requestId = crypto.randomBytes(18).toString('base64url');
+      const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+      const request = {
+        requestId,
+        status: 'awaiting-host-code',
+        codeHash: sha256(code),
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+        hostReceivedAt: null,
+        expiresAt: null,
+        guestName: temporaryGuestName(room)
+      };
+      await store.update(data => {
+        const current = data.rooms[room.roomId];
+        if (!current || current.status !== 'open') return { status: 404 };
+        current.joinRequests ||= {};
+        current.joinRequests[requestId] = request;
+        return { ok: true };
+      });
+      pendingVerificationCodes.set(requestId, code);
+      return res.status(202).json({
+        ok: true,
+        verification: 'host-one-time-code',
+        requestId,
+        guestName: request.guestName,
+        message: 'Ask the host for the one-time code shown in their BitConnection notification.'
+      });
+    }
+
+    const joined = await store.update(data => {
+      const current = data.rooms[room.roomId];
+      if (!current || current.status !== 'open') return { status: 404 };
+      if (participantCount(current) >= current.partySize) return { status: 409 };
+      current.participants ||= {};
+      const username = temporaryGuestName(current);
+      const created = createParticipant(current, { username });
+      return { ok: true, participant: created.participant, credential: created.credential, room: current };
+    });
+    if (joined.status) return res.status(joined.status).json({ error: joined.status === 409 ? 'ROOM_FULL' : 'ROOM_NOT_FOUND' });
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({
+      ok: true,
+      verification: room.visibility === 'private' ? 'proximity' : 'not-required',
+      participantId: joined.participant.participantId,
+      participantCredential: joined.credential,
+      username: joined.participant.username,
+      room: publicRoom(joined.room),
+      participants: Object.values(joined.room.participants).filter(item => item.status !== 'left').map(item => publicParticipant(item))
+    });
+  });
+
+  router.get('/rooms/:roomId/join-status/:requestId', (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    const request = room?.joinRequests?.[String(req.params.requestId || '')];
+    if (!room || !request) return res.status(404).json({ error: 'JOIN_REQUEST_NOT_FOUND' });
+    if (request.expiresAt && Date.parse(request.expiresAt) <= Date.now()) {
+      return res.status(410).json({ error: 'VERIFICATION_EXPIRED', message: 'The one-time code expired. Reopen the invitation to request another.' });
+    }
+    if (!request.expiresAt && Date.now() - Date.parse(request.createdAt) > 10 * 60 * 1000) {
+      return res.status(410).json({ error: 'JOIN_REQUEST_EXPIRED' });
+    }
+    return res.json({
+      ok: true,
+      status: request.status,
+      expiresAt: request.expiresAt,
+      guestName: request.guestName
+    });
+  });
+
+  router.get('/rooms/:roomId/verification-requests', (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const host = participantForRoom(room, req, res);
+    if (!isRoomOwner(room, host)) return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED' });
+    const now = Date.now();
+    const requests = [];
+    for (const request of Object.values(room.joinRequests || {})) {
+      if (!request || request.status !== 'awaiting-host-code') continue;
+      if (!request.expiresAt) {
+        request.hostReceivedAt = new Date(now).toISOString();
+        request.expiresAt = new Date(now + 5 * 60 * 1000).toISOString();
+      }
+      const code = pendingVerificationCodes.get(request.requestId);
+      if (!code || Date.parse(request.expiresAt) <= now) {
+        request.status = 'expired';
+        pendingVerificationCodes.delete(request.requestId);
+        continue;
+      }
+      requests.push({
+        requestId: request.requestId,
+        guestName: request.guestName,
+        oneTimeCode: code,
+        expiresAt: request.expiresAt
+      });
+    }
+    void store.update(data => {
+      const current = data.rooms[room.roomId];
+      if (current) current.joinRequests = room.joinRequests || {};
+      return { ok: true };
+    });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ requests });
+  });
+
+  router.post('/rooms/:roomId/verify', bitConnectionCsrf, rateJoin, async (req, res) => {
+    const requestId = String(req.body?.requestId || '');
+    const code = String(req.body?.code || '');
+    if (!/^[A-Za-z0-9_-]{20,40}$/.test(requestId) || !/^\\d{6}$/.test(code)) {
+      return res.status(400).json({ error: 'INVALID_VERIFICATION_CODE' });
+    }
+    const verified = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      const request = room?.joinRequests?.[requestId];
+      if (!room || room.status !== 'open' || !request) return { status: 404, error: 'JOIN_REQUEST_NOT_FOUND' };
+      if (!request.expiresAt || Date.parse(request.expiresAt) <= Date.now()) {
+        delete room.joinRequests[requestId];
+        return { status: 410, error: 'VERIFICATION_EXPIRED' };
+      }
+      if (request.attempts >= 5) {
+        delete room.joinRequests[requestId];
+        return { status: 429, error: 'VERIFICATION_ATTEMPTS_EXCEEDED' };
+      }
+      if (!secureEqual(request.codeHash, sha256(code))) {
+        request.attempts += 1;
+        return { status: 401, error: 'INVALID_VERIFICATION_CODE' };
+      }
+      if (participantCount(room) >= room.partySize) return { status: 409, error: 'ROOM_FULL' };
+      delete room.joinRequests[requestId];
+      const created = createParticipant(room, { username: request.guestName });
+      return { ok: true, participant: created.participant, credential: created.credential, room };
+    });
+    if (verified.status) {
+      pendingVerificationCodes.delete(requestId);
+      return res.status(verified.status).json({ error: verified.error });
+    }
+    pendingVerificationCodes.delete(requestId);
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({
+      ok: true,
+      participantId: verified.participant.participantId,
+      participantCredential: verified.credential,
+      username: verified.participant.username,
+      room: publicRoom(verified.room)
+    });
+  });
+
+  router.get('/rooms/:roomId/state', (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const participant = participantForRoom(room, req, res);
+    if (!participant || participant.status === 'left') return res.status(401).json({ error: 'ROOM_MEMBERSHIP_REQUIRED' });
+    const participants = Object.values(room.participants || {})
+      .filter(item => item?.status !== 'left')
+      .map(item => publicParticipant(item));
+    return res.json({
+      ...roomResponse(room, participant),
+      playbackState: room.playbackState || {
+        source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0, volume: 1
+      },
+      participants
+    });
+  });
+
+  router.post('/rooms/:roomId/heartbeat', bitConnectionCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      const current = room.participants?.[participant.participantId];
+      if (!current) return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      current.status = 'connected';
+      current.lastSeenAt = new Date().toISOString();
+      return { ok: true, participant: publicParticipant(current) };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error });
+    return res.json({ ok: true, participant: result.participant });
+  });
+
+  router.post('/rooms/:roomId/playback', bitConnectionCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      if (room.ownerOnlyControls && !isRoomOwner(room, participant)) {
+        return { status: 403, error: 'HOST_CONTROLS_ONLY', message: 'Only the host can control playback in this room.' };
+      }
+      const body = req.body || {};
+      const next = { ...(room.playbackState || {}) };
+      if (body.source !== undefined && body.source !== 'youtube-music') {
+        return { status: 400, error: 'UNSUPPORTED_MUSIC_SOURCE', message: 'BitConnection rooms use YouTube Music through BitChord Web.' };
+      }
+      if (body.track !== undefined) {
+        if (body.track === null) next.track = null;
+        else {
+          const track = body.track;
+          const videoId = String(track?.videoId || '');
+          const title = String(track?.title || '').trim();
+          const artist = String(track?.artist || '').trim();
+          const durationSeconds = Number(track?.durationSeconds);
+          if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title || title.length > 180
+            || !artist || artist.length > 180 || !Number.isFinite(durationSeconds)
+            || durationSeconds < 0 || durationSeconds > 24 * 60 * 60) {
+            return { status: 400, error: 'INVALID_YOUTUBE_TRACK' };
+          }
+          next.track = { videoId, title, artist, durationSeconds };
+        }
+      }
+      if (body.isPlaying !== undefined) {
+        if (typeof body.isPlaying !== 'boolean') return { status: 400, error: 'INVALID_PLAYBACK_STATE' };
+        next.isPlaying = body.isPlaying;
+      }
+      if (body.positionSeconds !== undefined) {
+        const position = Number(body.positionSeconds);
+        if (!Number.isFinite(position) || position < 0 || position > 24 * 60 * 60) return { status: 400, error: 'INVALID_PLAYBACK_POSITION' };
+        next.positionSeconds = position;
+      }
+      if (body.volume !== undefined) {
+        const volume = Number(body.volume);
+        if (!Number.isFinite(volume) || volume < 0 || volume > 1) return { status: 400, error: 'INVALID_VOLUME' };
+        next.volume = volume;
+      }
+      next.source = 'youtube-music';
+      next.updatedAt = new Date().toISOString();
+      next.updatedByParticipantId = participant.participantId;
+      room.playbackState = next;
+      room.updatedAt = next.updatedAt;
+      return { ok: true, playbackState: next };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.json({ ok: true, playbackState: result.playbackState });
+  });
+
+  router.post('/rooms/:roomId/signals', bitConnectionCsrf, rateSignal, async (req, res) => {
+    const messageType = String(req.body?.type || '');
+    const toParticipantId = String(req.body?.toParticipantId || '');
+    const payload = req.body?.payload;
+    if (!['offer', 'answer', 'ice-candidate', 'renegotiate', 'hangup'].includes(messageType)
+      || !/^[a-f0-9]{24}$/.test(toParticipantId)
+      || !payload || typeof payload !== 'object' || Array.isArray(payload)
+      || Buffer.byteLength(JSON.stringify(payload), 'utf8') > 32000) {
+      return res.status(400).json({ error: 'INVALID_WEBRTC_SIGNAL' });
+    }
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const sender = participantForRoom(room, req, res);
+      const recipient = room.participants?.[toParticipantId];
+      if (!sender || sender.status === 'left' || !recipient || recipient.status === 'left') {
+        return { status: 403, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      }
+      if (sender.participantId === recipient.participantId) return { status: 400, error: 'INVALID_SIGNAL_RECIPIENT' };
+      room.signals ||= [];
+      room.signalSequence = Number(room.signalSequence || 0) + 1;
+      const message = {
+        sequence: room.signalSequence,
+        fromParticipantId: sender.participantId,
+        toParticipantId,
+        type: messageType,
+        payload,
+        createdAt: new Date().toISOString()
+      };
+      room.signals = room.signals.filter(item => Date.now() - Date.parse(item.createdAt || 0) < 90 * 1000).slice(-199);
+      room.signals.push(message);
+      return { ok: true, sequence: message.sequence };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error });
+    return res.status(202).json({ ok: true, sequence: result.sequence });
+  });
+
+  router.get('/rooms/:roomId/signals', (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const participant = participantForRoom(room, req, res);
+    if (!participant || participant.status === 'left') return res.status(401).json({ error: 'ROOM_MEMBERSHIP_REQUIRED' });
+    const after = Math.max(0, Number.parseInt(String(req.query.after || '0'), 10) || 0);
+    const messages = (room.signals || []).filter(item => (
+      item.toParticipantId === participant.participantId && item.sequence > after
+    ));
+    res.set('Cache-Control', 'no-store');
+    return res.json({ messages, nextSequence: messages.reduce((max, item) => Math.max(max, item.sequence), after) });
+  });
+
+  router.post('/rooms/:roomId/leave', bitConnectionCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      if (isRoomOwner(room, participant)) {
+        room.status = 'closed';
+        room.updatedAt = new Date().toISOString();
+        for (const item of Object.values(room.participants || {})) item.status = 'left';
+        hostLocations.delete(room.roomId);
+        return { ok: true, roomClosed: true };
+      }
+      const current = room.participants?.[participant.participantId];
+      if (current) {
+        current.status = 'left';
+        current.leftAt = new Date().toISOString();
+      }
+      room.updatedAt = new Date().toISOString();
+      return { ok: true, roomClosed: false };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error });
+    return res.json({ ok: true, roomClosed: result.roomClosed });
   });
 
   return router;
