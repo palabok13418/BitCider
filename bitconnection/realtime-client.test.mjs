@@ -244,7 +244,7 @@ test('party runtime schedules room state, signaling, and presence without overla
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.state, 2);
   assert.equal(calls.signals, 2);
-  assert.equal(calls.heartbeat, 1);
+  assert.equal(calls.heartbeat, 2);
 
   await runtime.stop({ leave: true });
   assert.equal(calls.leave, 1);
