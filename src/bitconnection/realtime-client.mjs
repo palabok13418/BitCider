@@ -401,3 +401,133 @@ export class BitConnectionPeerMesh {
     for (const participantId of this.peers.keys()) this.closePeer(participantId);
   }
 }
+
+/**
+ * Coordinates the room's lightweight REST presence/sync loop and WebRTC
+ * signaling. A UI can subscribe to room state and remote streams without
+ * needing to know the polling or peer-negotiation details.
+ */
+export class BitConnectionPartyRuntime {
+  constructor({
+    session,
+    rtcConfiguration = {},
+    localStream = null,
+    onRoomState = () => {},
+    onRemoteStream = () => {},
+    onPeerState = () => {},
+    onError = () => {},
+    stateIntervalMs = 2500,
+    signalIntervalMs = 1000,
+    heartbeatIntervalMs = 25000,
+    setIntervalImpl = globalThis.setInterval,
+    clearIntervalImpl = globalThis.clearInterval,
+    peerConnectionFactory
+  } = {}) {
+    if (!session || typeof session.getState !== 'function'
+      || typeof session.heartbeat !== 'function'
+      || typeof session.pollSignals !== 'function') {
+      throw new TypeError('A complete BitConnection room session is required.');
+    }
+    if (![stateIntervalMs, signalIntervalMs, heartbeatIntervalMs].every(
+      value => Number.isFinite(value) && value >= 250
+    )) throw new TypeError('Room runtime intervals must be at least 250 milliseconds.');
+    if (typeof setIntervalImpl !== 'function' || typeof clearIntervalImpl !== 'function') {
+      throw new TypeError('Timer functions are required.');
+    }
+
+    this.session = session;
+    this.onRoomState = onRoomState;
+    this.onError = onError;
+    this.stateIntervalMs = stateIntervalMs;
+    this.signalIntervalMs = signalIntervalMs;
+    this.heartbeatIntervalMs = heartbeatIntervalMs;
+    this.setIntervalImpl = setIntervalImpl;
+    this.clearIntervalImpl = clearIntervalImpl;
+    this.timers = [];
+    this.running = false;
+    this.stateRequestPending = false;
+    this.signalRequestPending = false;
+    this.heartbeatPending = false;
+    this.mesh = new BitConnectionPeerMesh({
+      session,
+      rtcConfiguration,
+      localStream,
+      peerConnectionFactory,
+      onRemoteStream,
+      onPeerState,
+      onError
+    });
+  }
+
+  start() {
+    if (this.running) return this;
+    this.running = true;
+    void this.refreshRoomState();
+    void this.refreshSignals();
+    void this.sendHeartbeat();
+    this.timers = [
+      this.setIntervalImpl(() => { void this.refreshRoomState(); }, this.stateIntervalMs),
+      this.setIntervalImpl(() => { void this.refreshSignals(); }, this.signalIntervalMs),
+      this.setIntervalImpl(() => { void this.sendHeartbeat(); }, this.heartbeatIntervalMs)
+    ];
+    return this;
+  }
+
+  async refreshRoomState() {
+    if (!this.running || this.stateRequestPending) return null;
+    this.stateRequestPending = true;
+    try {
+      const state = await this.session.getState();
+      if (this.running) {
+        this.onRoomState(state);
+        if (this.session.role === 'host') await this.mesh.syncParticipants(state.participants || []);
+      }
+      return state;
+    } catch (error) {
+      this.onError(error);
+      return null;
+    } finally {
+      this.stateRequestPending = false;
+    }
+  }
+
+  async refreshSignals() {
+    if (!this.running || this.signalRequestPending) return [];
+    this.signalRequestPending = true;
+    try {
+      return await this.mesh.pollSignals();
+    } catch (error) {
+      this.onError(error);
+      return [];
+    } finally {
+      this.signalRequestPending = false;
+    }
+  }
+
+  async sendHeartbeat() {
+    if (!this.running || this.heartbeatPending) return null;
+    this.heartbeatPending = true;
+    try {
+      return await this.session.heartbeat();
+    } catch (error) {
+      this.onError(error);
+      return null;
+    } finally {
+      this.heartbeatPending = false;
+    }
+  }
+
+  setLocalStream(stream) {
+    this.mesh.setLocalStream(stream);
+  }
+
+  async stop({ leave = false } = {}) {
+    const wasRunning = this.running;
+    this.running = false;
+    for (const timer of this.timers) this.clearIntervalImpl(timer);
+    this.timers = [];
+    this.mesh.close();
+    if (leave && wasRunning) return this.session.leave();
+    return null;
+  }
+}
