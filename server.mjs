@@ -74,6 +74,7 @@ app.use('/api', (_req, res, next) => {
 app.use('/api/bitconnection', createBitConnectionRouter({
   getUserSession,
   requireCsrf,
+  csrfTokenForSession,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
   maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10)
 }));

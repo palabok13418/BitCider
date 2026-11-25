@@ -70,6 +70,7 @@ export function bitConnectionHealthPayload() {
 export function createBitConnectionRouter({
   getUserSession = () => ({ authenticated: false }),
   requireCsrf = (_req, _res, next) => next(),
+  csrfTokenForSession = () => '',
   dataFile,
   maxPartySize = 10
 } = {}) {
@@ -87,13 +88,14 @@ export function createBitConnectionRouter({
   router.get('/account', (req, res) => {
     const session = getUserSession(req, res);
     if (!session?.authenticated || !session.accountId) {
-      return res.json({ authenticated: false, provider: null, profile: null, maxPartySize: maximum });
+      return res.json({ authenticated: false, provider: null, profile: null, csrfToken: '', maxPartySize: maximum });
     }
     const data = readData(dataFile);
     const profile = data.profiles[session.accountId] || null;
     return res.json({
       authenticated: true,
       provider: 'BitCider',
+      csrfToken: csrfTokenForSession(session.sessionId),
       profile: profile ? {
         username: profile.username,
         avatarDataUrl: profile.avatarDataUrl || null,
