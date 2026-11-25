@@ -172,6 +172,17 @@ test('BitConnection requires authentication and a completed profile to create a 
   const payload = await created.json();
   assert.equal(created.status, 201);
   assert.equal(payload.room.hostUsername, 'Room Host');
+  assert.equal(payload.inviteToken, undefined);
+
+  const joinedByCode = await client.request('/rooms/' + payload.room.roomCode + '/join', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({})
+  });
+  const guest = await joinedByCode.json();
+  assert.equal(joinedByCode.status, 201);
+  assert.equal(guest.room.roomId, payload.room.roomId);
+  assert.match(guest.username, /^[A-Za-z]+[A-Za-z]+\\d{3}$/);
 
   const closed = await client.request(`/rooms/${payload.room.roomId}/close`, {
     method: 'POST',
@@ -330,6 +341,10 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(left.status, 200);
   assert.equal((await left.json()).roomClosed, false);
+  const rejectedAfterLeave = await client.request('/rooms/' + roomPayload.room.roomId + '/state', {
+    headers: guestHeaders
+  });
+  assert.equal(rejectedAfterLeave.status, 401);
 });
 
 test('private-room distance fallback requires a host-relayed code that expires five minutes after delivery', async t => {
