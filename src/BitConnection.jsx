@@ -722,7 +722,9 @@ export default function BitConnection() {
   }, []);
 
   useEffect(() => {
-    if (entryStage !== 'searching') return undefined;
+    // One effect owns the entire entry sequence. Do not depend on entryStage:
+    // changing to "holding" would otherwise run cleanup and cancel the burn timers.
+    if (initialEntryStage !== 'searching') return undefined;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       setEntryStage('idle');
       return undefined;
@@ -750,7 +752,7 @@ export default function BitConnection() {
       cancelled = true;
       timers.forEach(timer => window.clearTimeout(timer));
     };
-  }, [entryStage]);
+  }, []);
 
   useEffect(() => {
     if (entryStage !== 'burning') return;
