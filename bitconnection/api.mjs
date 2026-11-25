@@ -22,7 +22,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-ice-transport-03';
+export const BITCONNECTION_API_VERSION = '2026-11-25-public-room-discovery-01';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -232,7 +232,7 @@ function createRateLimit(maxAttempts, windowMs = 15 * 60 * 1000) {
   };
 }
 
-export function bitConnectionHealthPayload(maxPartySize = 10) {
+export function bitConnectionHealthPayload(maxPartySize = 30) {
   return {
     ok: true,
     service: 'BitConnection',
@@ -269,7 +269,7 @@ export function createBitConnectionRouter({
     return { origin: parsed.origin, rpID: parsed.hostname };
   },
   dataFile,
-  maxPartySize = 10,
+  maxPartySize = 30,
   iceConfig = {}
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
@@ -277,13 +277,14 @@ export function createBitConnectionRouter({
   const secret = makeSecretFile(dataFile);
   const router = express.Router();
   const maximum = Number.isSafeInteger(Number(maxPartySize))
-    ? Math.min(100, Math.max(2, Number(maxPartySize)))
-    : 10;
+    ? Math.min(30, Math.max(2, Number(maxPartySize)))
+    : 30;
   const rateRegister = createRateLimit(4);
   const rateLogin = createRateLimit(10);
   const rateRecover = createRateLimit(5);
   const ratePasskey = createRateLimit(8);
   const rateJoin = createRateLimit(24, 60 * 1000);
+  const ratePublicDiscovery = createRateLimit(120, 60 * 1000);
   const rateSignal = createRateLimit(180, 60 * 1000);
   const hostLocations = new Map();
   const pendingVerificationCodes = new Map();
@@ -495,6 +496,29 @@ export function createBitConnectionRouter({
     };
   }
 
+  function publicDirectoryRoom(room) {
+    const activeParticipants = participantCount(room);
+    const track = room.playbackState?.track;
+    return {
+      ...publicRoom(room),
+      participantCount: activeParticipants,
+      isPlaying: Boolean(room.playbackState?.isPlaying),
+      currentTrack: track && typeof track === 'object' ? {
+        title: String(track.title || '').slice(0, 160),
+        artist: String(track.artist || '').slice(0, 160)
+      } : null
+    };
+  }
+
+  function randomRooms(items, count = 3) {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swap = crypto.randomInt(index + 1);
+      [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+    }
+    return shuffled.slice(0, count);
+  }
+
   function roomResponse(room, participant) {
     return {
       room: publicRoom(room),
@@ -533,6 +557,28 @@ export function createBitConnectionRouter({
     return result.challenge;
   }
 
+  router.get('/rooms/public', ratePublicDiscovery, (req, res) => {
+    const rawQuery = typeof req.query.q === 'string' ? req.query.q : '';
+    const query = rawQuery.trim().slice(0, 80).normalize('NFKC').toLocaleLowerCase('en-US');
+    const data = store.read();
+    const rooms = Object.values(data.rooms)
+      .filter(room => room?.visibility === 'public' && room.status === 'open' && participantCount(room) > 0)
+      .map(publicDirectoryRoom)
+      .filter(room => !query || [
+        room.roomName,
+        room.hostUsername,
+        room.currentTrack?.title,
+        room.currentTrack?.artist
+      ].some(value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').includes(query)))
+      .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      featured: randomRooms(rooms, 3),
+      rooms: rooms.slice(0, 30),
+      total: rooms.length
+    });
+  });
+
   router.get('/health', (_req, res) => {
     res.set('Cache-Control', 'no-store');
     return res.json(bitConnectionHealthPayload(maximum));
@@ -568,6 +614,13 @@ export function createBitConnectionRouter({
       maxPartySize: maximum,
       passkeyCount: session.authenticated ? publicPasskeys(session.account).length : 0
     });
+  });
+
+  router.get('/passkeys', (req, res) => {
+    const session = activeSession(req, res);
+    if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED' });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ passkeys: publicPasskeys(session.account) });
   });
 
   router.post('/auth/register', bitConnectionCsrf, rateRegister, async (req, res) => {
