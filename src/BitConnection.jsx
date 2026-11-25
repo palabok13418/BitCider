@@ -999,7 +999,7 @@ function CreateRoomWindow() {
   const [roomName, setRoomName] = useState('');
   const [visibility, setVisibility] = useState('public');
   const [partySize, setPartySize] = useState(4);
-  const [ownerOnlyControls, setOwnerOnlyControls] = useState(true);
+  const [ownerOnlyControls, setOwnerOnlyControls] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [createdRoom, setCreatedRoom] = useState(null);
@@ -1020,7 +1020,7 @@ function CreateRoomWindow() {
     }), 'Could not load account information.');
     setAccount(payload);
     setProfile(payload.profile || null);
-    setPartySize(Math.min(4, payload.maxPartySize || 10));
+    setPartySize(Math.min(4, payload.maxPartySize || 30));
     setIdentityMode(mode);
     return payload;
   }
@@ -1033,7 +1033,7 @@ function CreateRoomWindow() {
         if (!active) return;
         setAccount(payload);
         setProfile(payload.profile || null);
-        setPartySize(Math.min(4, payload.maxPartySize || 10));
+        setPartySize(Math.min(4, payload.maxPartySize || 30));
         if (payload.authenticated) {
           setIdentityMode('bitconnection');
           setStage(payload.profile?.username ? 'room' : 'profile');
@@ -1121,6 +1121,11 @@ function CreateRoomWindow() {
 
   async function createRoom(event) {
     event.preventDefault();
+    const requestedPartySize = Number(partySize);
+    if (!Number.isSafeInteger(requestedPartySize) || requestedPartySize < 2 || requestedPartySize > 30) {
+      setError('Enter a party size between 2 and 30 people.');
+      return;
+    }
     setBusy(true);
     setError('');
     const fullscreenRequest = document.documentElement.requestFullscreen?.();
@@ -1133,7 +1138,7 @@ function CreateRoomWindow() {
           'Content-Type': 'application/json',
           ...identityHeaders(identityMode, account)
         },
-        body: JSON.stringify({ roomName, visibility, partySize, ownerOnlyControls })
+        body: JSON.stringify({ roomName, visibility, partySize: requestedPartySize, ownerOnlyControls })
       });
       const payload = await readResponse(response, 'Could not create the room.');
       setCreatedRoom(payload);
@@ -1255,7 +1260,7 @@ function CreateRoomWindow() {
             <input value={roomName} onChange={event => setRoomName(event.target.value)} maxLength={48} placeholder="Give your party a name" required autoFocus />
           </label>
           <fieldset className="bc-field-card bc-visibility-card">
-            <legend className="bc-field-label">PARTY VISIBILITY</legend>
+            <legend><span className="bc-field-label">PARTY VISIBILITY</span></legend>
             <div className={`bc-visibility-switch is-${visibility}`}>
               <span className="bc-visibility-thumb" />
               <button type="button" aria-pressed={visibility === 'public'} onClick={() => setVisibility('public')}>Public</button>
@@ -1264,12 +1269,19 @@ function CreateRoomWindow() {
             <small className="bc-field-hint">{visibility === 'public' ? 'Anyone can discover and request to join.' : 'Guests need an invitation link or QR code.'}</small>
           </fieldset>
           <label className="bc-field-card">
-            <span className="bc-field-label">PARTY SIZE</span>
-            <select value={partySize} onChange={event => setPartySize(Number(event.target.value))}>
-              {Array.from({ length: Math.max(1, account?.maxPartySize || 10) - 1 }, (_, index) => index + 2).map(size => (
-                <option key={size} value={size}>{size} people</option>
-              ))}
-            </select>
+            <span className="bc-field-label">PARTY SIZE <small>2–30 PEOPLE MAX</small></span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min="2"
+              max="30"
+              step="1"
+              value={partySize}
+              onChange={event => setPartySize(event.target.value)}
+              placeholder="Enter the number of people"
+              required
+            />
+            <small className="bc-field-hint">Enter how many people can join this room, including you.</small>
           </label>
           <label className="bc-field-card bc-permission-card">
             <span className="bc-permission-copy">
@@ -1282,7 +1294,7 @@ function CreateRoomWindow() {
           {error && <div className="bc-form-error" role="alert">{error}</div>}
           <div className="bc-window-actions">
             <button className="bc-secondary-button" type="button" onClick={closeWindow} disabled={busy}>Cancel</button>
-            <button className="bc-primary-button" type="submit" disabled={busy || !roomName.trim()}>{busy ? 'Creating…' : 'Create room'}</button>
+            <button className="bc-primary-button" type="submit" disabled={busy || !roomName.trim() || !Number.isSafeInteger(Number(partySize)) || Number(partySize) < 2 || Number(partySize) > 30}>{busy ? 'Creating…' : 'Create room'}</button>
           </div>
         </form>
       )}
@@ -1332,7 +1344,17 @@ export default function BitConnection() {
   const burnGlowAnimationRef = useRef(null);
   const burnCoreAnimationRef = useRef(null);
   const burnHotAnimationRef = useRef(null);
-  const isCreateWindow = new URLSearchParams(window.location.search).get('create') === '1';
+  const routeParams = new URLSearchParams(window.location.search);
+  const isCreateWindow = routeParams.get('create') === '1';
+  const isAccountWindow = routeParams.get('account') === '1';
+  const joinRoomId = routeParams.get('join') || '';
+  const [featuredParties, setFeaturedParties] = useState([]);
+  const [publicParties, setPublicParties] = useState([]);
+  const [partySearch, setPartySearch] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [partyDirectoryLoading, setPartyDirectoryLoading] = useState(true);
+  const [partySearchLoading, setPartySearchLoading] = useState(false);
+  const [partyDirectoryError, setPartyDirectoryError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -1347,6 +1369,61 @@ export default function BitConnection() {
       });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (isCreateWindow || isAccountWindow || joinRoomId) return undefined;
+    let active = true;
+    async function refreshPublicParties() {
+      try {
+        const payload = await readResponse(await fetch('/api/bitconnection/rooms/public', {
+          cache: 'no-store', credentials: 'same-origin'
+        }), 'Could not load public parties.');
+        if (!active) return;
+        setFeaturedParties(payload.featured || []);
+        setPublicParties(payload.rooms || []);
+        setPartyDirectoryError('');
+      } catch (directoryError) {
+        if (!active) return;
+        setPartyDirectoryError(directoryError.message || 'Public parties are unavailable.');
+      } finally {
+        if (active) setPartyDirectoryLoading(false);
+      }
+    }
+    refreshPublicParties();
+    const timer = window.setInterval(refreshPublicParties, 20000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [isCreateWindow, isAccountWindow, joinRoomId]);
+
+  useEffect(() => {
+    if (isCreateWindow || isAccountWindow || joinRoomId) return undefined;
+    const query = partySearch.trim();
+    if (!query) {
+      setSearchResults(null);
+      setPartySearchLoading(false);
+      return undefined;
+    }
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      setPartySearchLoading(true);
+      try {
+        const payload = await readResponse(await fetch('/api/bitconnection/rooms/public?q=' + encodeURIComponent(query), {
+          cache: 'no-store', credentials: 'same-origin'
+        }), 'Could not search public parties.');
+        if (active) setSearchResults(payload.rooms || []);
+      } catch (searchError) {
+        if (active) setSearchResults([]);
+      } finally {
+        if (active) setPartySearchLoading(false);
+      }
+    }, 260);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [partySearch, isCreateWindow, isAccountWindow, joinRoomId]);
 
   useEffect(() => {
     // One effect owns the entire entry sequence. Do not depend on entryStage:
@@ -1393,6 +1470,8 @@ export default function BitConnection() {
   }, [entryStage]);
 
   if (isCreateWindow) return <CreateRoomWindow />;
+  if (isAccountWindow) return <AccountManagementWindow />;
+  if (joinRoomId) return <JoinPublicPartyWindow roomId={joinRoomId} />;
 
   return (
     <main className="bitconnection-shell">
@@ -1427,8 +1506,12 @@ export default function BitConnection() {
           <img className="bitconnection-logo" src="/bitconnection/connection_favicon.svg?v=bc-favicon-64-v2" alt="" aria-hidden="true" />
           <span>BitConnection</span>
         </a>
-        <a className="bitconnection-back-link" href="/">Back to BitCider</a>
+        <button className="bitconnection-account-button" type="button" onClick={openAccountWindow} aria-label="Manage account" title="Manage account">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>
+          <span>Account</span>
+        </button>
       </header>
+      <div className="bitconnection-layout">
       <section className="bitconnection-hero">
         <div className="bitconnection-eyebrow"><span /> LIVE LISTENING · POWERED BY BITCHORD</div>
         <h1>Music hits<br /><em>different</em> together.</h1>
@@ -1445,6 +1528,44 @@ export default function BitConnection() {
           <span>{apiState === 'checking' ? 'Connecting to Deplexo' : apiState === 'online' ? 'Deplexo API connected' : 'Deplexo API unavailable'}</span>
         </div>
       </section>
+      <aside className="bitconnection-discovery" aria-label="Public listening parties">
+        <div className="bc-discovery-heading">
+          <div className="bitconnection-eyebrow"><span /> LIVE DISCOVERY</div>
+          <h2>Featured parties</h2>
+          <p>Random public rooms, live right now.</p>
+        </div>
+        <div className="bc-featured-parties">
+          {featuredParties.length > 0 ? featuredParties.map(room => (
+            <PublicPartyCard key={room.roomId} room={room} featured onJoin={openJoinWindow} />
+          )) : (
+            <div className="bc-public-empty">{partyDirectoryLoading ? 'Finding live parties…' : 'No public parties are live right now.'}</div>
+          )}
+        </div>
+        <label className="bc-party-search">
+          <span>SEARCH PUBLIC PARTIES</span>
+          <div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.2 4.2" /></svg>
+            <input type="search" value={partySearch} onChange={event => setPartySearch(event.target.value)} placeholder="Search rooms, hosts, or songs" />
+          </div>
+        </label>
+        <div className="bc-discovery-results" aria-live="polite">
+          <div className="bc-discovery-results-heading">{partySearch.trim() ? 'SEARCH RESULTS' : 'MORE HAPPENING NOW'}</div>
+          {partySearch.trim() ? (
+            partySearchLoading ? <div className="bc-public-empty">Searching live rooms…</div>
+              : searchResults?.length ? searchResults.map(room => <PublicPartyCard key={room.roomId} room={room} onJoin={openJoinWindow} />)
+                : <div className="bc-public-empty">No matching public parties found.</div>
+          ) : (
+            (() => {
+              const featuredIds = new Set(featuredParties.map(room => room.roomId));
+              const others = publicParties.filter(room => !featuredIds.has(room.roomId)).slice(0, 3);
+              return others.length ? others.map(room => <PublicPartyCard key={room.roomId} room={room} onJoin={openJoinWindow} />)
+                : partyDirectoryError ? <div className="bc-public-empty">{partyDirectoryError}</div>
+                  : <div className="bc-public-empty">{partyDirectoryLoading ? 'Checking for more rooms…' : featuredParties.length ? 'You are all caught up.' : 'Create a public room to start the next party.'}</div>;
+            })()
+          )}
+        </div>
+      </aside>
+      </div>
       <footer className="bitconnection-footer">
         <span>BITCONNECTION</span>
         <span>ONE ROOM · ONE MOMENT</span>
