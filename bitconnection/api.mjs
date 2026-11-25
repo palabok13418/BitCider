@@ -733,7 +733,7 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, passkeyCount: result.count });
   });
 
-  router.put('/account/profile', identityCsrf, (req, res) => {
+  router.put('/account/profile', identityCsrf, async (req, res) => {
     const identity = identityForRequest(req, res);
     if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED', message: 'Sign in to a BitConnection account or explicitly choose your signed-in BitCider account.' });
     const username = cleanUsername(req.body?.username);
@@ -752,7 +752,7 @@ export function createBitConnectionRouter({
       createdAt: previous.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    void store.update(data => {
+    const saved = await store.update(data => {
       if (!usernameAvailable(data, username, identity.identityId)) return { status: 409, error: 'USERNAME_TAKEN', message: 'That BitConnection username is already in use.' };
       data.profiles[identity.identityId] = profile;
       if (identity.type === 'bitconnection' && data.accounts[identity.accountId]) {
@@ -760,6 +760,7 @@ export function createBitConnectionRouter({
       }
       return { ok: true };
     });
+    if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
     return res.json({ ok: true, profile });
   });
 

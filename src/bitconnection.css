@@ -489,3 +489,97 @@ a { color: inherit; text-decoration: none; }
 .bc-window-shell .bitconnection-grainient { opacity: .62; }
 .bc-window-shell:fullscreen { width: 100%; height: 100%; padding-inline: clamp(22px, 5vw, 80px); }
 .bc-window-shell:fullscreen .bc-window-form, .bc-window-shell:fullscreen .bc-window-state { width: min(640px, 100%); }
+
+
+/* Independent BitConnection account controls */
+.bc-auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: 0 0 14px;
+  padding: 4px;
+  border: 1px solid rgba(255,220,228,.11);
+  border-radius: 9px;
+  background: rgba(0,0,0,.24);
+}
+.bc-auth-tabs button {
+  min-height: 33px;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255,228,236,.53);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+}
+.bc-auth-tabs button.is-active {
+  color: #fff4f7;
+  background: linear-gradient(110deg, rgba(235,59,105,.45), rgba(154,33,72,.55));
+  box-shadow: inset 0 1px rgba(255,255,255,.12);
+}
+.bc-passkey-signin {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border: 1px solid rgba(255,203,217,.16);
+  border-radius: 8px;
+  color: rgba(255,240,245,.84);
+  background: rgba(255,255,255,.045);
+  cursor: pointer;
+  font-size: 10px;
+}
+.bc-passkey-signin:disabled { opacity: .55; cursor: wait; }
+.bc-passkey-signin span { margin-right: 7px; color: #ff8ca8; font-size: 17px; vertical-align: -2px; }
+.bc-recovery-state { width: min(540px, 100%); }
+.bc-recovery-codes {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 7px;
+  margin: 10px 0 2px;
+}
+.bc-recovery-codes code {
+  display: block;
+  padding: 9px 8px;
+  border: 1px solid rgba(255,197,214,.13);
+  border-radius: 7px;
+  color: #ffeaf0;
+  background: rgba(0,0,0,.25);
+  font: 10px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .035em;
+  text-align: center;
+}
+.bc-recovery-actions { justify-content: stretch; }
+.bc-recovery-actions > * { flex: 1; }
+.bc-passkey-setup {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin-top: 17px;
+  padding: 13px;
+  border: 1px solid rgba(255,220,228,.12);
+  border-radius: 10px;
+  background: rgba(0,0,0,.2);
+}
+.bc-passkey-setup strong { color: #ffdae3; font-size: 11px; }
+.bc-passkey-setup p { margin: 0; color: rgba(255,225,234,.57); font-size: 9px; line-height: 1.5; }
+.bc-passkey-setup input {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,221,230,.12);
+  border-radius: 7px;
+  color: #fff3f6;
+  background: rgba(255,255,255,.045);
+  font-size: 10px;
+}
+.bc-passkey-setup small { color: #f1b3c2; font-size: 9px; line-height: 1.5; }
+.bc-recovery-confirm {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 17px;
+  color: rgba(255,235,240,.78);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.bc-recovery-confirm input { accent-color: #ed4774; width: 15px; height: 15px; }

@@ -118,6 +118,7 @@ test('native login and recovery use the BitConnection account database only', as
   assert.equal(recovered.status, 200);
   assert.equal(recoveredPayload.recoveryCodes.length, 10);
 
+  await client.request('/auth/logout', { method: 'POST', headers: csrf.headers });
   const oldPassword = await client.request('/auth/login', {
     method: 'POST',
     headers: csrf.headers,
