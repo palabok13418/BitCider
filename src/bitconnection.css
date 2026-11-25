@@ -887,3 +887,102 @@ a { color: inherit; text-decoration: none; }
   0% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+
+/* Animated Create account / Sign in selector and BitCider-matched password controls. */
+.bc-auth-tabs { position: relative; isolation: isolate; }
+.bc-auth-tabs::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 12px) / 2);
+  border: 1px solid rgba(255,197,212,.24);
+  border-radius: 6px;
+  background: linear-gradient(110deg, rgba(235,59,105,.5), rgba(154,33,72,.62));
+  box-shadow: inset 0 1px rgba(255,255,255,.12), 0 4px 14px rgba(0,0,0,.14), 0 0 16px rgba(235,59,105,.12);
+  transition: transform .48s cubic-bezier(.18,.92,.22,1.18), box-shadow .28s ease;
+  pointer-events: none;
+}
+.bc-auth-tabs.is-login::before {
+  transform: translateX(calc(100% + 4px));
+  box-shadow: inset 0 1px rgba(255,255,255,.12), 0 4px 14px rgba(0,0,0,.14), 0 0 19px rgba(235,59,105,.18);
+}
+.bc-auth-tabs button { position: relative; z-index: 1; transition: color .22s ease, transform .22s ease; }
+.bc-auth-tabs button:active { transform: scale(.98); }
+.bc-auth-tabs button.is-active { background: transparent; box-shadow: none; }
+.bc-auth-password-shell { position: relative; display: flex; min-width: 0; align-items: center; }
+.bc-auth-password-shell input {
+  width: 100%;
+  padding-left: 11px !important;
+  padding-right: 88px !important;
+  font-family: 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .035em;
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+.bc-auth-password-shell input[readonly] { cursor: default; }
+.bc-auth-password-tool {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 7px;
+  color: #e9aebe;
+  background: rgba(255,255,255,.035);
+  transform: translateY(-50%);
+  transition: color .18s ease, border-color .18s ease, background .18s ease, opacity .18s ease;
+  cursor: pointer;
+}
+.bc-auth-password-tool:hover:not(:disabled) { color: #fff1f4; border-color: rgba(255,111,145,.42); background: rgba(255,75,113,.12); }
+.bc-auth-password-tool:disabled { opacity: .42; cursor: not-allowed; }
+.bc-auth-password-generator { right: 45px; }
+.bc-auth-password-visibility { right: 7px; }
+.bc-auth-password-shell.is-decrypting input { animation: bc-auth-password-decrypt .48s ease-out both; }
+.bc-auth-password-shell.is-encrypting input { animation: bc-auth-password-encrypt .48s ease-in both; }
+@keyframes bc-auth-password-decrypt {
+  0% { filter: blur(5px); opacity: .55; letter-spacing: .2em; text-shadow: 0 0 12px rgba(255,111,145,.7); }
+  55% { filter: blur(1px); opacity: .9; letter-spacing: .08em; }
+  100% { filter: blur(0); opacity: 1; letter-spacing: .035em; text-shadow: 0 0 0 transparent; }
+}
+@keyframes bc-auth-password-encrypt {
+  0% { filter: blur(0); opacity: 1; letter-spacing: .035em; }
+  45% { filter: blur(1px); opacity: .85; letter-spacing: .12em; text-shadow: 0 0 12px rgba(255,111,145,.6); }
+  100% { filter: blur(5px); opacity: .55; letter-spacing: .2em; text-shadow: 0 0 16px rgba(255,111,145,.8); }
+}
+.bc-password-strength {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 11px;
+  margin: 0 0 12px;
+  padding: 10px 11px;
+  border: 1px solid rgba(232,181,190,.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+.bc-password-strength-bars { display: flex; gap: 4px; }
+.bc-password-strength-bars i { display: block; width: 24px; height: 4px; border-radius: 5px; background: rgba(255,255,255,.12); }
+.bc-password-strength strong { color: #be9da3; font: 9px 'DM Mono', ui-monospace, monospace; }
+.bc-password-strength > span { grid-column: 1 / -1; color: rgba(255,221,230,.52); font-size: 9px; line-height: 1.5; }
+.bc-password-strength.level-1 { border-color: rgba(240,121,133,.22); }
+.bc-password-strength.level-1 strong { color: #ef9aa4; }
+.bc-password-strength.level-1 .bc-password-strength-bars i:nth-child(1) { background: #e87987; }
+.bc-password-strength.level-2 { border-color: rgba(231,190,111,.22); }
+.bc-password-strength.level-2 strong { color: #e8c27d; }
+.bc-password-strength.level-2 .bc-password-strength-bars i:nth-child(-n+2) { background: #d9b36d; }
+.bc-password-strength.level-3 { border-color: rgba(109,221,170,.2); }
+.bc-password-strength.level-3 strong { color: #9de5bf; }
+.bc-password-strength.level-3 .bc-password-strength-bars i { background: #77d1a7; }
+.bc-password-footnote { margin: -3px 0 3px; color: rgba(255,221,230,.43); font: 8px/1.6 'DM Mono', ui-monospace, monospace; }
+@media (prefers-reduced-motion: reduce) {
+  .bc-auth-tabs::before, .bc-auth-tabs button, .bc-auth-password-tool { transition-duration: .01ms !important; }
+  .bc-auth-password-shell.is-decrypting input, .bc-auth-password-shell.is-encrypting input { animation-duration: .01ms !important; }
+}
