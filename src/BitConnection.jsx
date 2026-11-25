@@ -131,10 +131,97 @@ function ProfileSetup({ account, identityMode, onSaved, onBack }) {
   );
 }
 
+const PASSWORD_GENERATOR_GROUPS = [
+  Array.from('abcdefghijklmnopqrstuvwxyz'),
+  Array.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+  Array.from('0123456789'),
+  Array.from('!@#$%^&*()-_=+[]{};:,.<>/?\\\\|~'),
+  Array.from('⟡⧫⌬⍟⎈⧉⌘⌥⚙⚛⚝⚿♜♞♢♧☠𖤐🜁🜂🜃🜄'),
+  ['𝔄', '𝕏', '𝖘', '𝒵', '𝓠', '𝖅', '𝔷', '𝕽', '𝘿', '𝙓'],
+  Array.from('ضصثقفقغعهخحجددذرزسشص'),
+  Array.from('密碼鍵龍影秘語字夢狐霧夜星'),
+  Array.from('ЖФЯщΩψξλΔЖФЯ'),
+  ['a\\u0336\\u035c\\u0315', 'Z\\u0338\\u0351\\u034f', 'm\\u0337\\u0307\\u0323', 'Q\\u0336\\u034f\\u031c', 'x\\u0338\\u0334\\u0301', 'R\\u0337\\u0308\\u035c']
+];
+const PASSWORD_GENERATOR_POOL = PASSWORD_GENERATOR_GROUPS.flat();
+const PASSWORD_MORPH_GLYPHS = Array.from('ABCDEFGHJKLMNPQRSTUVWXYZ23456789#$%&*+=<>?⟡⧫⌬⍟⚛⚝ЖΩ密龍');
+
+function secureRandomIndex(maximum) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 0x100000000) {
+    throw new RangeError('Invalid secure random range.');
+  }
+  const limit = Math.floor(0x100000000 / maximum) * maximum;
+  const sample = new Uint32Array(1);
+  do {
+    window.crypto.getRandomValues(sample);
+  } while (sample[0] >= limit);
+  return sample[0] % maximum;
+}
+
+function generateCryptographicPassword() {
+  const length = 24 + secureRandomIndex(477);
+  const characters = PASSWORD_GENERATOR_GROUPS.map(group => group[secureRandomIndex(group.length)]);
+  while (characters.length < length) {
+    characters.push(PASSWORD_GENERATOR_POOL[secureRandomIndex(PASSWORD_GENERATOR_POOL.length)]);
+  }
+  for (let index = characters.length - 1; index > 0; index -= 1) {
+    const swap = secureRandomIndex(index + 1);
+    [characters[index], characters[swap]] = [characters[swap], characters[index]];
+  }
+  return characters.join('');
+}
+
+function morphPasswordText(from, to, progress) {
+  const source = Array.from(from);
+  const target = Array.from(to);
+  const length = Math.max(source.length, target.length);
+  const settled = Math.floor(length * Math.max(0, Math.min(1, progress)));
+  return Array.from({ length }, (_, index) => {
+    if (index < settled) return target[index] || '';
+    return source[index] || PASSWORD_MORPH_GLYPHS[secureRandomIndex(PASSWORD_MORPH_GLYPHS.length)];
+  }).join('');
+}
+
+
+
+function passwordStrength(value) {
+  if (!value) return { level: 0, label: 'Start typing', note: 'No character-count limit. Strength is guidance, not a gate.' };
+  const classes = [
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /[0-9]/.test(value),
+    /[^A-Za-z0-9]/.test(value),
+    /[^\x00-\x7F]/.test(value)
+  ].filter(Boolean).length;
+  const predictable = /(.)\1{3,}|0123|1234|2345|abcd|bcde|qwer|asdf|password|letmein|welcome/i.test(value);
+  if (value.length < 8 || (classes === 1 && value.length < 12)) {
+    return { level: 1, label: 'Simple', note: 'Add more length or variety to make it harder to guess.' };
+  }
+  if (value.length < 14 || classes < 3 || predictable) {
+    return { level: 2, label: 'Mid · Try adding something', note: 'A longer password or another character type can make this stronger.' };
+  }
+  return { level: 3, label: 'Hard · Good', note: 'Looks harder to guess. Keep it unique to BitCider.' };
+}
+
+
+function BitConnectionAuthIcon({ name }) {
+  const common = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
+  if (name === 'wand') return <svg {...common}><path d="m15 4 5 5M4 20 16.5 7.5M4 4v4M2 6h4M18 15v5M15.5 17.5h5M10 2v3M8.5 3.5h3" /></svg>;
+  if (name === 'eye-off') return <svg {...common}><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8" /><path d="M9.9 5.2A11.2 11.2 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 4.1M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7c1.1 0 2.1-.2 3-.5" /></svg>;
+  return <svg {...common}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>;
+}
+
 function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRecovery, onPasskeySignIn }) {
   const [mode, setMode] = useState(initialMode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [isGeneratedPassword, setIsGeneratedPassword] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordAnimating, setPasswordAnimating] = useState(false);
+  const [passwordAnimatedValue, setPasswordAnimatedValue] = useState('');
+  const passwordAnimationRef = useRef(null);
+  const strength = passwordStrength(password);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [avatarDataUrl, setAvatarDataUrl] = useState(null);
@@ -142,7 +229,60 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => () => {
+    if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+  }, []);
+
+  function generateAccountPassword() {
+    try {
+      if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+      const generated = generateCryptographicPassword();
+      setPassword(generated);
+      setPasswordConfirm(generated);
+      setIsGeneratedPassword(true);
+      setPasswordVisible(false);
+      setPasswordAnimating(false);
+      setPasswordAnimatedValue('');
+      setError('');
+    } catch {
+      setError('Secure password generation is unavailable in this browser context. Use a supported HTTPS browser and try again.');
+    }
+  }
+
+  function togglePasswordVisibility() {
+    if (!password || passwordAnimating) return;
+    const nextVisible = !passwordVisible;
+    const hiddenText = isGeneratedPassword
+      ? 'Password123'
+      : '•'.repeat(Math.min(Array.from(password).length, 48));
+    const from = passwordVisible ? password : hiddenText;
+    const to = nextVisible ? password : hiddenText;
+    if (passwordAnimationRef.current) window.clearInterval(passwordAnimationRef.current);
+
+    setPasswordAnimating(true);
+    setPasswordAnimatedValue(from);
+    let frame = 0;
+    const totalFrames = 15;
+    passwordAnimationRef.current = window.setInterval(() => {
+      frame += 1;
+      setPasswordAnimatedValue(morphPasswordText(from, to, frame / totalFrames));
+      if (frame >= totalFrames) {
+        window.clearInterval(passwordAnimationRef.current);
+        passwordAnimationRef.current = null;
+        setPasswordVisible(nextVisible);
+        setPasswordAnimatedValue('');
+        setPasswordAnimating(false);
+      }
+    }, 32);
+  }
+
   function setModeAndClear(nextMode) {
+    if (passwordAnimationRef.current) {
+      window.clearInterval(passwordAnimationRef.current);
+      passwordAnimationRef.current = null;
+    }
+    setPasswordAnimating(false);
+    setPasswordAnimatedValue('');
     setMode(nextMode);
     setError('');
   }
@@ -170,6 +310,10 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
     setError('');
     try {
       if (mode === 'register') {
+        if (password !== passwordConfirm) {
+          setError('The passwords do not match.');
+          return;
+        }
         const response = await fetch('/api/bitconnection/auth/register', {
           method: 'POST',
           credentials: 'same-origin',
@@ -212,9 +356,9 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
           ? 'Create your BitConnection profile to host listening rooms, invite friends, and keep your party identity in one place.'
           : mode === 'login'
             ? 'Sign in to your existing BitConnection account. This stays separate from your BitCider login.'
-            : 'Use one of your saved one-time recovery codes to reset your BitConnection passphrase.'}
+            : 'Use one of your saved one-time recovery codes to reset your BitConnection password.'}
       </p>
-      <div className="bc-auth-tabs" role="tablist" aria-label="Account access">
+      <div className={'bc-auth-tabs' + (mode === 'login' || mode === 'recover' ? ' is-login' : '')} role="tablist" aria-label="Account access">
         <button type="button" role="tab" aria-selected={mode === 'register'} aria-controls="bc-auth-panel" className={mode === 'register' ? 'is-active' : ''} onClick={() => setModeAndClear('register')}>Create account</button>
         <button type="button" role="tab" aria-selected={mode === 'login' || mode === 'recover'} aria-controls="bc-auth-panel" className={mode === 'login' || mode === 'recover' ? 'is-active' : ''} onClick={() => setModeAndClear('login')}>Sign in</button>
       </div>
@@ -226,9 +370,40 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
         {mode === 'register' && (
           <>
             <label className="bc-field-card">
-              <span className="bc-field-label">PASSPHRASE <small>NO CHARACTER-COUNT LIMIT</small></span>
-              <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" placeholder="Create a strong passphrase" required />
+              <span className="bc-field-label">CREATE A PASSWORD <small>NO CHARACTER-COUNT LIMIT</small></span>
+              <span className={'bc-auth-password-shell' + (passwordAnimating ? ' is-animating ' + (passwordVisible ? 'is-decrypting' : 'is-encrypting') : '')}>
+                <button className="bc-auth-password-tool bc-auth-password-generator" type="button" onClick={generateAccountPassword} disabled={busy || passwordAnimating} aria-label="Generate a cryptographically random password" title="Generate a secure password"><BitConnectionAuthIcon name="wand" /></button>
+                <input
+                  id="bc-new-password"
+                  name="new-password"
+                  type={passwordAnimating || passwordVisible || isGeneratedPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={passwordAnimating ? passwordAnimatedValue : isGeneratedPassword && !passwordVisible ? 'Password123' : password}
+                  onChange={event => {
+                    setPassword(event.target.value);
+                    setPasswordConfirm('');
+                    setIsGeneratedPassword(false);
+                  }}
+                  readOnly={passwordAnimating || (isGeneratedPassword && !passwordVisible)}
+                  placeholder="Start Typing"
+                  required
+                  dir="ltr"
+                  spellCheck={false}
+                  aria-label="Create a password"
+                />
+                <button className="bc-auth-password-tool bc-auth-password-visibility" type="button" onClick={togglePasswordVisibility} disabled={!password || busy || passwordAnimating} aria-label={passwordVisible ? 'Hide password' : 'Show password'} aria-pressed={passwordVisible} title={passwordVisible ? 'Hide password' : 'Show password'}><BitConnectionAuthIcon name={passwordVisible ? 'eye-off' : 'eye'} /></button>
+              </span>
             </label>
+            <div className={'bc-password-strength' + (strength.level ? ' level-' + strength.level : '')} aria-live="polite">
+              <div className="bc-password-strength-bars"><i /><i /><i /></div>
+              <strong>{strength.label}</strong>
+              <span>{strength.note}</span>
+            </div>
+            <label className="bc-field-card">
+              <span className="bc-field-label">CONFIRM PASSWORD</span>
+              <input id="bc-confirm-password" name="confirm-password" type={passwordAnimating || passwordVisible || isGeneratedPassword ? 'text' : 'password'} autoComplete="new-password" value={passwordAnimating ? passwordAnimatedValue : isGeneratedPassword && !passwordVisible ? 'Password123' : passwordConfirm} onChange={event => { setPasswordConfirm(event.target.value); setIsGeneratedPassword(false); }} readOnly={passwordAnimating || isGeneratedPassword} placeholder="Type it again" required dir="ltr" spellCheck={false} />
+            </label>
+            <p className="bc-password-footnote">Generate a 24–500 character password with secure randomness, or type your own. Generated passwords include multiple scripts, symbols and combining characters. The hidden preview reads Password123; the actual password is much more complex.</p>
             <label className="bc-field-card bc-avatar-field">
               <span className="bc-field-label">PROFILE PICTURE <small>OPTIONAL</small></span>
               <span className="bc-avatar-picker">
@@ -241,8 +416,8 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
         )}
         {mode === 'login' && (
           <label className="bc-field-card">
-            <span className="bc-field-label">PASSPHRASE</span>
-            <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" placeholder="Your BitConnection passphrase" required />
+            <span className="bc-field-label">PASSWORD</span>
+            <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" placeholder="Your BitConnection password" required />
           </label>
         )}
         {mode === 'recover' && (
@@ -252,8 +427,8 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
               <input value={recoveryCode} onChange={event => setRecoveryCode(event.target.value)} autoComplete="off" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" required />
             </label>
             <label className="bc-field-card">
-              <span className="bc-field-label">NEW PASSPHRASE</span>
-              <input type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" placeholder="Create a new passphrase" required />
+              <span className="bc-field-label">NEW PASSWORD</span>
+              <input type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" placeholder="Create a new password" required />
             </label>
           </>
         )}
@@ -262,13 +437,13 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
           {mode === 'recover' && (
             <button className="bc-secondary-button" type="button" onClick={() => setModeAndClear('login')} disabled={busy}>Back to sign in</button>
           )}
-          <button className="bc-primary-button" type="submit" disabled={busy || !username.trim() || (mode === 'register' && !password) || (mode === 'login' && !password) || (mode === 'recover' && (!recoveryCode.trim() || !newPassword))}>
-            {busy ? 'Please wait…' : mode === 'register' ? 'Create BitConnection account' : mode === 'login' ? 'Sign in' : 'Reset passphrase'}
+          <button className="bc-primary-button" type="submit" disabled={busy || !username.trim() || (mode === 'register' && (!password || !passwordConfirm || password !== passwordConfirm)) || (mode === 'login' && !password) || (mode === 'recover' && (!recoveryCode.trim() || !newPassword))}>
+            {busy ? 'Please wait…' : mode === 'register' ? 'Create BitConnection account' : mode === 'login' ? 'Sign in' : 'Reset password'}
           </button>
         </div>
         {mode === 'login' && (
           <button className="bc-recovery-link" type="button" onClick={() => setModeAndClear('recover')} disabled={busy}>
-            Forgot your passphrase? Use a recovery code
+            Forgot your password? Use a recovery code
           </button>
         )}
       </form>
@@ -323,7 +498,7 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
     <section className="bc-window-state bc-recovery-state">
       <div className="bc-window-kicker">SAVE THESE ONCE</div>
       <h1>Your recovery codes.</h1>
-      <p>Each code can be used once to reset your passphrase and issue a fresh set. These codes are only shown now, so save them somewhere private.</p>
+      <p>Each code can be used once to reset your password and issue a fresh set. These codes are only shown now, so save them somewhere private.</p>
       <div className="bc-recovery-codes">
         {recoveryCodes.map(code => <code key={code}>{code}</code>)}
       </div>
@@ -343,7 +518,7 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
       <div className="bc-passkey-setup">
         <strong>Want passkey sign-in too?</strong>
         <p>Add a device passkey. It stays inside BitConnection and is separate from BitCider passkeys.</p>
-        <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} placeholder="Confirm your BitConnection passphrase" autoComplete="current-password" />
+        <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} placeholder="Confirm your BitConnection password" autoComplete="current-password" />
         <button className="bc-secondary-button" type="button" onClick={addPasskey} disabled={passkeyBusy || !passkeyPassword || passkeyAdded}>{passkeyBusy ? 'Setting up…' : passkeyAdded ? 'Passkey added' : 'Add a passkey'}</button>
         {passkeyMessage && <small role="status">{passkeyMessage}</small>}
       </div>
