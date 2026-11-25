@@ -177,6 +177,14 @@ export class BitConnectionRoomSession {
     });
   }
 
+  updateQueue(action) {
+    return this.client.request('/rooms/' + encodeSegment(this.roomId) + '/queue', {
+      method: 'POST',
+      body: action,
+      session: this
+    });
+  }
+
   setVolume(volume) {
     return this.client.request('/rooms/' + encodeSegment(this.roomId) + '/volume', {
       method: 'POST',
