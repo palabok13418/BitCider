@@ -1048,7 +1048,9 @@ export function createBitConnectionRouter({
       const hostLocation = hostLocations.get(room.roomId);
       const hostLocationFresh = hostLocation && Date.now() - hostLocation.recordedAt <= HOST_LOCATION_TTL_MS;
       if (guestLocation && guestLocation.accuracy <= 30 && hostLocationFresh && hostLocation.accuracy <= 30) {
-        closeEnough = distanceMeters(guestLocation, hostLocation) <= PRIVATE_ROOM_RADIUS_METERS;
+        const measuredDistance = distanceMeters(guestLocation, hostLocation);
+        // Include both reported accuracy radii so uncertain GPS readings fall back to the host code.
+        closeEnough = measuredDistance + guestLocation.accuracy + hostLocation.accuracy <= PRIVATE_ROOM_RADIUS_METERS;
       }
     }
 
