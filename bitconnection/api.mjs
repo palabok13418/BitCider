@@ -21,7 +21,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-foundation-01';
+export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-foundation-02';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -248,6 +248,7 @@ export function bitConnectionHealthPayload(maxPartySize = 10) {
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
       playbackSync: 'youtube-music-through-bitchord-web',
+      sharedQueue: 'synchronized-with-room-permissions',
       privateRoomVerification: 'proximity-or-host-one-time-code',
       audioRelay: 'never-server-side'
     },
@@ -429,6 +430,18 @@ export function createBitConnectionRouter({
       if (!used.has(candidate)) return candidate;
     }
     return 'Guest' + crypto.randomInt(100000, 999999);
+  }
+
+  function cleanYouTubeTrack(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const videoId = String(value.videoId || '');
+    const title = String(value.title || '').trim();
+    const artist = String(value.artist || '').trim();
+    const durationSeconds = Number(value.durationSeconds);
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title || title.length > 180
+      || !artist || artist.length > 180 || !Number.isFinite(durationSeconds)
+      || durationSeconds < 0 || durationSeconds > 24 * 60 * 60) return null;
+    return { videoId, title, artist, durationSeconds };
   }
 
   function cleanCoordinates(value) {
@@ -947,6 +960,7 @@ export function createBitConnectionRouter({
       hostParticipantId: null,
       inviteTokenHash: inviteToken ? sha256(inviteToken) : null,
       participants: {},
+      queue: [],
       playbackState: {
         source: 'youtube-music',
         track: null,
@@ -1213,6 +1227,7 @@ export function createBitConnectionRouter({
       playbackState: room.playbackState || {
         source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0
       },
+      queue: Array.isArray(room.queue) ? room.queue : [],
       participants
     });
   });
@@ -1233,6 +1248,61 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, participant: result.participant });
   });
 
+  router.post('/rooms/:roomId/queue', identityCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      if (room.ownerOnlyControls && !isRoomOwner(room, participant)) {
+        return { status: 403, error: 'HOST_CONTROLS_ONLY', message: 'Only the host can manage the queue in this room.' };
+      }
+
+      room.queue = Array.isArray(room.queue) ? room.queue : [];
+      const action = String(req.body?.action || '');
+      if (action === 'add') {
+        if (room.queue.length >= 100) return { status: 409, error: 'QUEUE_FULL', message: 'The shared queue can contain up to 100 songs.' };
+        const track = cleanYouTubeTrack(req.body?.track);
+        if (!track) return { status: 400, error: 'INVALID_YOUTUBE_TRACK' };
+        const item = {
+          queueItemId: crypto.randomBytes(12).toString('hex'),
+          ...track,
+          addedByParticipantId: participant.participantId,
+          addedAt: new Date().toISOString()
+        };
+        const index = req.body?.index === undefined ? room.queue.length : Number(req.body.index);
+        if (!Number.isSafeInteger(index) || index < 0 || index > room.queue.length) {
+          return { status: 400, error: 'INVALID_QUEUE_POSITION' };
+        }
+        room.queue.splice(index, 0, item);
+      } else if (action === 'remove') {
+        const queueItemId = String(req.body?.queueItemId || '');
+        const index = room.queue.findIndex(item => item.queueItemId === queueItemId);
+        if (index < 0) return { status: 404, error: 'QUEUE_ITEM_NOT_FOUND' };
+        room.queue.splice(index, 1);
+      } else if (action === 'move') {
+        const queueItemId = String(req.body?.queueItemId || '');
+        const from = room.queue.findIndex(item => item.queueItemId === queueItemId);
+        const to = Number(req.body?.index);
+        if (from < 0) return { status: 404, error: 'QUEUE_ITEM_NOT_FOUND' };
+        if (!Number.isSafeInteger(to) || to < 0 || to >= room.queue.length) {
+          return { status: 400, error: 'INVALID_QUEUE_POSITION' };
+        }
+        const [item] = room.queue.splice(from, 1);
+        room.queue.splice(to, 0, item);
+      } else if (action === 'clear') {
+        room.queue = [];
+      } else {
+        return { status: 400, error: 'INVALID_QUEUE_ACTION', message: 'Choose add, remove, move, or clear.' };
+      }
+
+      room.updatedAt = new Date().toISOString();
+      return { ok: true, queue: room.queue };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.json({ ok: true, queue: result.queue });
+  });
+
   router.post('/rooms/:roomId/playback', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
@@ -1250,17 +1320,9 @@ export function createBitConnectionRouter({
       if (body.track !== undefined) {
         if (body.track === null) next.track = null;
         else {
-          const track = body.track;
-          const videoId = String(track?.videoId || '');
-          const title = String(track?.title || '').trim();
-          const artist = String(track?.artist || '').trim();
-          const durationSeconds = Number(track?.durationSeconds);
-          if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title || title.length > 180
-            || !artist || artist.length > 180 || !Number.isFinite(durationSeconds)
-            || durationSeconds < 0 || durationSeconds > 24 * 60 * 60) {
-            return { status: 400, error: 'INVALID_YOUTUBE_TRACK' };
-          }
-          next.track = { videoId, title, artist, durationSeconds };
+          const track = cleanYouTubeTrack(body.track);
+          if (!track) return { status: 400, error: 'INVALID_YOUTUBE_TRACK' };
+          next.track = track;
         }
       }
       if (body.isPlaying !== undefined) {
