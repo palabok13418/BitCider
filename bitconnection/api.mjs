@@ -575,12 +575,12 @@ export function createBitConnectionRouter({
     const password = req.body?.password;
     const avatarDataUrl = cleanImageDataUrl(req.body?.avatarDataUrl);
     if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Choose a username containing 1 to 24 characters.' });
-    if (!validatePassword(password)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a passphrase.' });
+    if (!validatePassword(password)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a password.' });
     if (avatarDataUrl === undefined) return res.status(400).json({ error: 'INVALID_PROFILE_IMAGE', message: 'Use a PNG, JPEG, or WebP profile picture up to 1 MB.' });
 
     let passwordRecord;
     try { passwordRecord = await createPasswordRecord(password); }
-    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that passphrase.' }); }
+    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that password.' }); }
     const recovery = createRecoveryCodes();
     const accountId = crypto.randomBytes(24).toString('base64url');
     const webAuthnUserId = crypto.randomBytes(32).toString('base64url');
@@ -626,7 +626,7 @@ export function createBitConnectionRouter({
     const match = Object.entries(snapshot.accounts).find(([, account]) => usernameKey(account.username) === normalized);
     const valid = await verifyPassword(password, match?.[1]?.password || PASSWORD_DUMMY);
     if (!match || !validatePassword(password) || !valid) {
-      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The username or passphrase is incorrect.' });
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The username or password is incorrect.' });
     }
     if (activeSession(req, res).authenticated) {
       return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'A BitConnection account is already signed in on this device.' });
@@ -636,7 +636,7 @@ export function createBitConnectionRouter({
     const result = await store.update(data => {
       const account = data.accounts[accountId];
       if (!account || account.password?.hash !== accountSnapshot.password.hash) {
-        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The username or passphrase is incorrect.', write: false };
+        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The username or password is incorrect.', write: false };
       }
       const sessionInfo = createAuthenticatedSession(data, accountId, req.bitConnectionSessionId, req);
       return { ok: true, evictedDevice: sessionInfo.evictedDevice || null };
@@ -650,7 +650,7 @@ export function createBitConnectionRouter({
     const username = cleanUsername(req.body?.username);
     const recoveryCode = req.body?.recoveryCode;
     const newPassword = req.body?.newPassword;
-    if (!validatePassword(newPassword)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a new passphrase.' });
+    if (!validatePassword(newPassword)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a new password.' });
     const snapshot = store.read();
     const normalized = usernameKey(username);
     const match = Object.entries(snapshot.accounts).find(([, account]) => usernameKey(account.username) === normalized);
@@ -661,7 +661,7 @@ export function createBitConnectionRouter({
 
     let passwordRecord;
     try { passwordRecord = await createPasswordRecord(newPassword); }
-    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that passphrase.' }); }
+    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that password.' }); }
     const recovery = createRecoveryCodes();
     const result = await store.update(data => {
       const account = data.accounts[accountId];
@@ -699,7 +699,7 @@ export function createBitConnectionRouter({
     const session = activeSession(req, res);
     if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before adding a passkey.' });
     if (!await verifyPassword(req.body?.password, session.account.password)) {
-      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection passphrase to add a passkey.' });
+      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection password to add a passkey.' });
     }
     let context;
     try { context = webAuthnContext(req); }
@@ -887,7 +887,7 @@ export function createBitConnectionRouter({
     const session = activeSession(req, res);
     if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED' });
     if (!await verifyPassword(req.body?.password, session.account.password)) {
-      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection passphrase to remove a passkey.' });
+      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection password to remove a passkey.' });
     }
     const credentialId = typeof req.body?.credentialId === 'string' ? req.body.credentialId : '';
     const result = await store.update(data => {
