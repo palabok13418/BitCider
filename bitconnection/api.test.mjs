@@ -174,9 +174,8 @@ test('BitConnection requires authentication and a completed profile to create a 
   assert.equal(payload.room.hostUsername, 'Room Host');
   assert.equal(payload.inviteToken, undefined);
 
-  const publicGuestClient = await harness(t);
-  const publicGuestCsrf = await csrfContext(publicGuestClient);
-  const joinedByCode = await publicGuestClient.request('/rooms/' + payload.room.roomCode + '/join', {
+  const publicGuestCsrf = await csrfContext(client);
+  const joinedByCode = await client.request('/rooms/' + payload.room.roomCode + '/join', {
     method: 'POST',
     headers: publicGuestCsrf.headers,
     body: JSON.stringify({})
@@ -258,8 +257,8 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(hostLocation.status, 200);
 
-  const guestClient = await harness(t);
-  const guestCsrf = await csrfContext(guestClient);
+  const guestClient = client;
+  const guestCsrf = await csrfContext(client);
   const joined = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
     headers: guestCsrf.headers,
@@ -374,8 +373,8 @@ test('private-room distance fallback requires a host-relayed code that expires f
   const roomPayload = await created.json();
   assert.equal(created.status, 201);
 
-  const guestClient = await harness(t);
-  const guestCsrf = await csrfContext(guestClient);
+  const guestClient = client;
+  const guestCsrf = await csrfContext(client);
   const request = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
     headers: guestCsrf.headers,
