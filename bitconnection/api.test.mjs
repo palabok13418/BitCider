@@ -295,6 +295,29 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(guestOffer.status, 403);
 
+  const deniedQueue = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({
+      action: 'add',
+      track: { videoId: 'abcdefghijk', title: 'Guest Song', artist: 'Guest Artist', durationSeconds: 120 }
+    })
+  });
+  assert.equal(deniedQueue.status, 403);
+
+  const hostQueue = await client.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({
+      action: 'add',
+      track: { videoId: 'abcdefghijk', title: 'Host Song', artist: 'Host Artist', durationSeconds: 180 }
+    })
+  });
+  const hostQueuePayload = await hostQueue.json();
+  assert.equal(hostQueue.status, 200);
+  assert.equal(hostQueuePayload.queue.length, 1);
+  const hostQueueItemId = hostQueuePayload.queue[0].queueItemId;
+
   const hostPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
     method: 'POST',
     headers: hostHeaders,
@@ -347,6 +370,8 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   assert.equal(roomState.playbackState.source, 'youtube-music');
   assert.equal(roomState.playbackState.track.videoId, 'abcdefghijk');
   assert.equal(roomState.playbackState.isPlaying, true);
+  assert.equal(roomState.queue.length, 1);
+  assert.equal(roomState.queue[0].queueItemId, hostQueueItemId);
   assert.equal(roomState.participants.length, 2);
 
   const left = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/leave', {
@@ -430,6 +455,27 @@ test('private-room distance fallback requires a host-relayed code that expires f
     body: JSON.stringify({ isPlaying: false })
   });
   assert.equal(guestPlayback.status, 200);
+  const guestQueue = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({
+      action: 'add',
+      track: { videoId: 'zyxwvutsrqp', title: 'Guest Choice', artist: 'Guest Artist', durationSeconds: 200 }
+    })
+  });
+  const guestQueuePayload = await guestQueue.json();
+  assert.equal(guestQueue.status, 200);
+  assert.equal(guestQueuePayload.queue.length, 1);
+  const guestQueueItemId = guestQueuePayload.queue[0].queueItemId;
+
+  const removedQueue = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ action: 'remove', queueItemId: guestQueueItemId })
+  });
+  assert.equal(removedQueue.status, 200);
+  assert.equal((await removedQueue.json()).queue.length, 0);
+
   const guestVolume = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/volume', {
     method: 'POST',
     headers: guestHeaders,
