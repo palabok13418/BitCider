@@ -71,7 +71,12 @@ app.use('/api', (_req, res, next) => {
 });
 
 // BitConnection runs as a separate product namespace on the Deplexo primary API.
-app.use('/api/bitconnection', createBitConnectionRouter());
+app.use('/api/bitconnection', createBitConnectionRouter({
+  getUserSession,
+  requireCsrf,
+  dataFile: path.join(DATA_DIR, 'bitconnection.json'),
+  maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10)
+}));
 
 
 function ensureSecret() {
