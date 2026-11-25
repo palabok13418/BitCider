@@ -583,3 +583,234 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.45;
 }
 .bc-recovery-confirm input { accent-color: #ed4774; width: 15px; height: 15px; }
+
+
+/* BitConnection entry ignition: a layered SVG flame that actually consumes the black cover. */
+.bitconnection-entry-cover {
+  background: transparent;
+  isolation: isolate;
+}
+
+.bitconnection-burn-field {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bitconnection-burn-blackness {
+  fill: #020102;
+}
+
+.bitconnection-burn-front {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bitconnection-entry-cover.is-burning .bitconnection-burn-front {
+  opacity: 1;
+}
+
+.bitconnection-burn-halo,
+.bitconnection-burn-orange,
+.bitconnection-burn-hot {
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.bitconnection-burn-halo {
+  opacity: .72;
+}
+
+.bitconnection-burn-orange {
+  opacity: .94;
+}
+
+.bitconnection-burn-hot {
+  opacity: 1;
+}
+
+.bitconnection-burn-tongues {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.bitconnection-entry-cover.is-burning .bitconnection-burn-tongues {
+  animation: bitconnection-burn-tongues 1.65s cubic-bezier(.14,.72,.18,1) forwards;
+}
+
+.bitconnection-burn-tongues path {
+  fill: url(#bitconnection-fire-edge);
+  opacity: .88;
+  filter: url(#bitconnection-fire-glow);
+}
+
+.bitconnection-flame-wrap {
+  z-index: 1;
+  width: 220px;
+  height: 260px;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity, filter;
+}
+
+.bitconnection-entry-flame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 12px rgba(255,105,25,.95)) drop-shadow(0 0 34px rgba(255,45,15,.78));
+  animation: bitconnection-flame-flicker .14s ease-in-out infinite alternate;
+}
+
+.bitconnection-flame-warp {
+  transform-origin: 50% 88%;
+  animation: bitconnection-flame-body .31s cubic-bezier(.45,0,.55,1) infinite alternate;
+}
+
+.bitconnection-flame-outer {
+  fill: url(#bitconnection-flame-shell);
+  filter: url(#bitconnection-flame-soft-glow);
+}
+
+.bitconnection-flame-tongue {
+  fill: url(#bitconnection-flame-lobe);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.bitconnection-flame-inner {
+  fill: url(#bitconnection-flame-core);
+  filter: drop-shadow(0 0 8px rgba(255,235,135,.9));
+}
+
+.bitconnection-flame-core {
+  fill: #fff9d7;
+  filter: drop-shadow(0 0 9px rgba(255,247,185,.95));
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: bitconnection-flame-core-pulse .24s ease-in-out infinite alternate;
+}
+
+.bitconnection-flame-tongue.tongue-a {
+  animation: bitconnection-flame-tongue-a .22s ease-in-out infinite alternate;
+}
+
+.bitconnection-flame-tongue.tongue-b {
+  animation: bitconnection-flame-tongue-b .27s ease-in-out infinite alternate;
+}
+
+.bitconnection-flame-tongue.tongue-c {
+  animation: bitconnection-flame-tongue-c .19s ease-in-out infinite alternate;
+}
+
+.bitconnection-flame-embers circle {
+  fill: #ffe8a1;
+  filter: drop-shadow(0 0 5px #ff7a25) drop-shadow(0 0 10px #ff3c16);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bitconnection-ember-rise .8s ease-out infinite;
+}
+
+.bitconnection-flame-embers circle:nth-child(2n) { animation-delay: -.29s; }
+.bitconnection-flame-embers circle:nth-child(3n) { animation-delay: -.57s; }
+
+.bitconnection-entry-cover.is-searching .bitconnection-flame-wrap {
+  animation: bitconnection-flame-run 5.2s cubic-bezier(.48,.02,.44,.98) both;
+}
+
+.bitconnection-entry-cover.is-holding .bitconnection-flame-wrap {
+  animation: bitconnection-flame-compress 2s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.bitconnection-entry-cover.is-burning .bitconnection-flame-wrap {
+  animation: bitconnection-flame-ignite .42s cubic-bezier(.12,.7,.25,1) both;
+}
+
+@keyframes bitconnection-flame-run {
+  0% {
+    transform: translate(-50%, -50%) translateX(-64vw) scale(.62,.78) rotate(-10deg);
+    filter: brightness(.86);
+  }
+  18% {
+    transform: translate(-50%, -50%) translateX(-25vw) scale(.9,1.08) rotate(5deg);
+  }
+  37% {
+    transform: translate(-50%, -50%) translateX(61vw) scale(1.12,.93) rotate(-5deg);
+  }
+  52% {
+    transform: translate(-50%, -50%) translateX(-59vw) scale(.86,1.12) rotate(7deg);
+    filter: brightness(1.16);
+  }
+  73% {
+    transform: translate(-50%, -50%) translateX(32vw) scale(1.08,.96) rotate(-4deg);
+  }
+  89% {
+    transform: translate(-50%, -50%) translateX(-7vw) scale(.95,1.05) rotate(2deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) translateX(0) scale(1,1) rotate(0);
+    filter: brightness(1.12);
+  }
+}
+
+@keyframes bitconnection-flame-compress {
+  0% { transform: translate(-50%, -50%) scale(1,1); filter: brightness(1.12); }
+  48% { transform: translate(-50%, -50%) scale(.38,.78); filter: brightness(1.48) saturate(1.22); }
+  72% { transform: translate(-50%, -50%) scale(.54,.55); filter: brightness(1.8) saturate(1.35); }
+  100% { transform: translate(-50%, -50%) scale(.43,.62); filter: brightness(1.72) saturate(1.3); }
+}
+
+@keyframes bitconnection-flame-ignite {
+  0% { transform: translate(-50%, -50%) scale(.43,.62); opacity: 1; }
+  36% { transform: translate(-50%, -50%) scale(1.9,1.65); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(2.9,2.35); opacity: 0; }
+}
+
+@keyframes bitconnection-flame-body {
+  from { transform: skewX(-2.5deg) scaleX(.97) scaleY(.98); }
+  to { transform: skewX(2.8deg) scaleX(1.035) scaleY(1.025); }
+}
+
+@keyframes bitconnection-flame-tongue-a {
+  from { transform: rotate(-5deg) scaleY(.93) translateY(2px); }
+  to { transform: rotate(4deg) scaleY(1.13) translateY(-4px); }
+}
+
+@keyframes bitconnection-flame-tongue-b {
+  from { transform: rotate(4deg) scaleY(1.1) translateY(-3px); }
+  to { transform: rotate(-5deg) scaleY(.92) translateY(3px); }
+}
+
+@keyframes bitconnection-flame-tongue-c {
+  from { transform: scaleX(.94) scaleY(1.04); }
+  to { transform: scaleX(1.08) scaleY(.9) translateY(3px); }
+}
+
+@keyframes bitconnection-flame-core-pulse {
+  from { transform: scale(.94,1.04); opacity: .88; }
+  to { transform: scale(1.06,.96); opacity: 1; }
+}
+
+@keyframes bitconnection-ember-rise {
+  0% { transform: translate(0,10px) scale(.6); opacity: 0; }
+  22% { opacity: 1; }
+  100% { transform: translate(8px,-52px) scale(.08); opacity: 0; }
+}
+
+@keyframes bitconnection-burn-tongues {
+  0% { transform: scale(.08); opacity: .25; }
+  38% { transform: scale(.76); opacity: .95; }
+  100% { transform: scale(4.4); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bitconnection-entry-cover,
+  .bitconnection-entry-cover * {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
