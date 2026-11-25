@@ -46,8 +46,8 @@ function ProfileSetup({ account, onSaved, onBack }) {
       setError('Choose a PNG, JPEG, or WebP image.');
       return;
     }
-    if (file.size > 1024 * 1024) {
-      setError('Profile pictures must be 1 MB or smaller.');
+    if (file.size > 170 * 1024) {
+      setError('Profile pictures must be 170 KB or smaller.');
       return;
     }
     const reader = new FileReader();
@@ -102,7 +102,7 @@ function ProfileSetup({ account, onSaved, onBack }) {
           </span>
           <span className="bc-avatar-file">
             <strong>{avatarName || 'Choose a picture'}</strong>
-            <small>PNG, JPEG, or WebP · up to 1 MB</small>
+            <small>PNG, JPEG, or WebP · up to 170 KB</small>
           </span>
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} />
         </span>

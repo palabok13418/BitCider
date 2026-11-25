@@ -15,7 +15,7 @@ async function harness(t, { authenticated = true, accountId = 'test-account-1', 
   app.use(express.json());
   app.use('/api/bitconnection', createBitConnectionRouter({
     dataFile, maxPartySize,
-    getUserSession: () => authenticated ? { authenticated: true, accountId } : { authenticated: false },
+    getUserSession: req => authenticated ? { authenticated: true, accountId: req.get('x-test-account') || accountId } : { authenticated: false },
     requireCsrf: (_req, _res, next) => next()
   }));
   const server = createServer(app);
@@ -75,8 +75,7 @@ test('profile setup persists a BitConnection identity and allows room creation',
 test('profile username is unique and party-size limit is enforced', async t => {
   const first = await harness(t, { accountId: 'account-one' });
   await first.request('/account/profile', { method: 'PUT', body: JSON.stringify({ username: 'Night Owl' }) });
-  const second = await harness(t, { accountId: 'account-two' });
-  const duplicate = await second.request('/account/profile', { method: 'PUT', body: JSON.stringify({ username: 'night owl' }) });
+  const duplicate = await first.request('/account/profile', { method: 'PUT', headers: { 'x-test-account': 'account-two' }, body: JSON.stringify({ username: 'night owl' }) });
   assert.equal(duplicate.status, 409);
 
   const overLimit = await first.request('/rooms', {
