@@ -1024,9 +1024,10 @@ export function createBitConnectionRouter({
 
   router.post('/rooms/:roomId/join', bitConnectionCsrf, rateJoin, async (req, res) => {
     const snapshot = store.read();
+    const roomPathValue = String(req.params.roomId || '');
+    const requestedRoomCode = String(req.body?.roomCode || roomPathValue).trim().toUpperCase();
     const room = Object.values(snapshot.rooms).find(item => (
-      item?.roomId === String(req.params.roomId || '')
-      || item?.roomCode === String(req.body?.roomCode || '').trim().toUpperCase()
+      item?.roomId === roomPathValue || item?.roomCode === requestedRoomCode
     ));
     if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND', message: 'That room is not available.' });
     if (room.visibility === 'private') {
