@@ -63,6 +63,7 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.apiVersion, BITCONNECTION_API_VERSION);
   assert.equal(payload.capabilities.independentAccounts, 'enabled');
   assert.equal(payload.capabilities.ciderAddonCreation, 'never');
+  assert.equal(payload.limits.maxPartySize, 30);
 });
 
 test('native registration creates a separate BitConnection identity and never calls BitCider auth', async t => {
@@ -192,6 +193,85 @@ test('BitConnection requires authentication and a completed profile to create a 
   });
   assert.equal(closed.status, 200);
   assert.equal((await closed.json()).status, 'closed');
+});
+
+test('public directory shows only active public rooms and supports search, with a 30-person maximum', async t => {
+  const client = await harness(t, { maxPartySize: 30 });
+  const csrf = await csrfContext(client);
+  const registered = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Public Host', password: 'public-host-secret' })
+  });
+  assert.equal(registered.status, 201);
+
+  const passkeys = await client.request('/passkeys', { headers: csrf.headers });
+  assert.equal(passkeys.status, 200);
+  assert.deepEqual((await passkeys.json()).passkeys, []);
+
+  const publicResponse = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({
+      roomName: 'Late Night Listening',
+      visibility: 'public',
+      partySize: 30,
+      ownerOnlyControls: false
+    })
+  });
+  const publicPayload = await publicResponse.json();
+  assert.equal(publicResponse.status, 201);
+  assert.equal(publicPayload.room.partySize, 30);
+
+  const overLimit = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({
+      roomName: 'Too Many People',
+      visibility: 'public',
+      partySize: 31,
+      ownerOnlyControls: false
+    })
+  });
+  assert.equal(overLimit.status, 400);
+  assert.equal((await overLimit.json()).error, 'INVALID_PARTY_SIZE');
+
+  const privateResponse = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({
+      roomName: 'Private Listening',
+      visibility: 'private',
+      partySize: 4,
+      ownerOnlyControls: false
+    })
+  });
+  assert.equal(privateResponse.status, 201);
+
+  const directory = await client.request('/rooms/public');
+  const directoryPayload = await directory.json();
+  assert.equal(directory.status, 200);
+  assert.equal(directoryPayload.total, 1);
+  assert.equal(directoryPayload.featured.length, 1);
+  assert.equal(directoryPayload.rooms[0].roomId, publicPayload.room.roomId);
+  assert.equal(directoryPayload.rooms[0].participantCount, 1);
+  assert.equal(directoryPayload.rooms[0].visibility, 'public');
+  assert.equal(directoryPayload.rooms[0].partySize, 30);
+  assert.equal(directoryPayload.rooms.some(room => room.roomName === 'Private Listening'), false);
+
+  const search = await client.request('/rooms/public?q=late%20night');
+  const searchPayload = await search.json();
+  assert.equal(search.status, 200);
+  assert.equal(searchPayload.total, 1);
+  assert.equal(searchPayload.rooms[0].roomName, 'Late Night Listening');
+
+  const close = await client.request('/rooms/' + publicPayload.room.roomId + '/close', {
+    method: 'POST',
+    headers: csrf.headers
+  });
+  assert.equal(close.status, 200);
+  const afterClose = await client.request('/rooms/public');
+  assert.equal((await afterClose.json()).total, 0);
 });
 
 test('BitConnection rejects duplicate usernames, invalid photos, and over-limit party requests', async t => {
