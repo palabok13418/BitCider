@@ -398,6 +398,7 @@ export function createBitConnectionRouter({
       role,
       identityId,
       credentialHash: sha256(credential),
+      volume: 1,
       status: 'connected',
       joinedAt: new Date().toISOString(),
       lastSeenAt: new Date().toISOString()
@@ -484,7 +485,8 @@ export function createBitConnectionRouter({
       participant: publicParticipant(participant),
       participants: Object.values(room.participants || {})
         .filter(item => item?.status !== 'left')
-        .map(item => publicParticipant(item))
+        .map(item => publicParticipant(item)),
+      currentVolume: Number(participant.volume ?? 1)
     };
   }
 
@@ -950,7 +952,6 @@ export function createBitConnectionRouter({
         track: null,
         isPlaying: false,
         positionSeconds: 0,
-        volume: 1,
         updatedAt: now
       },
       signalSequence: 0,
@@ -1002,6 +1003,7 @@ export function createBitConnectionRouter({
       room.updatedAt = new Date().toISOString();
       for (const participant of Object.values(room.participants || {})) participant.status = 'left';
       hostLocations.delete(room.roomId);
+      for (const requestId of Object.keys(room.joinRequests || {})) pendingVerificationCodes.delete(requestId);
       return { ok: true, roomId: room.roomId, roomStatus: room.status };
     });
     if (result.status) return res.status(result.status).json({ error: result.error });
@@ -1120,39 +1122,38 @@ export function createBitConnectionRouter({
     });
   });
 
-  router.get('/rooms/:roomId/verification-requests', (req, res) => {
-    const room = store.read().rooms[String(req.params.roomId || '')];
-    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
-    const host = participantForRoom(room, req, res);
-    if (!isRoomOwner(room, host)) return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED' });
-    const now = Date.now();
-    const requests = [];
-    for (const request of Object.values(room.joinRequests || {})) {
-      if (!request || request.status !== 'awaiting-host-code') continue;
-      if (!request.expiresAt) {
-        request.hostReceivedAt = new Date(now).toISOString();
-        request.expiresAt = new Date(now + 5 * 60 * 1000).toISOString();
+  router.get('/rooms/:roomId/verification-requests', async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const host = participantForRoom(room, req, res);
+      if (!isRoomOwner(room, host)) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
+      const now = Date.now();
+      const requests = [];
+      for (const request of Object.values(room.joinRequests || {})) {
+        if (!request || request.status !== 'awaiting-host-code') continue;
+        if (!request.expiresAt) {
+          request.hostReceivedAt = new Date(now).toISOString();
+          request.expiresAt = new Date(now + 5 * 60 * 1000).toISOString();
+        }
+        const code = pendingVerificationCodes.get(request.requestId);
+        if (!code || Date.parse(request.expiresAt) <= now) {
+          request.status = 'expired';
+          pendingVerificationCodes.delete(request.requestId);
+          continue;
+        }
+        requests.push({
+          requestId: request.requestId,
+          guestName: request.guestName,
+          oneTimeCode: code,
+          expiresAt: request.expiresAt
+        });
       }
-      const code = pendingVerificationCodes.get(request.requestId);
-      if (!code || Date.parse(request.expiresAt) <= now) {
-        request.status = 'expired';
-        pendingVerificationCodes.delete(request.requestId);
-        continue;
-      }
-      requests.push({
-        requestId: request.requestId,
-        guestName: request.guestName,
-        oneTimeCode: code,
-        expiresAt: request.expiresAt
-      });
-    }
-    void store.update(data => {
-      const current = data.rooms[room.roomId];
-      if (current) current.joinRequests = room.joinRequests || {};
-      return { ok: true };
+      return { ok: true, requests };
     });
+    if (result.status) return res.status(result.status).json({ error: result.error });
     res.set('Cache-Control', 'no-store');
-    return res.json({ requests });
+    return res.json({ requests: result.requests });
   });
 
   router.post('/rooms/:roomId/verify', bitConnectionCsrf, rateJoin, async (req, res) => {
@@ -1208,7 +1209,7 @@ export function createBitConnectionRouter({
     return res.json({
       ...roomResponse(room, participant),
       playbackState: room.playbackState || {
-        source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0, volume: 1
+        source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0
       },
       participants
     });
@@ -1270,9 +1271,7 @@ export function createBitConnectionRouter({
         next.positionSeconds = position;
       }
       if (body.volume !== undefined) {
-        const volume = Number(body.volume);
-        if (!Number.isFinite(volume) || volume < 0 || volume > 1) return { status: 400, error: 'INVALID_VOLUME' };
-        next.volume = volume;
+        return { status: 400, error: 'VOLUME_IS_LOCAL', message: 'Volume is stored per participant, not shared across the room.' };
       }
       next.source = 'youtube-music';
       next.updatedAt = new Date().toISOString();
@@ -1283,6 +1282,26 @@ export function createBitConnectionRouter({
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     return res.json({ ok: true, playbackState: result.playbackState });
+  });
+
+  router.post('/rooms/:roomId/volume', bitConnectionCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      if (room.ownerOnlyControls && !isRoomOwner(room, participant)) {
+        return { status: 403, error: 'HOST_CONTROLS_ONLY', message: 'Only the host can adjust participant volume in this room.' };
+      }
+      const volume = Number(req.body?.volume);
+      if (!Number.isFinite(volume) || volume < 0 || volume > 1) return { status: 400, error: 'INVALID_VOLUME' };
+      const current = room.participants?.[participant.participantId];
+      if (!current) return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+      current.volume = volume;
+      return { ok: true, volume };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.json({ ok: true, volume: result.volume });
   });
 
   router.post('/rooms/:roomId/signals', bitConnectionCsrf, rateSignal, async (req, res) => {
@@ -1346,6 +1365,7 @@ export function createBitConnectionRouter({
         room.updatedAt = new Date().toISOString();
         for (const item of Object.values(room.participants || {})) item.status = 'left';
         hostLocations.delete(room.roomId);
+        for (const requestId of Object.keys(room.joinRequests || {})) pendingVerificationCodes.delete(requestId);
         return { ok: true, roomClosed: true };
       }
       const current = room.participants?.[participant.participantId];
