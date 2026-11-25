@@ -592,7 +592,7 @@ a { color: inherit; text-decoration: none; }
   .bitconnection-hero {
     width: 100%;
     padding: 70px 0 42px;
-    translate: 0 -3vh;
+    translate: 0 -5vh;
   }
   .bitconnection-hero h1 { font-size: clamp(58px, 11vw, 92px); }
   .bitconnection-discovery {
@@ -607,7 +607,7 @@ a { color: inherit; text-decoration: none; }
   .bitconnection-header { min-height: 76px; }
   .bitconnection-account-button { min-height: 38px; padding-inline: 11px; }
   .bitconnection-account-button span { font-size: 10px; }
-  .bitconnection-hero { padding: 62px 0 36px; translate: 0 -2vh; }
+  .bitconnection-hero { padding: 62px 0 36px; translate: 0 -5vh; }
   .bitconnection-hero h1 { font-size: clamp(53px, 14vw, 78px); }
   .bitconnection-intro { max-width: 370px; }
   .bitconnection-actions { align-items: flex-start; flex-direction: column; gap: 14px; }
