@@ -2,18 +2,49 @@ import express from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse
+} from '@simplewebauthn/server';
+import {
+  createPasswordRecord,
+  verifyPassword,
+  validatePassword,
+  createRecoveryCodes,
+  consumeRecoveryCode,
+  hashSessionId,
+  SESSION_TTL_MS,
+  MAX_ACCOUNT_DEVICES,
+  MAX_PASSKEYS_PER_ACCOUNT,
+  WEBAUTHN_CHALLENGE_TTL_MS
+} from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-24-rooms-01';
+export const BITCONNECTION_API_VERSION = '2026-11-25-independent-accounts-01';
+const COOKIE_NAME = 'bitconnection_session';
+const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
+const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
+
+function emptyData() {
+  return { accounts: {}, profiles: {}, rooms: {}, authSessions: {}, webauthnChallenges: {} };
+}
 
 function readData(file) {
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return emptyData();
     return {
-      profiles: value?.profiles && typeof value.profiles === 'object' ? value.profiles : {},
-      rooms: value?.rooms && typeof value.rooms === 'object' ? value.rooms : {}
+      ...emptyData(),
+      ...value,
+      accounts: value.accounts && typeof value.accounts === 'object' ? value.accounts : {},
+      profiles: value.profiles && typeof value.profiles === 'object' ? value.profiles : {},
+      rooms: value.rooms && typeof value.rooms === 'object' ? value.rooms : {},
+      authSessions: value.authSessions && typeof value.authSessions === 'object' ? value.authSessions : {},
+      webauthnChallenges: value.webauthnChallenges && typeof value.webauthnChallenges === 'object' ? value.webauthnChallenges : {}
     };
   } catch {
-    return { profiles: {}, rooms: {} };
+    return emptyData();
   }
 }
 
@@ -24,11 +55,32 @@ function writeData(file, data) {
   fs.renameSync(temporary, file);
 }
 
+function createDataStore(file) {
+  let queue = Promise.resolve();
+  return {
+    read: () => readData(file),
+    update(mutator) {
+      const operation = queue.then(async () => {
+        const data = readData(file);
+        const result = await mutator(data);
+        if (result?.write !== false) writeData(file, data);
+        return result;
+      });
+      queue = operation.then(() => undefined, () => undefined);
+      return operation;
+    }
+  };
+}
+
 function cleanUsername(value) {
   if (typeof value !== 'string') return '';
   const username = value.trim().replace(/\s+/gu, ' ');
   if (!username || Array.from(username).length > 24 || /[\u0000-\u001f\u007f]/u.test(username)) return '';
   return username;
+}
+
+function usernameKey(value) {
+  return cleanUsername(value).normalize('NFKC').toLocaleLowerCase('en-US');
 }
 
 function cleanImageDataUrl(value) {
@@ -38,6 +90,17 @@ function cleanImageDataUrl(value) {
   if (!match) return undefined;
   const bytes = Buffer.from(match[2], 'base64');
   return bytes.length > 0 && bytes.length <= 1024 * 1024 ? value : undefined;
+}
+
+function profileFor(data, identityId) {
+  return data.profiles[identityId] || null;
+}
+
+function usernameAvailable(data, username, excludeIdentityId = '') {
+  const normalized = usernameKey(username);
+  return !Object.entries(data.profiles).some(([identityId, profile]) => (
+    identityId !== excludeIdentityId && usernameKey(profile?.username) === normalized
+  ));
 }
 
 function createRoomCode(existing) {
@@ -50,164 +113,698 @@ function createRoomCode(existing) {
   throw new Error('Could not allocate a unique room code.');
 }
 
-export function bitConnectionHealthPayload() {
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return ''; }
+  }
+  return '';
+}
+
+function ensureSessionId(req, res) {
+  const existing = readCookie(req, COOKIE_NAME);
+  if (SESSION_PATTERN.test(existing)) return existing;
+  const created = crypto.randomBytes(32).toString('base64url');
+  res.append('Set-Cookie', COOKIE_NAME + '=' + encodeURIComponent(created)
+    + '; Path=/api/bitconnection; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000');
+  return created;
+}
+
+function makeSecretFile(file) {
+  const secretFile = file + '.csrf-key';
+  fs.mkdirSync(path.dirname(secretFile), { recursive: true });
+  if (!fs.existsSync(secretFile)) {
+    try { fs.writeFileSync(secretFile, crypto.randomBytes(32), { mode: 0o600, flag: 'wx' }); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  }
+  const secret = fs.readFileSync(secretFile);
+  if (secret.length !== 32) throw new Error('BitConnection CSRF key is invalid.');
+  return secret;
+}
+
+function tokenForSession(secret, sessionId) {
+  return crypto.createHmac('sha256', secret)
+    .update('bitconnection-csrf-v1:' + sessionId)
+    .digest('base64url');
+}
+
+function secureEqual(leftValue, rightValue) {
+  const left = Buffer.from(String(leftValue || ''));
+  const right = Buffer.from(String(rightValue || ''));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+
+function createAuthenticatedSession(data, accountId, sessionId, req) {
+  const now = Date.now();
+  const active = Object.entries(data.authSessions)
+    .filter(([, entry]) => entry?.accountId === accountId && Date.parse(entry.expiresAt || 0) > now)
+    .sort((a, b) => Date.parse(a[1].lastSeenAt || a[1].createdAt || 0) - Date.parse(b[1].lastSeenAt || b[1].createdAt || 0));
+  let evictedDevice = null;
+  while (active.length >= MAX_ACCOUNT_DEVICES) {
+    const [oldHash, oldDevice] = active.shift();
+    delete data.authSessions[oldHash];
+    evictedDevice = oldDevice.deviceName || 'the oldest signed-in device';
+  }
+  const nowIso = new Date(now).toISOString();
+  data.authSessions[hashSessionId(sessionId)] = {
+    accountId,
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+    deviceName: String(req.get('user-agent') || 'Unknown device').slice(0, 180),
+    expiresAt: new Date(now + SESSION_TTL_MS).toISOString()
+  };
+  return { evictedDevice };
+}
+
+function sessionForRequest(data, req, res) {
+  const sessionId = ensureSessionId(req, res);
+  const authSession = data.authSessions[hashSessionId(sessionId)];
+  const account = authSession && Date.parse(authSession.expiresAt || 0) > Date.now()
+    ? data.accounts[authSession.accountId]
+    : null;
+  return {
+    sessionId,
+    accountId: account ? authSession.accountId : null,
+    account: account || null,
+    authenticated: Boolean(account)
+  };
+}
+
+function publicPasskeys(account) {
+  return (Array.isArray(account?.passkeys) ? account.passkeys : []).map(passkey => ({
+    id: passkey.id,
+    name: passkey.name || 'Passkey',
+    rpID: passkey.rpID,
+    createdAt: passkey.createdAt || null,
+    lastUsedAt: passkey.lastUsedAt || null,
+    deviceType: passkey.deviceType || 'unknown',
+    backedUp: Boolean(passkey.backedUp)
+  }));
+}
+
+function normalizePasskeyName(value, fallback) {
+  const name = String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+  return name || fallback;
+}
+
+function createRateLimit(maxAttempts, windowMs = 15 * 60 * 1000) {
+  const buckets = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const ip = String(req.ip || req.socket?.remoteAddress || 'unknown');
+    const key = ip + ':' + req.baseUrl + req.path;
+    let bucket = buckets.get(key);
+    if (!bucket || now - bucket.startedAt >= windowMs) bucket = { count: 0, startedAt: now };
+    bucket.count += 1;
+    buckets.set(key, bucket);
+    if (buckets.size > 5000) {
+      for (const [entryKey, entry] of buckets) {
+        if (now - entry.startedAt >= windowMs) buckets.delete(entryKey);
+      }
+    }
+    if (bucket.count > maxAttempts) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil((windowMs - (now - bucket.startedAt)) / 1000))));
+      return res.status(429).json({ error: 'RATE_LIMITED', message: 'Too many BitConnection account attempts. Try again later.' });
+    }
+    return next();
+  };
+}
+
+export function bitConnectionHealthPayload(maxPartySize = 10) {
   return {
     ok: true,
     service: 'BitConnection',
     apiVersion: BITCONNECTION_API_VERSION,
     deployment: 'Deplexo',
-    stage: 'room-creation',
+    stage: 'independent-accounts-and-rooms',
     capabilities: {
-      bitCiderAccountLinking: 'enabled',
+      independentAccounts: 'enabled',
+      bitCiderAccountLinking: 'explicit-choice',
+      ciderAddonCreation: 'never',
       hostProfiles: 'enabled',
       roomCreation: 'enabled',
+      passkeys: 'enabled',
+      recoveryCodes: 'enabled',
       realtimeRooms: 'not-yet-enabled',
       privateRoomVerification: 'not-yet-enabled'
-    }
+    },
+    limits: { maxPartySize }
   };
 }
 
 export function createBitConnectionRouter({
   getUserSession = () => ({ authenticated: false }),
-  requireCsrf = (_req, _res, next) => next(),
-  csrfTokenForSession = () => '',
+  requireCiderCsrf = (_req, _res, next) => next(),
+  csrfTokenForCiderSession = () => '',
+  webAuthnContext = req => {
+    const origin = req.get('origin');
+    const parsed = origin ? new URL(origin) : null;
+    if (!parsed || parsed.protocol !== 'https:') throw new Error('Passkeys require the official HTTPS BitConnection website.');
+    return { origin: parsed.origin, rpID: parsed.hostname };
+  },
   dataFile,
   maxPartySize = 10
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
+  const store = createDataStore(dataFile);
+  const secret = makeSecretFile(dataFile);
   const router = express.Router();
   const maximum = Number.isSafeInteger(Number(maxPartySize))
     ? Math.min(100, Math.max(2, Number(maxPartySize)))
     : 10;
+  const rateRegister = createRateLimit(4);
+  const rateLogin = createRateLimit(10);
+  const rateRecover = createRateLimit(5);
+  const ratePasskey = createRateLimit(8);
+
+  function bitConnectionCsrf(req, res, next) {
+    const sessionId = ensureSessionId(req, res);
+    const expected = tokenForSession(secret, sessionId);
+    const supplied = req.get('x-bitconnection-csrf') || '';
+    if (!secureEqual(expected, supplied)) {
+      return res.status(403).json({ error: 'CSRF_REJECTED', message: 'Refresh BitConnection and try again.' });
+    }
+    req.bitConnectionSessionId = sessionId;
+    return next();
+  }
+
+  function activeSession(req, res) {
+    const data = store.read();
+    const session = sessionForRequest(data, req, res);
+    if (session.authenticated) {
+      const active = data.authSessions[hashSessionId(session.sessionId)];
+      if (active) {
+        active.lastSeenAt = new Date().toISOString();
+        void store.update(latest => {
+          const current = latest.authSessions[hashSessionId(session.sessionId)];
+          if (current?.accountId === session.accountId) current.lastSeenAt = active.lastSeenAt;
+          return { ok: true };
+        });
+      }
+    }
+    return { ...session, data };
+  }
+
+  function identityForRequest(req, res) {
+    const identityMode = req.get('x-bitconnection-identity') || '';
+    if (identityMode === 'bitcider') {
+      const cider = getUserSession(req, res);
+      if (!cider?.authenticated || !cider.accountId) return null;
+      return {
+        type: 'bitcider',
+        identityId: 'cider:' + cider.accountId,
+        accountId: cider.accountId,
+        username: null,
+        csrfToken: csrfTokenForCiderSession(cider.sessionId)
+      };
+    }
+    const session = activeSession(req, res);
+    if (!session.authenticated || !session.accountId) return null;
+    return {
+      type: 'bitconnection',
+      identityId: 'bitconnection:' + session.accountId,
+      accountId: session.accountId,
+      username: session.account.username,
+      csrfToken: tokenForSession(secret, session.sessionId),
+      account: session.account,
+      sessionId: session.sessionId
+    };
+  }
+
+  function identityCsrf(req, res, next) {
+    if (req.get('x-bitconnection-identity') === 'bitcider') return requireCiderCsrf(req, res, next);
+    return bitConnectionCsrf(req, res, next);
+  }
+
+  async function saveChallenge(sessionId, record) {
+    return store.update(data => {
+      const now = Date.now();
+      for (const [key, item] of Object.entries(data.webauthnChallenges)) {
+        if (!item || Number(item.expiresAt) <= now) delete data.webauthnChallenges[key];
+      }
+      data.webauthnChallenges[hashSessionId(sessionId)] = {
+        ...record,
+        expiresAt: now + WEBAUTHN_CHALLENGE_TTL_MS
+      };
+      return { ok: true };
+    });
+  }
+
+  async function consumeChallenge(sessionId, purpose, accountId = null) {
+    const result = await store.update(data => {
+      const key = hashSessionId(sessionId);
+      const challenge = data.webauthnChallenges[key];
+      if (!challenge) return { challenge: null, write: false };
+      delete data.webauthnChallenges[key];
+      if (challenge.purpose !== purpose || Number(challenge.expiresAt) <= Date.now()
+        || (accountId && challenge.accountId !== accountId)) return { challenge: null };
+      return { challenge };
+    });
+    return result.challenge;
+  }
 
   router.get('/health', (_req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ ...bitConnectionHealthPayload(), limits: { maxPartySize: maximum } });
+    return res.json(bitConnectionHealthPayload(maximum));
   });
 
   router.get('/account', (req, res) => {
-    const session = getUserSession(req, res);
-    if (!session?.authenticated || !session.accountId) {
-      return res.json({ authenticated: false, provider: null, profile: null, csrfToken: '', maxPartySize: maximum });
+    const identityMode = req.get('x-bitconnection-identity') || '';
+    if (identityMode === 'bitcider') {
+      const identity = identityForRequest(req, res);
+      if (!identity) return res.status(401).json({ error: 'BITCIDER_SIGN_IN_REQUIRED' });
+      const data = store.read();
+      const profile = profileFor(data, identity.identityId);
+      return res.json({
+        authenticated: true,
+        provider: 'BitCider',
+        identityMode: 'bitcider',
+        csrfToken: identity.csrfToken,
+        profile: profile ? { username: profile.username, avatarDataUrl: profile.avatarDataUrl || null, createdAt: profile.createdAt, updatedAt: profile.updatedAt } : null,
+        maxPartySize: maximum
+      });
     }
-    const data = readData(dataFile);
-    const profile = data.profiles[session.accountId] || null;
+
+    const session = activeSession(req, res);
+    const profile = session.authenticated ? profileFor(session.data, 'bitconnection:' + session.accountId) : null;
+    const cider = getUserSession(req, res);
     return res.json({
-      authenticated: true,
-      provider: 'BitCider',
-      csrfToken: csrfTokenForSession(session.sessionId),
-      profile: profile ? {
-        username: profile.username,
-        avatarDataUrl: profile.avatarDataUrl || null,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt
-      } : null,
-      maxPartySize: maximum
+      authenticated: session.authenticated,
+      provider: session.authenticated ? 'BitConnection' : null,
+      identityMode: session.authenticated ? 'bitconnection' : null,
+      profile: profile ? { username: profile.username, avatarDataUrl: profile.avatarDataUrl || null, createdAt: profile.createdAt, updatedAt: profile.updatedAt } : null,
+      csrfToken: tokenForSession(secret, session.sessionId),
+      bitCiderAccountAvailable: Boolean(cider?.authenticated && cider?.accountId),
+      maxPartySize: maximum,
+      passkeyCount: session.authenticated ? publicPasskeys(session.account).length : 0
     });
   });
 
-  router.put('/account/profile', requireCsrf, (req, res) => {
-    const session = getUserSession(req, res);
-    if (!session?.authenticated || !session.accountId) {
-      return res.status(401).json({
-        error: 'BITCONNECTION_ACCOUNT_REQUIRED',
-        message: 'Sign in to a BitCider account before linking it to BitConnection.'
-      });
-    }
+  router.post('/auth/register', bitConnectionCsrf, rateRegister, async (req, res) => {
     const username = cleanUsername(req.body?.username);
-    if (!username) {
-      return res.status(400).json({
-        error: 'INVALID_USERNAME',
-        message: 'Choose a username containing 1 to 24 characters.'
-      });
-    }
+    const password = req.body?.password;
     const avatarDataUrl = cleanImageDataUrl(req.body?.avatarDataUrl);
-    if (avatarDataUrl === undefined) {
-      return res.status(400).json({
-        error: 'INVALID_PROFILE_IMAGE',
-        message: 'Use a PNG, JPEG, or WebP profile picture up to 1 MB.'
+    if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Choose a username containing 1 to 24 characters.' });
+    if (!validatePassword(password)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a passphrase.' });
+    if (avatarDataUrl === undefined) return res.status(400).json({ error: 'INVALID_PROFILE_IMAGE', message: 'Use a PNG, JPEG, or WebP profile picture up to 1 MB.' });
+
+    let passwordRecord;
+    try { passwordRecord = await createPasswordRecord(password); }
+    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that passphrase.' }); }
+    const recovery = createRecoveryCodes();
+    const accountId = crypto.randomBytes(24).toString('base64url');
+    const webAuthnUserId = crypto.randomBytes(32).toString('base64url');
+    const now = new Date().toISOString();
+
+    const result = await store.update(data => {
+      if (Object.values(data.accounts).some(account => usernameKey(account.username) === usernameKey(username))
+        || !usernameAvailable(data, username)) {
+        return { status: 409, error: 'USERNAME_TAKEN', message: 'That BitConnection username is already in use.', write: false };
+      }
+      data.accounts[accountId] = {
+        username,
+        password: passwordRecord,
+        recoveryCodeHashes: recovery.hashes,
+        webAuthnUserId,
+        passkeys: [],
+        createdAt: now
+      };
+      data.profiles['bitconnection:' + accountId] = {
+        username,
+        avatarDataUrl,
+        createdAt: now,
+        updatedAt: now
+      };
+      createAuthenticatedSession(data, accountId, req.bitConnectionSessionId, req);
+      return { ok: true, accountId };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.status(201).json({
+      ok: true,
+      account: { username, avatarDataUrl },
+      recoveryCodes: recovery.codes,
+      passkeyCount: 0
+    });
+  });
+
+  router.post('/auth/login', bitConnectionCsrf, rateLogin, async (req, res) => {
+    const username = cleanUsername(req.body?.username);
+    const password = req.body?.password;
+    const snapshot = store.read();
+    const normalized = usernameKey(username);
+    const match = Object.entries(snapshot.accounts).find(([, account]) => usernameKey(account.username) === normalized);
+    const valid = await verifyPassword(password, match?.[1]?.password || PASSWORD_DUMMY);
+    if (!match || !validatePassword(password) || !valid) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The username or passphrase is incorrect.' });
+    }
+    if (activeSession(req, res).authenticated) {
+      return res.status(409).json({ error: 'ALREADY_SIGNED_IN', message: 'A BitConnection account is already signed in on this device.' });
+    }
+    const [accountId, accountSnapshot] = match;
+    const sessionHash = hashSessionId(req.bitConnectionSessionId);
+    const result = await store.update(data => {
+      const account = data.accounts[accountId];
+      if (!account || account.password?.hash !== accountSnapshot.password.hash) {
+        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The username or passphrase is incorrect.', write: false };
+      }
+      const sessionInfo = createAuthenticatedSession(data, accountId, req.bitConnectionSessionId, req);
+      return { ok: true, evictedDevice: sessionInfo.evictedDevice || null };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, evictedDevice: result.evictedDevice });
+  });
+
+  router.post('/auth/recover', bitConnectionCsrf, rateRecover, async (req, res) => {
+    const username = cleanUsername(req.body?.username);
+    const recoveryCode = req.body?.recoveryCode;
+    const newPassword = req.body?.newPassword;
+    if (!validatePassword(newPassword)) return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Enter a new passphrase.' });
+    const snapshot = store.read();
+    const normalized = usernameKey(username);
+    const match = Object.entries(snapshot.accounts).find(([, account]) => usernameKey(account.username) === normalized);
+    if (!match) return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'The username or recovery code could not be verified.' });
+    const [accountId, accountSnapshot] = match;
+    const consumedSnapshot = consumeRecoveryCode(recoveryCode, accountSnapshot.recoveryCodeHashes || []);
+    if (!consumedSnapshot.valid) return res.status(400).json({ error: 'INVALID_RECOVERY', message: 'The username or recovery code could not be verified.' });
+
+    let passwordRecord;
+    try { passwordRecord = await createPasswordRecord(newPassword); }
+    catch { return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Could not prepare that passphrase.' }); }
+    const recovery = createRecoveryCodes();
+    const result = await store.update(data => {
+      const account = data.accounts[accountId];
+      if (!account || JSON.stringify(account.recoveryCodeHashes || []) !== JSON.stringify(accountSnapshot.recoveryCodeHashes || [])) {
+        return { status: 400, error: 'INVALID_RECOVERY', message: 'The username or recovery code could not be verified.', write: false };
+      }
+      const consumed = consumeRecoveryCode(recoveryCode, account.recoveryCodeHashes || []);
+      if (!consumed.valid) return { status: 400, error: 'INVALID_RECOVERY', message: 'The username or recovery code could not be verified.', write: false };
+      account.password = passwordRecord;
+      account.recoveryCodeHashes = recovery.hashes;
+      for (const [hash, active] of Object.entries(data.authSessions)) {
+        if (active?.accountId === accountId) delete data.authSessions[hash];
+      }
+      createAuthenticatedSession(data, accountId, req.bitConnectionSessionId, req);
+      return { ok: true };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, recoveryCodes: recovery.codes });
+  });
+
+  router.post('/auth/logout', bitConnectionCsrf, async (req, res) => {
+    const sessionHash = hashSessionId(req.bitConnectionSessionId);
+    await store.update(data => {
+      delete data.authSessions[sessionHash];
+      delete data.webauthnChallenges[sessionHash];
+      return { ok: true };
+    });
+    res.append('Set-Cookie', COOKIE_NAME + '=; Path=/api/bitconnection; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true });
+  });
+
+  router.post('/passkeys/register/options', bitConnectionCsrf, ratePasskey, async (req, res) => {
+    const session = activeSession(req, res);
+    if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in before adding a passkey.' });
+    if (!await verifyPassword(req.body?.password, session.account.password)) {
+      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection passphrase to add a passkey.' });
+    }
+    let context;
+    try { context = webAuthnContext(req); }
+    catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+
+    const passkeys = Array.isArray(session.account.passkeys) ? session.account.passkeys : [];
+    if (passkeys.length >= MAX_PASSKEYS_PER_ACCOUNT) return res.status(409).json({ error: 'PASSKEY_LIMIT_REACHED', message: 'This account already has five passkeys.' });
+    const webAuthnUserId = session.account.webAuthnUserId || crypto.randomBytes(32).toString('base64url');
+    try {
+      const options = await generateRegistrationOptions({
+        rpName: 'BitConnection',
+        rpID: context.rpID,
+        userID: Buffer.from(webAuthnUserId, 'base64url'),
+        userName: session.account.username,
+        userDisplayName: session.account.username,
+        attestationType: 'none',
+        authenticatorSelection: {
+          residentKey: 'required',
+          userVerification: 'required'
+        },
+        excludeCredentials: passkeys.filter(passkey => passkey.rpID === context.rpID).map(passkey => ({
+          id: passkey.id,
+          transports: passkey.transports || []
+        }))
       });
+      await saveChallenge(session.sessionId, {
+        purpose: 'register-passkey',
+        accountId: session.accountId,
+        challenge: options.challenge,
+        origin: context.origin,
+        rpID: context.rpID
+      });
+      res.set('Cache-Control', 'no-store');
+      return res.json(options);
+    } catch (error) {
+      console.error('BitConnection passkey registration options failed:', error.message);
+      return res.status(500).json({ error: 'PASSKEY_SETUP_FAILED', message: 'Could not prepare passkey registration. Try again.' });
+    }
+  });
+
+  router.post('/passkeys/register/verify', bitConnectionCsrf, ratePasskey, async (req, res) => {
+    const session = activeSession(req, res);
+    if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED' });
+    const challenge = await consumeChallenge(session.sessionId, 'register-passkey', session.accountId);
+    if (!challenge) return res.status(400).json({ error: 'PASSKEY_CHALLENGE_EXPIRED', message: 'Passkey setup expired. Start again.' });
+    let context;
+    try { context = webAuthnContext(req); }
+    catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+    if (context.origin !== challenge.origin || context.rpID !== challenge.rpID) {
+      return res.status(400).json({ error: 'PASSKEY_ORIGIN_MISMATCH', message: 'Passkey setup must finish on the same BitConnection website where it started.' });
+    }
+    try {
+      const verification = await verifyRegistrationResponse({
+        response: req.body,
+        expectedChallenge: challenge.challenge,
+        expectedOrigin: challenge.origin,
+        expectedRPID: challenge.rpID,
+        requireUserVerification: true
+      });
+      const info = verification.registrationInfo;
+      if (!verification.verified || !info?.credential) return res.status(400).json({ error: 'PASSKEY_NOT_VERIFIED', message: 'The authenticator did not verify this passkey.' });
+      const credential = info.credential;
+      const name = normalizePasskeyName(req.body?.deviceName, 'Passkey ' + ((session.account.passkeys || []).length + 1));
+      const saved = await store.update(data => {
+        const account = data.accounts[session.accountId];
+        if (!account) return { status: 401, error: 'SIGN_IN_REQUIRED' };
+        account.passkeys ||= [];
+        if (account.passkeys.length >= MAX_PASSKEYS_PER_ACCOUNT) return { status: 409, error: 'PASSKEY_LIMIT_REACHED' };
+        if (Object.values(data.accounts).some(owner => (owner.passkeys || []).some(passkey => passkey.id === credential.id))) {
+          return { status: 409, error: 'PASSKEY_ALREADY_REGISTERED', message: 'That passkey is already registered to a BitConnection account.' };
+        }
+        account.webAuthnUserId ||= session.account.webAuthnUserId;
+        account.passkeys.push({
+          id: credential.id,
+          publicKey: Buffer.from(credential.publicKey).toString('base64url'),
+          counter: Number(credential.counter || 0),
+          transports: Array.isArray(credential.transports) ? credential.transports : [],
+          deviceType: info.credentialDeviceType || 'singleDevice',
+          backedUp: Boolean(info.credentialBackedUp),
+          rpID: challenge.rpID,
+          name,
+          createdAt: new Date().toISOString(),
+          lastUsedAt: null
+        });
+        return { ok: true, count: account.passkeys.length };
+      });
+      if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
+      return res.status(201).json({ ok: true, passkeyCount: saved.count });
+    } catch (error) {
+      console.error('BitConnection passkey verification failed:', error.message);
+      return res.status(400).json({ error: 'PASSKEY_VERIFICATION_FAILED', message: 'BitConnection could not verify that passkey. Start again and retry.' });
+    }
+  });
+
+  router.post('/passkeys/auth/options', bitConnectionCsrf, ratePasskey, async (req, res) => {
+    if (activeSession(req, res).authenticated) return res.status(409).json({ error: 'ALREADY_SIGNED_IN' });
+    let context;
+    try { context = webAuthnContext(req); }
+    catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+    try {
+      const options = await generateAuthenticationOptions({
+        rpID: context.rpID,
+        allowCredentials: [],
+        userVerification: 'required'
+      });
+      await saveChallenge(req.bitConnectionSessionId, {
+        purpose: 'authenticate-passkey',
+        challenge: options.challenge,
+        origin: context.origin,
+        rpID: context.rpID
+      });
+      return res.json(options);
+    } catch (error) {
+      console.error('BitConnection passkey authentication options failed:', error.message);
+      return res.status(500).json({ error: 'PASSKEY_SIGN_IN_FAILED', message: 'Could not start passkey sign-in. Try again.' });
+    }
+  });
+
+  router.post('/passkeys/auth/verify', bitConnectionCsrf, ratePasskey, async (req, res) => {
+    if (activeSession(req, res).authenticated) return res.status(409).json({ error: 'ALREADY_SIGNED_IN' });
+    const challenge = await consumeChallenge(req.bitConnectionSessionId, 'authenticate-passkey');
+    if (!challenge) return res.status(400).json({ error: 'PASSKEY_CHALLENGE_EXPIRED', message: 'Passkey sign-in expired. Start again.' });
+    let context;
+    try { context = webAuthnContext(req); }
+    catch (error) { return res.status(400).json({ error: 'PASSKEY_ORIGIN_INVALID', message: error.message }); }
+    if (context.origin !== challenge.origin || context.rpID !== challenge.rpID) {
+      return res.status(400).json({ error: 'PASSKEY_ORIGIN_MISMATCH', message: 'Passkey sign-in must finish on the same BitConnection website where it started.' });
     }
 
-    const data = readData(dataFile);
-    const normalized = username.toLocaleLowerCase('en-US');
-    const duplicate = Object.entries(data.profiles).some(([id, profile]) => (
-      id !== session.accountId && String(profile?.username || '').toLocaleLowerCase('en-US') === normalized
-    ));
-    if (duplicate) {
+    const credentialId = typeof req.body?.id === 'string' ? req.body.id : '';
+    const userHandle = typeof req.body?.response?.userHandle === 'string' ? req.body.response.userHandle : '';
+    const snapshot = store.read();
+    let matchedAccountId = null;
+    let matchedAccount = null;
+    let matchedPasskey = null;
+    for (const [candidateId, account] of Object.entries(snapshot.accounts)) {
+      const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
+      if (passkey && (!userHandle || secureEqual(userHandle, account.webAuthnUserId))) {
+        matchedAccountId = candidateId;
+        matchedAccount = account;
+        matchedPasskey = passkey;
+        break;
+      }
+    }
+    if (!matchedAccountId || !matchedAccount || !matchedPasskey) {
+      return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for a BitConnection account.' });
+    }
+
+    try {
+      const verification = await verifyAuthenticationResponse({
+        response: req.body,
+        expectedChallenge: challenge.challenge,
+        expectedOrigin: challenge.origin,
+        expectedRPID: challenge.rpID,
+        credential: {
+          id: matchedPasskey.id,
+          publicKey: new Uint8Array(Buffer.from(matchedPasskey.publicKey, 'base64url')),
+          counter: Number(matchedPasskey.counter || 0),
+          transports: matchedPasskey.transports || []
+        },
+        requireUserVerification: true
+      });
+      if (!verification.verified || verification.authenticationInfo?.userVerified !== true) {
+        return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'Passkey user verification was not completed.' });
+      }
+      const result = await store.update(data => {
+        const account = data.accounts[matchedAccountId];
+        if (!account || account.webAuthnUserId !== matchedAccount.webAuthnUserId) return { status: 401, error: 'INVALID_PASSKEY', write: false };
+        const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
+        if (!passkey || Number(passkey.counter || 0) !== Number(matchedPasskey.counter || 0)) return { status: 401, error: 'INVALID_PASSKEY', write: false };
+        passkey.counter = Number(verification.authenticationInfo.newCounter || 0);
+        passkey.lastUsedAt = new Date().toISOString();
+        createAuthenticatedSession(data, matchedAccountId, req.bitConnectionSessionId, req);
+        return { ok: true };
+      });
+      if (result.status) return res.status(result.status).json({ error: result.error });
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('BitConnection passkey sign-in verification failed:', error.message);
+      return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'Passkey verification failed. Try again.' });
+    }
+  });
+
+  router.post('/passkeys/remove', bitConnectionCsrf, ratePasskey, async (req, res) => {
+    const session = activeSession(req, res);
+    if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED' });
+    if (!await verifyPassword(req.body?.password, session.account.password)) {
+      return res.status(401).json({ error: 'REAUTHENTICATION_REQUIRED', message: 'Enter your current BitConnection passphrase to remove a passkey.' });
+    }
+    const credentialId = typeof req.body?.credentialId === 'string' ? req.body.credentialId : '';
+    const result = await store.update(data => {
+      const account = data.accounts[session.accountId];
+      if (!account) return { status: 401, error: 'SIGN_IN_REQUIRED' };
+      const before = (account.passkeys || []).length;
+      account.passkeys = (account.passkeys || []).filter(passkey => passkey.id !== credentialId);
+      if (account.passkeys.length === before) return { status: 404, error: 'PASSKEY_NOT_FOUND' };
+      return { ok: true, count: account.passkeys.length };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.json({ ok: true, passkeyCount: result.count });
+  });
+
+  router.put('/account/profile', identityCsrf, (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED', message: 'Sign in to a BitConnection account or explicitly choose your signed-in BitCider account.' });
+    const username = cleanUsername(req.body?.username);
+    if (!username) return res.status(400).json({ error: 'INVALID_USERNAME', message: 'Choose a username containing 1 to 24 characters.' });
+    const avatarDataUrl = cleanImageDataUrl(req.body?.avatarDataUrl);
+    if (avatarDataUrl === undefined) return res.status(400).json({ error: 'INVALID_PROFILE_IMAGE', message: 'Use a PNG, JPEG, or WebP profile picture up to 1 MB.' });
+
+    const result = store.read();
+    if (!usernameAvailable(result, username, identity.identityId)) {
       return res.status(409).json({ error: 'USERNAME_TAKEN', message: 'That BitConnection username is already in use.' });
     }
-
-    const previous = data.profiles[session.accountId] || {};
-    const nextProfile = {
+    const previous = profileFor(result, identity.identityId) || {};
+    const profile = {
       username,
-      avatarDataUrl: avatarDataUrl === null && req.body?.avatarDataUrl === undefined
-        ? (previous.avatarDataUrl || null)
-        : avatarDataUrl,
+      avatarDataUrl: avatarDataUrl === null && req.body?.avatarDataUrl === undefined ? previous.avatarDataUrl || null : avatarDataUrl,
       createdAt: previous.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    data.profiles[session.accountId] = nextProfile;
-    writeData(dataFile, data);
-    return res.json({
-      ok: true,
-      profile: {
-        username: nextProfile.username,
-        avatarDataUrl: nextProfile.avatarDataUrl,
-        createdAt: nextProfile.createdAt,
-        updatedAt: nextProfile.updatedAt
+    void store.update(data => {
+      if (!usernameAvailable(data, username, identity.identityId)) return { status: 409, error: 'USERNAME_TAKEN', message: 'That BitConnection username is already in use.' };
+      data.profiles[identity.identityId] = profile;
+      if (identity.type === 'bitconnection' && data.accounts[identity.accountId]) {
+        data.accounts[identity.accountId].username = username;
       }
+      return { ok: true };
     });
+    return res.json({ ok: true, profile });
   });
 
-  router.post('/rooms', requireCsrf, (req, res) => {
-    const session = getUserSession(req, res);
-    if (!session?.authenticated || !session.accountId) {
-      return res.status(401).json({
-        error: 'BITCONNECTION_ACCOUNT_REQUIRED',
-        message: 'A signed-in BitConnection account is required to host a room.'
-      });
-    }
-    const data = readData(dataFile);
-    const profile = data.profiles[session.accountId];
-    if (!profile?.username) {
-      return res.status(409).json({
-        error: 'BITCONNECTION_PROFILE_REQUIRED',
-        message: 'Finish your BitConnection username setup before creating a room.'
-      });
-    }
+  router.post('/rooms', identityCsrf, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED', message: 'A BitConnection account or explicitly selected BitCider account is required to host a room.' });
+    const data = store.read();
+    const profile = profileFor(data, identity.identityId);
+    if (!profile?.username) return res.status(409).json({ error: 'BITCONNECTION_PROFILE_REQUIRED', message: 'Finish your BitConnection username setup before creating a room.' });
 
     const roomName = typeof req.body?.roomName === 'string' ? req.body.roomName.trim() : '';
     const visibility = req.body?.visibility;
     const partySize = Number(req.body?.partySize);
     const ownerOnlyControls = req.body?.ownerOnlyControls;
-
     if (!roomName || Array.from(roomName).length > 48 || /[\u0000-\u001f\u007f]/u.test(roomName)) {
       return res.status(400).json({ error: 'INVALID_ROOM_NAME', message: 'Room names must contain 1 to 48 characters.' });
     }
-    if (!['public', 'private'].includes(visibility)) {
-      return res.status(400).json({ error: 'INVALID_VISIBILITY', message: 'Choose public or private visibility.' });
-    }
-    if (!Number.isSafeInteger(partySize) || partySize < 2 || partySize > maximum) {
-      return res.status(400).json({ error: 'INVALID_PARTY_SIZE', message: `Party size must be between 2 and ${maximum}.` });
-    }
-    if (typeof ownerOnlyControls !== 'boolean') {
-      return res.status(400).json({ error: 'INVALID_CONTROL_PERMISSION', message: 'Choose whether only the room owner can control music.' });
-    }
+    if (!['public', 'private'].includes(visibility)) return res.status(400).json({ error: 'INVALID_VISIBILITY', message: 'Choose public or private visibility.' });
+    if (!Number.isSafeInteger(partySize) || partySize < 2 || partySize > maximum) return res.status(400).json({ error: 'INVALID_PARTY_SIZE', message: `Party size must be between 2 and ${maximum}.` });
+    if (typeof ownerOnlyControls !== 'boolean') return res.status(400).json({ error: 'INVALID_CONTROL_PERMISSION', message: 'Choose whether only the room owner can control music.' });
 
     const roomId = crypto.randomBytes(16).toString('hex');
     const roomCode = createRoomCode(data.rooms);
     const now = new Date().toISOString();
     const room = {
       roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls,
-      hostAccountId: session.accountId,
+      hostIdentityId: identity.identityId,
+      hostIdentityType: identity.type,
       hostUsername: profile.username,
       status: 'open',
       createdAt: now,
       updatedAt: now
     };
-    data.rooms[roomId] = room;
-    writeData(dataFile, data);
+    await store.update(latest => {
+      if (Object.values(latest.rooms).some(item => item.roomCode === roomCode && item.status === 'open')) {
+        return { status: 409, error: 'ROOM_CODE_COLLISION', message: 'Could not allocate a room code. Try again.' };
+      }
+      latest.rooms[roomId] = room;
+      return { ok: true };
+    }).then(result => {
+      if (result.status) throw Object.assign(new Error(result.message), { status: result.status });
+    }).catch(error => {
+      if (error.status) throw error;
+      throw error;
+    });
     return res.status(201).json({
       ok: true,
       room: {
@@ -218,17 +815,19 @@ export function createBitConnectionRouter({
     });
   });
 
-  router.post('/rooms/:roomId/close', requireCsrf, (req, res) => {
-    const session = getUserSession(req, res);
-    if (!session?.authenticated || !session.accountId) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED' });
-    const data = readData(dataFile);
-    const room = data.rooms[String(req.params.roomId || '')];
-    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
-    if (room.hostAccountId !== session.accountId) return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED' });
-    room.status = 'closed';
-    room.updatedAt = new Date().toISOString();
-    writeData(dataFile, data);
-    return res.json({ ok: true, roomId: room.roomId, status: room.status });
+  router.post('/rooms/:roomId/close', identityCsrf, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED' });
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      if (room.hostIdentityId !== identity.identityId) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
+      room.status = 'closed';
+      room.updatedAt = new Date().toISOString();
+      return { ok: true, roomId: room.roomId, status: room.status };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error });
+    return res.json(result);
   });
 
   return router;

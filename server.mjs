@@ -72,8 +72,9 @@ app.use('/api', (_req, res, next) => {
 // BitConnection runs as a separate product namespace on the Deplexo primary API.
 app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectionRouter({
   getUserSession,
-  requireCsrf,
-  csrfTokenForSession,
+  requireCiderCsrf: requireCsrf,
+  csrfTokenForCiderSession: csrfTokenForSession,
+  webAuthnContext,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
   maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10)
 }));
