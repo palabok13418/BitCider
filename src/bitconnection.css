@@ -378,20 +378,6 @@ a { color: inherit; text-decoration: none; }
   color: #fff4f6;
   background: linear-gradient(145deg, #10070b, #190810 56%, #0d070a);
 }
-.bc-window-header {
-  display: flex;
-  min-height: 66px;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255,220,228,.1);
-}
-.bc-window-brand { display: inline-flex; align-items: center; gap: 9px; color: #fff3f6; font-size: 13px; font-weight: 700; }
-.bc-window-brand i { width: 8px; height: 8px; border-radius: 50%; background: #ff527d; box-shadow: 0 0 12px rgba(255,82,125,.75); }
-.bc-window-close {
-  width: 32px; height: 32px; border: 1px solid rgba(255,255,255,.15);
-  border-radius: 8px; color: rgba(255,240,245,.8); background: rgba(255,255,255,.04);
-  cursor: pointer; font-size: 21px; line-height: 1;
-}
 .bc-window-form, .bc-window-state {
   position: relative; z-index: 1; width: min(540px, 100%); margin: auto; padding: 27px 0 12px;
 }
