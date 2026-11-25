@@ -1325,6 +1325,13 @@ export function createBitConnectionRouter({
         return { status: 403, error: 'ROOM_MEMBERSHIP_REQUIRED' };
       }
       if (sender.participantId === recipient.participantId) return { status: 400, error: 'INVALID_SIGNAL_RECIPIENT' };
+      if (['offer', 'renegotiate'].includes(messageType)
+        && (!isRoomOwner(room, sender) || recipient.role !== 'guest')) {
+        return { status: 403, error: 'HOST_OFFER_REQUIRED', message: 'Only the host can initiate a guest audio connection.' };
+      }
+      if (messageType === 'answer' && (sender.role !== 'guest' || !isRoomOwner(room, recipient))) {
+        return { status: 403, error: 'GUEST_ANSWER_REQUIRED', message: 'Only a guest can answer the host audio connection.' };
+      }
       room.signals ||= [];
       room.signalSequence = Number(room.signalSequence || 0) + 1;
       const message = {
