@@ -926,7 +926,7 @@ export function createBitConnectionRouter({
     const visibility = req.body?.visibility;
     const partySize = Number(req.body?.partySize);
     const ownerOnlyControls = req.body?.ownerOnlyControls;
-    if (!roomName || Array.from(roomName).length > 48 || /[\\u0000-\\u001f\\u007f]/u.test(roomName)) {
+    if (!roomName || Array.from(roomName).length > 48 || /[\u0000-\u001f\u007f]/u.test(roomName)) {
       return res.status(400).json({ error: 'INVALID_ROOM_NAME', message: 'Room names must contain 1 to 48 characters.' });
     }
     if (!['public', 'private'].includes(visibility)) return res.status(400).json({ error: 'INVALID_VISIBILITY', message: 'Choose public or private visibility.' });
@@ -1157,7 +1157,7 @@ export function createBitConnectionRouter({
   router.post('/rooms/:roomId/verify', bitConnectionCsrf, rateJoin, async (req, res) => {
     const requestId = String(req.body?.requestId || '');
     const code = String(req.body?.code || '');
-    if (!/^[A-Za-z0-9_-]{20,40}$/.test(requestId) || !/^\\d{6}$/.test(code)) {
+    if (!/^[A-Za-z0-9_-]{20,40}$/.test(requestId) || !/^\d{6}$/.test(code)) {
       return res.status(400).json({ error: 'INVALID_VERIFICATION_CODE' });
     }
     const verified = await store.update(data => {
