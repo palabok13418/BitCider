@@ -131,8 +131,8 @@ function ProfileSetup({ account, identityMode, onSaved, onBack }) {
   );
 }
 
-function AccountAuth({ account, onAuthenticated, onRecovery }) {
-  const [mode, setMode] = useState('register');
+function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRecovery, onPasskeySignIn }) {
+  const [mode, setMode] = useState(initialMode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -208,14 +208,18 @@ function AccountAuth({ account, onAuthenticated, onRecovery }) {
     <section className="bc-window-form">
       <h1>{mode === 'register' ? 'Your own space.' : mode === 'login' ? 'Welcome back.' : 'Recover your account.'}</h1>
       <p className="bc-window-copy">
-        This account has its own password, passkeys, recovery codes, and sessions. Creating it does not connect Cider or create a BitCider addon.
+        {mode === 'register'
+          ? 'Create a separate BitConnection account with its own password, passkeys, and recovery codes.'
+          : mode === 'login'
+            ? 'Sign in to your existing BitConnection account. This stays separate from your BitCider login.'
+            : 'Use one of your saved one-time recovery codes to reset your BitConnection passphrase.'}
       </p>
       <div className="bc-auth-tabs" role="tablist" aria-label="Account access">
-        <button type="button" role="tab" aria-selected={mode === 'register'} className={mode === 'register' ? 'is-active' : ''} onClick={() => setModeAndClear('register')}>Create</button>
-        <button type="button" role="tab" aria-selected={mode === 'login'} className={mode === 'login' ? 'is-active' : ''} onClick={() => setModeAndClear('login')}>Sign in</button>
-        <button type="button" role="tab" aria-selected={mode === 'recover'} className={mode === 'recover' ? 'is-active' : ''} onClick={() => setModeAndClear('recover')}>Recover</button>
+        <button type="button" role="tab" aria-selected={mode === 'register'} aria-controls="bc-auth-panel" className={mode === 'register' ? 'is-active' : ''} onClick={() => setModeAndClear('register')}>Create account</button>
+        <button type="button" role="tab" aria-selected={mode === 'login'} aria-controls="bc-auth-panel" className={mode === 'login' ? 'is-active' : ''} onClick={() => setModeAndClear('login')}>Sign in</button>
+        <button type="button" role="tab" aria-selected={mode === 'recover'} aria-controls="bc-auth-panel" className={mode === 'recover' ? 'is-active' : ''} onClick={() => setModeAndClear('recover')}>Recover</button>
       </div>
-      <form onSubmit={submit}>
+      <form id="bc-auth-panel" aria-live="polite" onSubmit={submit}>
         <label className="bc-field-card">
           <span className="bc-field-label">USERNAME <small>UP TO 24 CHARACTERS</small></span>
           <input autoFocus value={username} onChange={event => setUsername(event.target.value)} maxLength={24} autoComplete="username" placeholder="Your BitConnection username" required />
@@ -351,6 +355,7 @@ function CreateRoomWindow() {
   const [account, setAccount] = useState(null);
   const [identityMode, setIdentityMode] = useState('bitconnection');
   const [stage, setStage] = useState('loading');
+  const [authMode, setAuthMode] = useState('register');
   const [profile, setProfile] = useState(null);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [recoveryPassword, setRecoveryPassword] = useState('');
@@ -564,11 +569,21 @@ function CreateRoomWindow() {
         <section className="bc-window-state">
           <div className="bc-window-kicker">ACCOUNT FOUND</div>
           <h1>How would you like to continue?</h1>
-          <p>You already have a BitCider account on this device. You can explicitly reuse that signed-in identity or create a separate BitConnection account with its own password, passkeys, and recovery codes.</p>
+          <p>You already have a BitCider account on this device. You can use it explicitly, or access a separate BitConnection account.</p>
+          <div className="bc-account-choice">
+            <strong>Already have a BitConnection account?</strong>
+            <div className="bc-account-choice-actions">
+              <button className="bc-secondary-button" type="button" disabled={busy} onClick={() => { setAuthMode('login'); setStage('auth'); }}>Sign in</button>
+              <button className="bc-secondary-button" type="button" disabled={busy} onClick={() => { setAuthMode('recover'); setStage('auth'); }}>Recover account</button>
+            </div>
+          </div>
+          <div className="bc-account-choice">
+            <strong>New to BitConnection?</strong>
+            <button className="bc-primary-button" type="button" disabled={busy} onClick={() => { setAuthMode('register'); setStage('auth'); }}>Create a separate account</button>
+          </div>
           <div className="bc-window-actions">
             <button className="bc-secondary-button" type="button" onClick={closeWindow}>Not now</button>
-            <button className="bc-secondary-button" type="button" disabled={busy} onClick={() => setStage('auth')}>Create separate account</button>
-            <button className="bc-primary-button" type="button" disabled={busy} onClick={chooseBitCiderAccount}>Use BitCider account</button>
+            <button className="bc-secondary-button" type="button" disabled={busy} onClick={chooseBitCiderAccount}>Use BitCider account</button>
           </div>
           {error && <div className="bc-form-error" role="alert">{error}</div>}
         </section>
@@ -577,6 +592,7 @@ function CreateRoomWindow() {
       {stage === 'auth' && account && (
         <AccountAuth
           account={account}
+          initialMode={authMode}
           onAuthenticated={handleAuthenticated}
           onRecovery={handleRecovery}
           onPasskeySignIn={handlePasskeySignIn}
