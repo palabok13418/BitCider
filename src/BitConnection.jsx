@@ -816,7 +816,7 @@ export default function BitConnection() {
       </footer>
       {entryStage !== 'idle' && (
         <div className={`bitconnection-entry-cover is-${entryStage}`} aria-hidden="true">
-          <svg className="bitconnection-burn-field" viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false">
+          <svg className="bitconnection-burn-field" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" focusable="false">
             <defs>
               <linearGradient id="bitconnection-fire-edge" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0" stopColor="#fff6b0" />
