@@ -1197,7 +1197,11 @@ export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [accountOverlayOpen, setAccountOverlayOpen] = useState(false);
-  const [pageMode, setPageMode] = useState('cider');
+  const [pageMode, setPageMode] = useState(() => (
+    typeof window !== 'undefined' && window.location.pathname.replace(/\\/+$/, '') === '/bitmono'
+      ? 'mono'
+      : 'cider'
+  ));
   const [modeTransitionPhase, setModeTransitionPhase] = useState('idle');
   const [modeSwitcherOpen, setModeSwitcherOpen] = useState(false);
   const modeDragRef = useRef(null);
@@ -1235,6 +1239,26 @@ export default function App() {
       return false;
     }
   });
+  useEffect(() => {
+    const mono = pageMode === 'mono';
+    const title = mono ? 'BitMono | BitCider' : 'BitCider';
+    const description = mono
+      ? 'Use BitMono as your personal BitChord audio source, powered by Monochrome with Deezer fallback, complete-track caching, and smooth, seekable playback.'
+      : 'Connect Cider to BitCider and create your own personal BitChord source, with encrypted account syncing and smooth, seekable audio streaming.';
+    const pageUrl = mono
+      ? 'https://bitcider.palabokmagtiis.workers.dev/bitmono/'
+      : 'https://bitcider.palabokmagtiis.workers.dev/';
+
+    document.title = title;
+    document.querySelector('meta[name="description"]')?.setAttribute('content', description);
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', description);
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', pageUrl);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', description);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', pageUrl);
+  }, [pageMode]);
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const mono = pageMode === 'mono';
@@ -2082,6 +2106,18 @@ export default function App() {
     }
   }
 
+  function setPageModeAndRoute(nextMode) {
+    setPageMode(nextMode);
+    const nextPath = nextMode === 'mono' ? '/bitmono/' : '/';
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        nextPath + window.location.search + window.location.hash
+      );
+    }
+  }
+
   function switchPageMode(nextMode) {
     if (nextMode !== 'cider' && nextMode !== 'mono') return;
     if (modeTransitionPhase !== 'idle' || nextMode === pageMode) return;
@@ -2089,7 +2125,7 @@ export default function App() {
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (reducedMotion) {
-      setPageMode(nextMode);
+      setPageModeAndRoute(nextMode);
       setModeTransitionTarget('');
       return;
     }
@@ -2098,7 +2134,7 @@ export default function App() {
     setModeTransitionPhase('encrypt');
     window.setTimeout(() => {
       setModeTransitionPhase('handoff');
-      setPageMode(nextMode);
+      setPageModeAndRoute(nextMode);
 
       window.setTimeout(() => {
         setModeTransitionPhase('decrypt');
