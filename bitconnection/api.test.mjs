@@ -277,11 +277,23 @@ test('live rooms support temporary guests, proximity admission, playback permiss
       source: 'youtube-music',
       track: { videoId: 'abcdefghijk', title: 'Test Song', artist: 'Test Artist', durationSeconds: 180 },
       isPlaying: true,
-      positionSeconds: 12,
-      volume: 0.8
+      positionSeconds: 12
     })
   });
   assert.equal(hostPlayback.status, 200);
+
+  const deniedVolume = await client.request('/rooms/' + roomPayload.room.roomId + '/volume', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ volume: 0.3 })
+  });
+  assert.equal(deniedVolume.status, 403);
+  const hostVolume = await client.request('/rooms/' + roomPayload.room.roomId + '/volume', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ volume: 0.8 })
+  });
+  assert.equal(hostVolume.status, 200);
 
   const signal = await client.request('/rooms/' + roomPayload.room.roomId + '/signals', {
     method: 'POST',
@@ -376,4 +388,22 @@ test('private-room distance fallback requires a host-relayed code that expires f
   assert.equal(verified.status, 201);
   assert.equal(verifiedPayload.username, requestPayload.guestName);
   assert.ok(verifiedPayload.participantCredential);
+
+  const guestHeaders = {
+    ...csrf.headers,
+    Authorization: 'Bearer ' + verifiedPayload.participantCredential
+  };
+  const guestPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ isPlaying: false })
+  });
+  assert.equal(guestPlayback.status, 200);
+  const guestVolume = await client.request('/rooms/' + roomPayload.room.roomId + '/volume', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ volume: 0.35 })
+  });
+  assert.equal(guestVolume.status, 200);
+  assert.equal((await guestVolume.json()).volume, 0.35);
 });
