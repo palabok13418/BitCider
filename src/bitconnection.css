@@ -814,3 +814,8 @@ a { color: inherit; text-decoration: none; }
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Supersede the former centre-shrinking clip animation: the SVG mask owns the burn. */
+.bitconnection-entry-cover.is-burning {
+  animation: none;
+}
