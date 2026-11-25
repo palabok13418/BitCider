@@ -174,15 +174,17 @@ test('BitConnection requires authentication and a completed profile to create a 
   assert.equal(payload.room.hostUsername, 'Room Host');
   assert.equal(payload.inviteToken, undefined);
 
-  const joinedByCode = await client.request('/rooms/' + payload.room.roomCode + '/join', {
+  const publicGuestClient = await harness(t);
+  const publicGuestCsrf = await csrfContext(publicGuestClient);
+  const joinedByCode = await publicGuestClient.request('/rooms/' + payload.room.roomCode + '/join', {
     method: 'POST',
-    headers: csrf.headers,
+    headers: publicGuestCsrf.headers,
     body: JSON.stringify({})
   });
   const guest = await joinedByCode.json();
   assert.equal(joinedByCode.status, 201);
   assert.equal(guest.room.roomId, payload.room.roomId);
-  assert.match(guest.username, /^[A-Za-z]+[A-Za-z]+\\d{3}$/);
+  assert.match(guest.username, /^[A-Za-z]+[A-Za-z]+\d{3}$/);
 
   const closed = await client.request(`/rooms/${payload.room.roomId}/close`, {
     method: 'POST',
@@ -256,9 +258,11 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(hostLocation.status, 200);
 
-  const joined = await client.request('/rooms/' + roomPayload.room.roomId + '/join', {
+  const guestClient = await harness(t);
+  const guestCsrf = await csrfContext(guestClient);
+  const joined = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
-    headers: csrf.headers,
+    headers: guestCsrf.headers,
     body: JSON.stringify({
       inviteToken: roomPayload.inviteToken,
       location: { latitude: 37.33311, longitude: -121.8907, accuracy: 5 }
@@ -271,10 +275,10 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   assert.ok(guest.participantCredential);
 
   const guestHeaders = {
-    ...csrf.headers,
+    ...guestCsrf.headers,
     Authorization: 'Bearer ' + guest.participantCredential
   };
-  const deniedPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
+  const deniedPlayback = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/playback', {
     method: 'POST',
     headers: guestHeaders,
     body: JSON.stringify({ isPlaying: false })
@@ -293,7 +297,7 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(hostPlayback.status, 200);
 
-  const deniedVolume = await client.request('/rooms/' + roomPayload.room.roomId + '/volume', {
+  const deniedVolume = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/volume', {
     method: 'POST',
     headers: guestHeaders,
     body: JSON.stringify({ volume: 0.3 })
@@ -317,7 +321,7 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(signal.status, 202);
 
-  const receivedSignal = await client.request('/rooms/' + roomPayload.room.roomId + '/signals', {
+  const receivedSignal = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/signals', {
     headers: guestHeaders
   });
   const signalPayload = await receivedSignal.json();
@@ -325,7 +329,7 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   assert.equal(signalPayload.messages.length, 1);
   assert.equal(signalPayload.messages[0].type, 'offer');
 
-  const state = await client.request('/rooms/' + roomPayload.room.roomId + '/state', {
+  const state = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/state', {
     headers: guestHeaders
   });
   const roomState = await state.json();
@@ -335,13 +339,13 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   assert.equal(roomState.playbackState.isPlaying, true);
   assert.equal(roomState.participants.length, 2);
 
-  const left = await client.request('/rooms/' + roomPayload.room.roomId + '/leave', {
+  const left = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/leave', {
     method: 'POST',
     headers: guestHeaders
   });
   assert.equal(left.status, 200);
   assert.equal((await left.json()).roomClosed, false);
-  const rejectedAfterLeave = await client.request('/rooms/' + roomPayload.room.roomId + '/state', {
+  const rejectedAfterLeave = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/state', {
     headers: guestHeaders
   });
   assert.equal(rejectedAfterLeave.status, 401);
@@ -370,9 +374,11 @@ test('private-room distance fallback requires a host-relayed code that expires f
   const roomPayload = await created.json();
   assert.equal(created.status, 201);
 
-  const request = await client.request('/rooms/' + roomPayload.room.roomId + '/join', {
+  const guestClient = await harness(t);
+  const guestCsrf = await csrfContext(guestClient);
+  const request = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
-    headers: csrf.headers,
+    headers: guestCsrf.headers,
     body: JSON.stringify({ inviteToken: roomPayload.inviteToken })
   });
   const requestPayload = await request.json();
@@ -394,9 +400,9 @@ test('private-room distance fallback requires a host-relayed code that expires f
   const expiresIn = Date.parse(delivered.expiresAt) - Date.now();
   assert.ok(expiresIn > 4 * 60 * 1000 && expiresIn <= 5 * 60 * 1000);
 
-  const verified = await client.request('/rooms/' + roomPayload.room.roomId + '/verify', {
+  const verified = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/verify', {
     method: 'POST',
-    headers: csrf.headers,
+    headers: guestCsrf.headers,
     body: JSON.stringify({ requestId: requestPayload.requestId, code: delivered.oneTimeCode })
   });
   const verifiedPayload = await verified.json();
@@ -405,16 +411,16 @@ test('private-room distance fallback requires a host-relayed code that expires f
   assert.ok(verifiedPayload.participantCredential);
 
   const guestHeaders = {
-    ...csrf.headers,
+    ...guestCsrf.headers,
     Authorization: 'Bearer ' + verifiedPayload.participantCredential
   };
-  const guestPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
+  const guestPlayback = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/playback', {
     method: 'POST',
     headers: guestHeaders,
     body: JSON.stringify({ isPlaying: false })
   });
   assert.equal(guestPlayback.status, 200);
-  const guestVolume = await client.request('/rooms/' + roomPayload.room.roomId + '/volume', {
+  const guestVolume = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/volume', {
     method: 'POST',
     headers: guestHeaders,
     body: JSON.stringify({ volume: 0.35 })
