@@ -76,7 +76,13 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   csrfTokenForCiderSession: csrfTokenForSession,
   webAuthnContext,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
-  maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10)
+  maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10),
+  iceConfig: {
+    stunUrls: process.env.BITCONNECTION_STUN_URLS,
+    turnUrls: process.env.BITCONNECTION_TURN_URLS,
+    turnSharedSecret: process.env.BITCONNECTION_TURN_SHARED_SECRET,
+    credentialTtlSeconds: process.env.BITCONNECTION_TURN_CREDENTIAL_TTL_SECONDS
+  }
 }));
 
 // Preserve the smaller JSON limit for all other BitCider API routes.

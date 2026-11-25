@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4 } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {} } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -20,6 +20,7 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4 } = {}) {
   app.use('/api/bitconnection', createBitConnectionRouter({
     dataFile,
     maxPartySize,
+    iceConfig,
     getUserSession: () => ciderAccount ? { authenticated: true, accountId: 'existing-cider-account', sessionId: 'cider-session-123' } : { authenticated: false },
     requireCiderCsrf: (_req, _res, next) => next(),
     csrfTokenForCiderSession: () => 'cider-test-csrf',
@@ -483,4 +484,85 @@ test('private-room distance fallback requires a host-relayed code that expires f
   });
   assert.equal(guestVolume.status, 200);
   assert.equal((await guestVolume.json()).volume, 0.35);
+});
+
+test('room ICE configuration requires membership and returns participant-scoped ephemeral TURN credentials', async t => {
+  const sharedSecret = 'test-turn-shared-secret-that-is-long-enough';
+  const client = await harness(t, {
+    iceConfig: {
+      stunUrls: 'stun:stun.example.test:3478',
+      turnUrls: 'turn:relay.example.test:3478?transport=udp,turns:relay.example.test:5349?transport=tcp',
+      turnSharedSecret: sharedSecret,
+      credentialTtlSeconds: 3600
+    }
+  });
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'ICE Host', password: 'ice-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({
+      roomName: 'ICE Test Room',
+      visibility: 'public',
+      partySize: 2,
+      ownerOnlyControls: true
+    })
+  });
+  const room = await created.json();
+  assert.equal(created.status, 201);
+
+  const denied = await client.request('/rooms/' + room.room.roomId + '/ice-config');
+  assert.equal(denied.status, 401);
+
+  const response = await client.request('/rooms/' + room.room.roomId + '/ice-config', {
+    headers: {
+      ...csrf.headers,
+      Authorization: 'Bearer ' + room.hostCredential
+    }
+  });
+  const configuration = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(configuration.iceTransportPolicy, 'all');
+  assert.equal(configuration.relayAvailable, true);
+  assert.equal(configuration.iceServers.length, 2);
+  assert.equal(configuration.iceServers[0].urls, 'stun:stun.example.test:3478');
+  assert.deepEqual(configuration.iceServers[1].urls, [
+    'turn:relay.example.test:3478?transport=udp',
+    'turns:relay.example.test:5349?transport=tcp'
+  ]);
+  assert.match(configuration.iceServers[1].username, /^\d+:bitconnection-[a-f0-9]{24}$/);
+  assert.ok(configuration.iceServers[1].credential.length > 20);
+  assert.equal(JSON.stringify(configuration).includes(sharedSecret), false);
+  assert.ok(configuration.credentialExpiresAt);
+});
+
+test('room ICE endpoint fails closed when TURN is configured without its shared secret', async t => {
+  const client = await harness(t, {
+    iceConfig: { turnUrls: 'turn:relay.example.test:3478', turnSharedSecret: 'short' }
+  });
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Missing Secret', password: 'secret-passphrase' })
+  });
+  assert.equal(registration.status, 201);
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ roomName: 'No TURN Secret', visibility: 'public', partySize: 2, ownerOnlyControls: true })
+  });
+  const room = await created.json();
+  const response = await client.request('/rooms/' + room.room.roomId + '/ice-config', {
+    headers: { ...csrf.headers, Authorization: 'Bearer ' + room.hostCredential }
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, 'ICE_CONFIGURATION_UNAVAILABLE');
 });

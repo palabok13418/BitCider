@@ -16,6 +16,9 @@ class FakePeerConnection {
   addTrack(track, stream) {
     this.addedTracks.push({ track, stream });
   }
+  getSenders() {
+    return this.addedTracks.map(({ track }) => ({ track }));
+  }
   async createOffer() {
     return { type: 'offer', sdp: 'host-offer' };
   }
@@ -251,4 +254,49 @@ test('party runtime schedules room state, signaling, and presence without overla
   assert.equal(timers.size, 0);
   assert.equal(cleared.length, 3);
   assert.equal(calls.errors, 0);
+});
+
+test('room session retrieves ICE configuration with its participant credential', async () => {
+  const calls = [];
+  const client = new BitConnectionApiClient({
+    csrfToken: 'csrf',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({
+        iceServers: [{ urls: 'stun:stun.example.test:3478' }],
+        iceTransportPolicy: 'all',
+        relayAvailable: false
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+  const session = new (await import('../src/bitconnection/realtime-client.mjs')).BitConnectionRoomSession(client, {
+    roomId: 'room-ice',
+    participantId: 'participant-ice',
+    credential: 'participant-ice-credential',
+    role: 'host'
+  });
+  const config = await session.getIceConfiguration();
+  assert.equal(config.relayAvailable, false);
+  assert.equal(calls[0].url, '/api/bitconnection/rooms/room-ice/ice-config');
+  assert.equal(calls[0].options.headers.get('Authorization'), 'Bearer participant-ice-credential');
+});
+
+test('host mesh can attach tab audio after peers were created without duplicating tracks', () => {
+  const session = { role: 'host', participantId: 'host-late-track', sendSignal: async () => ({ ok: true }) };
+  let peer;
+  const mesh = new BitConnectionPeerMesh({
+    session,
+    peerConnectionFactory: config => {
+      peer = new FakePeerConnection(config);
+      return peer;
+    }
+  });
+  mesh.createPeer('guest-late-track');
+  const audioTrack = { kind: 'audio', id: 'late-tab-audio' };
+  const videoTrack = { kind: 'video', id: 'local-share-video' };
+  const stream = { getAudioTracks: () => [audioTrack], getTracks: () => [audioTrack, videoTrack] };
+  mesh.setLocalStream(stream);
+  mesh.setLocalStream(stream);
+  assert.deepEqual(peer.addedTracks.map(item => item.track), [audioTrack]);
+  mesh.close();
 });

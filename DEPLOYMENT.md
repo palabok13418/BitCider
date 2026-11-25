@@ -122,6 +122,23 @@ The complete file is preloaded before playback starts, so BitChord no longer has
 
 When an anonymous browser already has a Cider connection, creating an account moves that encrypted Cider connection and its current addon key into the account. After sign-in on a different device, `GET /api/status` returns the already-saved addon URL for that account. Signing out revokes that browser session but does not delete the saved Cider connection. Disconnecting Cider deletes the account's saved token and addon key.
 
+## BitConnection WebRTC audio transport
+
+BitConnection uses direct host-to-guest WebRTC for audio. Deplexo handles authenticated room membership, presence, playback state, and SDP/ICE signaling; it never receives or relays the audio stream. The host browser asks the user to select the BitChord Web tab and enable **Share tab audio**. It rejects window and monitor capture and adds only audio tracks to WebRTC. The capture video track remains local because the browser's display-capture API requires a video track.
+
+The Deplexo backend supplies public STUN servers by default. To use a TURN relay for restrictive NATs, provision a coturn-compatible relay service separately, then set these **Deplexo-only** environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `BITCONNECTION_STUN_URLS` | Optional comma-separated `stun:` / `stuns:` URLs; defaults to Google's public STUN endpoints |
+| `BITCONNECTION_TURN_URLS` | Optional comma-separated `turn:` / `turns:` URLs (for example UDP 3478 and TLS/TCP 5349) |
+| `BITCONNECTION_TURN_SHARED_SECRET` | Coturn REST shared secret, at least 32 bytes; keep it in Deplexo secrets only |
+| `BITCONNECTION_TURN_CREDENTIAL_TTL_SECONDS` | Expiry of each participant's generated credentials; defaults to 3600 seconds (accepted range 300–86400) |
+
+The backend issues each authenticated room participant a short-lived TURN username and HMAC-SHA1 credential using coturn's REST authentication format. The shared secret is never sent to browsers. When TURN is not configured, ICE uses STUN and direct connectivity only; some network combinations may still fail. This repository does **not** provision or host a TURN relay, so relay connectivity becomes available only after a real TURN endpoint and its matching shared secret are supplied in Deplexo. Do not put TURN secrets in Netlify, Cloudflare, frontend build variables, or Git.
+
+Browser tab audio capture depends on browser and selected-tab support. The capture picker must expose the BitChord Web tab's audio; if the browser does not provide a tab audio track, BitConnection stops capture rather than silently sharing desktop/system audio. Guest-side audio reception is exposed as a separate transport helper; the immersive Guest View UI remains a separate implementation stage.
+
 ## 5. BitChord addon URL
 
 The personal addon URL is generated on the Deplexo backend after the browser receives Cider's approved token and saves it to the user's anonymous session or signed-in BitCider account. The same URL works regardless of whether the user opened the frontend through Netlify or Cloudflare. It has this shape:

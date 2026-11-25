@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createIceConfiguration } from './ice.mjs';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -21,7 +22,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-foundation-02';
+export const BITCONNECTION_API_VERSION = '2026-11-25-live-room-ice-transport-03';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -250,7 +251,8 @@ export function bitConnectionHealthPayload(maxPartySize = 10) {
       playbackSync: 'youtube-music-through-bitchord-web',
       sharedQueue: 'synchronized-with-room-permissions',
       privateRoomVerification: 'proximity-or-host-one-time-code',
-      audioRelay: 'never-server-side'
+      audioRelay: 'never-server-side',
+      iceConfiguration: 'participant-scoped-stun-and-short-lived-turn-credentials'
     },
     limits: { maxPartySize }
   };
@@ -267,7 +269,8 @@ export function createBitConnectionRouter({
     return { origin: parsed.origin, rpID: parsed.hostname };
   },
   dataFile,
-  maxPartySize = 10
+  maxPartySize = 10,
+  iceConfig = {}
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
   const store = createDataStore(dataFile);
@@ -1212,6 +1215,26 @@ export function createBitConnectionRouter({
       username: verified.participant.username,
       room: publicRoom(verified.room)
     });
+  });
+
+  router.get('/rooms/:roomId/ice-config', (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const participant = participantForRoom(room, req, res);
+    if (!participant || participant.status === 'left') {
+      return res.status(401).json({ error: 'ROOM_MEMBERSHIP_REQUIRED' });
+    }
+
+    try {
+      const configuration = createIceConfiguration(iceConfig, participant.participantId);
+      res.set('Cache-Control', 'no-store');
+      return res.json(configuration);
+    } catch {
+      return res.status(503).json({
+        error: 'ICE_CONFIGURATION_UNAVAILABLE',
+        message: 'The room audio connection service is not configured correctly.'
+      });
+    }
   });
 
   router.get('/rooms/:roomId/state', (req, res) => {

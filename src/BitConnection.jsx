@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
+import { startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
 
@@ -360,6 +362,15 @@ function CreateRoomWindow() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [createdRoom, setCreatedRoom] = useState(null);
+  const [hostAudioState, setHostAudioState] = useState('idle');
+  const [hostAudioError, setHostAudioError] = useState('');
+  const hostTransportRef = useRef(null);
+
+  useEffect(() => () => {
+    const transport = hostTransportRef.current;
+    hostTransportRef.current = null;
+    if (transport) void transport.stop({ leave: true });
+  }, []);
 
   async function loadAccount(mode = 'bitconnection') {
     const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
@@ -491,7 +502,7 @@ function CreateRoomWindow() {
         body: JSON.stringify({ roomName, visibility, partySize, ownerOnlyControls })
       });
       const payload = await readResponse(response, 'Could not create the room.');
-      setCreatedRoom(payload.room);
+      setCreatedRoom(payload);
       setStage('created');
     } catch (createError) {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
@@ -499,6 +510,41 @@ function CreateRoomWindow() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function startHostAudio() {
+    if (!createdRoom?.room?.roomId || hostAudioState === 'requesting' || hostTransportRef.current) return;
+    setHostAudioState('requesting');
+    setHostAudioError('');
+    try {
+      const client = new BitConnectionApiClient({
+        csrfToken: identityMode === 'bitconnection' ? account?.csrfToken : '',
+        identityMode,
+        ciderCsrfToken: identityMode === 'bitcider' ? account?.csrfToken : ''
+      });
+      const session = client.createHostSession(createdRoom);
+      const transport = await startBitConnectionHostTransport({
+        session,
+        onError: transportError => setHostAudioError(transportError.message || 'The room connection encountered an error.'),
+        onCaptureEnded: () => {
+          hostTransportRef.current = null;
+          setHostAudioState('idle');
+          setHostAudioError('BitChord tab sharing stopped. Start sharing again to resume the room audio.');
+        }
+      });
+      hostTransportRef.current = transport;
+      setHostAudioState('streaming');
+    } catch (transportError) {
+      setHostAudioState('idle');
+      setHostAudioError(transportError.message || 'Could not start BitChord tab audio.');
+    }
+  }
+
+  async function stopHostAudio() {
+    const transport = hostTransportRef.current;
+    hostTransportRef.current = null;
+    if (transport) await transport.stop({ leave: false });
+    setHostAudioState('idle');
   }
 
   return (
@@ -616,14 +662,23 @@ function CreateRoomWindow() {
 
       {stage === 'created' && createdRoom && (
         <section className="bc-window-state">
-          <div className="bc-window-kicker">ROOM RECORD CREATED</div>
-          <h1>{createdRoom.roomName}</h1>
-          <p>The room settings are saved on Deplexo. Live membership, WebRTC audio, and the immersive player view are the next integration stage.</p>
-          <div className="bc-created-code"><small>ROOM CODE</small><strong>{createdRoom.roomCode}</strong></div>
+          <div className="bc-window-kicker">LIVE ROOM READY</div>
+          <h1>{createdRoom.room.roomName}</h1>
+          <p>The room is active on Deplexo. Start host audio by selecting the BitChord Web browser tab and enabling “Share tab audio”. Only that tab’s audio is sent. Desktop, window, and monitor capture are rejected.</p>
+          <div className="bc-created-code"><small>ROOM CODE</small><strong>{createdRoom.room.roomCode}</strong></div>
+          {hostAudioState === 'streaming' && <p role="status">Host audio is connected. Waiting for guests to join…</p>}
+          {hostAudioError && <div className="bc-form-error" role="alert">{hostAudioError}</div>}
           <div className="bc-window-actions">
+            {hostAudioState === 'streaming' ? (
+              <button className="bc-secondary-button" type="button" onClick={stopHostAudio}>Stop audio</button>
+            ) : (
+              <button className="bc-primary-button" type="button" disabled={hostAudioState === 'requesting'} onClick={startHostAudio}>
+                {hostAudioState === 'requesting' ? 'Opening browser picker…' : 'Share BitChord tab audio'}
+              </button>
+            )}
             <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
-            <button className="bc-primary-button" type="button" onClick={() => {
-              navigator.clipboard?.writeText(createdRoom.roomCode).catch(() => {});
+            <button className="bc-secondary-button" type="button" onClick={() => {
+              navigator.clipboard?.writeText(createdRoom.room.roomCode).catch(() => {});
             }}>Copy room code</button>
           </div>
         </section>

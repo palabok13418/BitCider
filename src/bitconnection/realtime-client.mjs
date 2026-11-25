@@ -137,6 +137,11 @@ export class BitConnectionApiClient {
     });
   }
 
+  getIceConfiguration(session) {
+    if (!session?.roomId) throw new TypeError('A room session is required for ICE configuration.');
+    return this.request('/rooms/' + encodeSegment(session.roomId) + '/ice-config', { session });
+  }
+
   closeRoom(roomId) {
     return this.request('/rooms/' + encodeSegment(roomId) + '/close', { method: 'POST' });
   }
@@ -156,6 +161,10 @@ export class BitConnectionRoomSession {
     this.participantId = String(participantId);
     this.credential = String(credential);
     this.role = role === 'host' ? 'host' : 'guest';
+  }
+
+  getIceConfiguration() {
+    return this.client.getIceConfiguration(this);
   }
 
   getState() {
@@ -266,6 +275,30 @@ export class BitConnectionPeerMesh {
 
   setLocalStream(stream) {
     this.localStream = stream;
+    if (this.role !== 'host' || !stream) return;
+
+    for (const [participantId, connection] of this.peers) {
+      const senders = typeof connection.getSenders === 'function' ? connection.getSenders() : [];
+      let addedTrack = false;
+      for (const track of stream.getAudioTracks()) {
+        if (senders.some(sender => sender?.track?.id === track.id)) continue;
+        connection.addTrack(track, stream);
+        addedTrack = true;
+      }
+      if (addedTrack && connection.remoteDescription) {
+        void this.renegotiatePeer(participantId, connection).catch(error => this.onError(error));
+      }
+    }
+  }
+
+  async renegotiatePeer(participantId, connection) {
+    const offer = await connection.createOffer();
+    await connection.setLocalDescription(offer);
+    await this.session.sendSignal(
+      participantId,
+      'renegotiate',
+      descriptionObject(connection.localDescription || offer)
+    );
   }
 
   createPeer(participantId) {
