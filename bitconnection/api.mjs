@@ -825,10 +825,10 @@ export function createBitConnectionRouter({
       if (room.hostIdentityId !== identity.identityId) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
       room.status = 'closed';
       room.updatedAt = new Date().toISOString();
-      return { ok: true, roomId: room.roomId, status: room.status };
+      return { ok: true, roomId: room.roomId, roomStatus: room.status };
     });
     if (result.status) return res.status(result.status).json({ error: result.error });
-    return res.json(result);
+    return res.json({ ok: true, roomId: result.roomId, status: result.roomStatus });
   });
 
   return router;

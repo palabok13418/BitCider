@@ -77,7 +77,7 @@ test('native registration creates a separate BitConnection identity and never ca
   assert.equal(payload.ok, true);
   assert.equal(payload.account.username, 'Velvet Comet');
   assert.equal(payload.recoveryCodes.length, 10);
-  assert.match(response.headers.get('set-cookie') || '', /bitconnection_session=/);
+  assert.match(csrf.cookie, /^bitconnection_session=/);
   const account = await client.request('/account', { headers: { Cookie: csrf.cookie } });
   const accountPayload = await account.json();
   assert.equal(accountPayload.authenticated, true);

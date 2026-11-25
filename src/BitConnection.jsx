@@ -270,7 +270,8 @@ function AccountAuth({ account, onAuthenticated, onRecovery }) {
 }
 
 function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
-  const [saved, setSaved] = useState(false);
+  const [confirmedSaved, setConfirmedSaved] = useState(false);
+  const [passkeyAdded, setPasskeyAdded] = useState(false);
   const [passkeyPassword, setPasskeyPassword] = useState(password || '');
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyMessage, setPasskeyMessage] = useState('');
@@ -296,7 +297,7 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
       });
       const verified = await readResponse(verifyResponse, 'Could not save this passkey.');
       setPasskeyMessage('Passkey added to your BitConnection account.');
-      setSaved(true);
+      setPasskeyAdded(true);
     } catch (error) {
       setPasskeyMessage(error.message || 'Passkey setup was cancelled.');
     } finally {
@@ -318,21 +319,28 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
         <button className="bc-secondary-button" type="button" onClick={() => {
           navigator.clipboard?.writeText(codesText).then(() => setCopied(true)).catch(() => setPasskeyMessage('Clipboard access was blocked.'));
         }}>{copied ? 'Copied' : 'Copy recovery codes'}</button>
-        <a className="bc-secondary-button" href={URL.createObjectURL(new Blob([codesText], { type: 'text/plain' }))} download="bitconnection-recovery-codes.txt">Save as file</a>
+        <button className="bc-secondary-button" type="button" onClick={() => {
+          const blobUrl = URL.createObjectURL(new Blob([codesText], { type: 'text/plain' }));
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = 'bitconnection-recovery-codes.txt';
+          link.click();
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        }}>Save as file</button>
       </div>
       <div className="bc-passkey-setup">
         <strong>Want passkey sign-in too?</strong>
         <p>Add a device passkey. It stays inside BitConnection and is separate from BitCider passkeys.</p>
         <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} placeholder="Confirm your BitConnection passphrase" autoComplete="current-password" />
-        <button className="bc-secondary-button" type="button" onClick={addPasskey} disabled={passkeyBusy || !passkeyPassword}>{passkeyBusy ? 'Setting up…' : 'Add a passkey'}</button>
+        <button className="bc-secondary-button" type="button" onClick={addPasskey} disabled={passkeyBusy || !passkeyPassword || passkeyAdded}>{passkeyBusy ? 'Setting up…' : passkeyAdded ? 'Passkey added' : 'Add a passkey'}</button>
         {passkeyMessage && <small role="status">{passkeyMessage}</small>}
       </div>
       <label className="bc-recovery-confirm">
-        <input type="checkbox" checked={saved} onChange={event => setSaved(event.target.checked)} />
+        <input type="checkbox" checked={confirmedSaved} onChange={event => setConfirmedSaved(event.target.checked)} />
         <span>I have saved my recovery codes somewhere safe.</span>
       </label>
       <div className="bc-window-actions">
-        <button className="bc-primary-button" type="button" disabled={!saved} onClick={onContinue}>Continue to room setup</button>
+        <button className="bc-primary-button" type="button" disabled={!confirmedSaved} onClick={onContinue}>Continue to room setup</button>
       </div>
     </section>
   );
