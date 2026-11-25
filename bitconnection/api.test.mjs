@@ -284,6 +284,17 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(deniedPlayback.status, 403);
 
+  const guestOffer = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/signals', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({
+      toParticipantId: roomPayload.hostParticipantId,
+      type: 'offer',
+      payload: { sdp: 'guest-must-not-offer' }
+    })
+  });
+  assert.equal(guestOffer.status, 403);
+
   const hostPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
     method: 'POST',
     headers: hostHeaders,
