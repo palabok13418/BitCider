@@ -1001,7 +1001,7 @@ export function createBitConnectionRouter({
       if (room.hostIdentityId !== identity.identityId) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
       room.status = 'closed';
       room.updatedAt = new Date().toISOString();
-      for (const participant of Object.values(room.participants || {})) participant.status = 'left';
+      room.participants = {};
       hostLocations.delete(room.roomId);
       for (const requestId of Object.keys(room.joinRequests || {})) pendingVerificationCodes.delete(requestId);
       return { ok: true, roomId: room.roomId, roomStatus: room.status };
@@ -1363,16 +1363,12 @@ export function createBitConnectionRouter({
       if (isRoomOwner(room, participant)) {
         room.status = 'closed';
         room.updatedAt = new Date().toISOString();
-        for (const item of Object.values(room.participants || {})) item.status = 'left';
+        room.participants = {};
         hostLocations.delete(room.roomId);
         for (const requestId of Object.keys(room.joinRequests || {})) pendingVerificationCodes.delete(requestId);
         return { ok: true, roomClosed: true };
       }
-      const current = room.participants?.[participant.participantId];
-      if (current) {
-        current.status = 'left';
-        current.leftAt = new Date().toISOString();
-      }
+      delete room.participants?.[participant.participantId];
       room.updatedAt = new Date().toISOString();
       return { ok: true, roomClosed: false };
     });
