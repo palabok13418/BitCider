@@ -206,7 +206,6 @@ function AccountAuth({ account, onAuthenticated, onRecovery }) {
 
   return (
     <section className="bc-window-form">
-      <div className="bc-window-kicker">INDEPENDENT BITCONNECTION ACCOUNT</div>
       <h1>{mode === 'register' ? 'Your own space.' : mode === 'login' ? 'Welcome back.' : 'Recover your account.'}</h1>
       <p className="bc-window-copy">
         This account has its own password, passkeys, recovery codes, and sessions. Creating it does not connect Cider or create a BitCider addon.
@@ -559,11 +558,6 @@ function CreateRoomWindow() {
           variation={28} interactive stir={0.7} clickSwirl intro lightMode={false} dpr={1.2}
         />
       </Suspense>
-      <header className="bc-window-header">
-        <span className="bc-window-brand"><i /> BitConnection</span>
-        <button type="button" className="bc-window-close" onClick={closeWindow} aria-label="Close window">×</button>
-      </header>
-
       {stage === 'loading' && <section className="bc-window-state"><span className="bc-loading-orbit" /><p>Connecting to Deplexo…</p></section>}
 
       {stage === 'choose-account' && (
