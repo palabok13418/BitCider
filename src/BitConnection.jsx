@@ -700,6 +700,7 @@ function CreateRoomWindow() {
 export default function BitConnection() {
   const [apiState, setApiState] = useState('checking');
   const [entryStage, setEntryStage] = useState(initialEntryStage);
+  const flameRunAnimationRef = useRef(null);
   const burnMaskAnimationRef = useRef(null);
   const burnGlowAnimationRef = useRef(null);
   const burnCoreAnimationRef = useRef(null);
@@ -735,6 +736,11 @@ export default function BitConnection() {
       if (document.fonts?.ready) await document.fonts.ready;
       await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
       if (cancelled) return;
+      try {
+        flameRunAnimationRef.current?.beginElement?.();
+      } catch {
+        // CSS still keeps the fire visible if SVG motion is unavailable.
+      }
       timers.push(window.setTimeout(() => setEntryStage('holding'), 5200));
       timers.push(window.setTimeout(() => setEntryStage('burning'), 7200));
       timers.push(window.setTimeout(() => setEntryStage('idle'), 8850));
@@ -883,7 +889,7 @@ export default function BitConnection() {
           </svg>
 
           <div className="bitconnection-flame-wrap">
-            <svg className="bitconnection-entry-flame" viewBox="0 0 260 320" focusable="false">
+            <svg className="bitconnection-entry-flame" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" focusable="false">
               <defs>
                 <linearGradient id="bitconnection-flame-shell" x1=".5" y1="1" x2=".5" y2="0">
                   <stop offset="0" stopColor="#a9150d" />
@@ -917,23 +923,38 @@ export default function BitConnection() {
                 </filter>
               </defs>
 
-              <g className="bitconnection-flame-warp" filter="url(#bitconnection-flame-warp)">
-                <path className="bitconnection-flame-outer" d="M130 12 C151 53 194 69 190 119 C225 159 217 222 181 263 C154 294 105 300 72 274 C29 241 23 183 51 143 C65 119 87 104 91 69 C109 88 118 111 121 130 C145 95 137 49 130 12Z" />
-                <path className="bitconnection-flame-tongue tongue-a" d="M89 261 C55 229 57 192 77 161 C83 184 98 194 103 214 C115 188 107 160 113 138 C140 176 141 222 121 260Z" />
-                <path className="bitconnection-flame-tongue tongue-b" d="M155 267 C185 231 187 201 171 170 C166 193 151 201 146 221 C139 195 146 169 141 148 C118 186 119 233 139 264Z" />
-                <path className="bitconnection-flame-tongue tongue-c" d="M126 247 C103 220 111 183 130 153 C149 181 157 215 143 247Z" />
-                <path className="bitconnection-flame-inner" d="M130 278 C93 277 78 244 91 211 C101 186 117 171 123 143 C151 177 175 203 166 240 C161 262 148 276 130 278Z" />
-                <path className="bitconnection-flame-core" d="M130 269 C111 261 107 241 116 222 C123 208 129 201 130 184 C151 207 158 226 150 246 C146 259 139 267 130 269Z" />
-              </g>
-
-              <g className="bitconnection-flame-embers">
-                <circle cx="62" cy="151" r="4" />
-                <circle cx="205" cy="171" r="3" />
-                <circle cx="95" cy="95" r="3" />
-                <circle cx="165" cy="83" r="4" />
-                <circle cx="128" cy="56" r="3" />
-                <circle cx="78" cy="211" r="2.5" />
-                <circle cx="187" cy="222" r="2.5" />
+              <g className="bitconnection-flame-travel" transform="translate(-190 420)">
+                <animateTransform
+                  ref={flameRunAnimationRef}
+                  attributeName="transform"
+                  type="translate"
+                  values="-190 420;220 420;950 420;-190 420;720 420;370 420"
+                  keyTimes="0;.18;.37;.52;.73;1"
+                  dur="5.2s"
+                  begin="indefinite"
+                  fill="freeze"
+                  calcMode="spline"
+                  keySplines=".32 0 .66 1;.32 0 .66 1;.32 0 .66 1;.32 0 .66 1;.32 0 .66 1"
+                />
+                <g transform="scale(.55)">
+                  <g className="bitconnection-flame-warp">
+                    <path className="bitconnection-flame-outer" filter="url(#bitconnection-flame-warp)" d="M130 12 C151 53 194 69 190 119 C225 159 217 222 181 263 C154 294 105 300 72 274 C29 241 23 183 51 143 C65 119 87 104 91 69 C109 88 118 111 121 130 C145 95 137 49 130 12Z" />
+                    <path className="bitconnection-flame-tongue tongue-a" d="M89 261 C55 229 57 192 77 161 C83 184 98 194 103 214 C115 188 107 160 113 138 C140 176 141 222 121 260Z" />
+                    <path className="bitconnection-flame-tongue tongue-b" d="M155 267 C185 231 187 201 171 170 C166 193 151 201 146 221 C139 195 146 169 141 148 C118 186 119 233 139 264Z" />
+                    <path className="bitconnection-flame-tongue tongue-c" d="M126 247 C103 220 111 183 130 153 C149 181 157 215 143 247Z" />
+                    <path className="bitconnection-flame-inner" d="M130 278 C93 277 78 244 91 211 C101 186 117 171 123 143 C151 177 175 203 166 240 C161 262 148 276 130 278Z" />
+                    <path className="bitconnection-flame-core" d="M130 269 C111 261 107 241 116 222 C123 208 129 201 130 184 C151 207 158 226 150 246 C146 259 139 267 130 269Z" />
+                  </g>
+                  <g className="bitconnection-flame-embers">
+                    <circle cx="62" cy="151" r="4" />
+                    <circle cx="205" cy="171" r="3" />
+                    <circle cx="95" cy="95" r="3" />
+                    <circle cx="165" cy="83" r="4" />
+                    <circle cx="128" cy="56" r="3" />
+                    <circle cx="78" cy="211" r="2.5" />
+                    <circle cx="187" cy="222" r="2.5" />
+                  </g>
+                </g>
               </g>
             </svg>
           </div>
