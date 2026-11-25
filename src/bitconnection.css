@@ -480,7 +480,7 @@ a { color: inherit; text-decoration: none; }
 /* Independent BitConnection account controls */
 .bc-auth-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   margin: 0 0 14px;
   padding: 4px;
@@ -502,6 +502,26 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(110deg, rgba(235,59,105,.45), rgba(154,33,72,.55));
   box-shadow: inset 0 1px rgba(255,255,255,.12);
 }
+.bc-recovery-link {
+  display: block;
+  margin: 12px auto 0;
+  padding: 5px 8px;
+  border: 0;
+  color: rgba(255,190,207,.86);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  text-decoration: underline;
+  text-decoration-color: rgba(255,190,207,.35);
+  text-underline-offset: 3px;
+}
+.bc-recovery-link:hover { color: #fff0f5; }
+.bc-recovery-link:focus-visible {
+  outline: 2px solid rgba(255,175,195,.9);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.bc-recovery-link:disabled { opacity: .55; cursor: wait; }
 .bc-passkey-signin {
   display: block;
   width: 100%;
@@ -866,51 +886,4 @@ a { color: inherit; text-decoration: none; }
 @keyframes bitconnection-svg-flame-flash {
   0% { opacity: 1; }
   100% { opacity: 0; }
-}
-
-
-/* Clear first-step routes for returning BitConnection users. */
-.bc-account-choice {
-  display: grid;
-  gap: 10px;
-  width: 100%;
-  margin: 0 0 12px;
-  padding: 14px;
-  border: 1px solid rgba(255,220,228,.12);
-  border-radius: 11px;
-  background: rgba(19,9,14,.52);
-}
-
-.bc-account-choice > strong {
-  color: rgba(255,239,244,.9);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.bc-account-choice-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.bc-account-choice > .bc-primary-button {
-  width: 100%;
-}
-
-.bc-auth-tabs button {
-  min-width: 0;
-  padding: 0 5px;
-  font-size: clamp(8px, 2.2vw, 10px);
-}
-
-.bc-auth-tabs button:focus-visible,
-.bc-account-choice button:focus-visible {
-  outline: 2px solid rgba(255,175,195,.9);
-  outline-offset: 2px;
-}
-
-@media (max-width: 420px) {
-  .bc-account-choice-actions {
-    grid-template-columns: 1fr;
-  }
 }
