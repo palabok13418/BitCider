@@ -76,7 +76,7 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   csrfTokenForCiderSession: csrfTokenForSession,
   webAuthnContext,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
-  maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 10),
+  maxPartySize: Number(process.env.BITCONNECTION_MAX_PARTICIPANTS || 30),
   iceConfig: {
     stunUrls: process.env.BITCONNECTION_STUN_URLS,
     turnUrls: process.env.BITCONNECTION_TURN_URLS,
