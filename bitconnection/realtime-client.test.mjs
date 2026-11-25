@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BitConnectionApiClient,
+  BitConnectionPartyRuntime,
   BitConnectionPeerMesh
 } from '../src/bitconnection/realtime-client.mjs';
 
@@ -185,4 +186,69 @@ test('guest mesh buffers early ICE, answers the host offer, and exposes incoming
   assert.equal(remoteStream.participantId, 'host-1');
   assert.equal(remoteStream.stream, stream);
   mesh.close();
+});
+
+test('party runtime schedules room state, signaling, and presence without overlapping its loops', async () => {
+  const calls = { state: 0, signals: 0, heartbeat: 0, leave: 0, errors: 0, roomUpdates: 0 };
+  const timers = new Map();
+  const cleared = [];
+  let nextTimer = 1;
+  const session = {
+    role: 'host',
+    participantId: 'host-1',
+    async getState() {
+      calls.state += 1;
+      return { participants: [{ participantId: 'host-1', role: 'host', status: 'connected' }] };
+    },
+    async pollSignals() {
+      calls.signals += 1;
+      return { messages: [], nextSequence: 0 };
+    },
+    async heartbeat() {
+      calls.heartbeat += 1;
+      return { ok: true };
+    },
+    async leave() {
+      calls.leave += 1;
+      return { ok: true };
+    },
+    async sendSignal() {
+      return { ok: true };
+    }
+  };
+  const runtime = new BitConnectionPartyRuntime({
+    session,
+    onRoomState: () => { calls.roomUpdates += 1; },
+    onError: () => { calls.errors += 1; },
+    setIntervalImpl: (callback, delay) => {
+      const id = nextTimer++;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    clearIntervalImpl: id => {
+      cleared.push(id);
+      timers.delete(id);
+    },
+    peerConnectionFactory: config => new FakePeerConnection(config)
+  });
+
+  runtime.start();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.state, 1);
+  assert.equal(calls.signals, 1);
+  assert.equal(calls.heartbeat, 1);
+  assert.equal(calls.roomUpdates, 1);
+  assert.deepEqual([...timers.values()].map(item => item.delay), [2500, 1000, 25000]);
+
+  for (const timer of timers.values()) timer.callback();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.state, 2);
+  assert.equal(calls.signals, 2);
+  assert.equal(calls.heartbeat, 1);
+
+  await runtime.stop({ leave: true });
+  assert.equal(calls.leave, 1);
+  assert.equal(timers.size, 0);
+  assert.equal(cleared.length, 3);
+  assert.equal(calls.errors, 0);
 });
