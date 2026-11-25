@@ -36,7 +36,7 @@ function normalizeIceUrl(value, expectedKind) {
   } catch {
     throw new Error('Invalid ICE server host or port.');
   }
-  if (!parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/') {
+  if (!parsed.hostname || parsed.username || parsed.password || (parsed.pathname && parsed.pathname !== '/')) {
     throw new Error('ICE server URLs cannot include credentials or a path.');
   }
 
