@@ -688,7 +688,7 @@ function CreateRoomWindow() {
           <button className="bc-primary-button" type="button" onClick={() => window.location.reload()}>Try again</button>
         </section>
       )}
-      {stage !== 'created' && stage !== 'error' && error && stage !== 'choose-account' && <div className="bc-global-error" role="alert">{error}</div>}
+      {stage !== 'created' && stage !== 'error' && error && <div className="bc-global-error" role="alert">{error}</div>}
     </main>
   );
 }
