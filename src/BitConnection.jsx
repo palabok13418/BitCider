@@ -968,7 +968,7 @@ export default function BitConnection() {
       </Suspense>
       <header className="bitconnection-header">
         <a className="bitconnection-wordmark" href="/bitconnection/" aria-label="BitConnection home">
-          <img className="bitconnection-logo" src="/connection_favicon.svg?v=bitconnection-brand-20261125" alt="" aria-hidden="true" />
+          <img className="bitconnection-logo" src="/bitconnection/connection_favicon.svg?v=bc-favicon-64-v2" alt="" aria-hidden="true" />
           <span>BitConnection</span>
         </a>
         <a className="bitconnection-back-link" href="/">Back to BitCider</a>
