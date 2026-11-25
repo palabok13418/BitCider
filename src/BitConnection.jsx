@@ -925,18 +925,18 @@ export default function BitConnection() {
                 </filter>
               </defs>
 
-              <g className="bitconnection-flame-travel" transform="translate(-190 420)">
+              <g className="bitconnection-flame-travel" transform="translate(432 416)">
                 <animateTransform
                   ref={flameRunAnimationRef}
                   attributeName="transform"
                   type="translate"
-                  values="-190 420;220 420;950 420;-190 420;720 420;370 420"
-                  keyTimes="0;.18;.37;.52;.73;1"
+                  values="-220 416;1030 416;-220 416;432 416"
+                  keyTimes="0;.34;.68;1"
                   dur="5.2s"
                   begin="indefinite"
                   fill="freeze"
                   calcMode="spline"
-                  keySplines=".32 0 .66 1;.32 0 .66 1;.32 0 .66 1;.32 0 .66 1;.32 0 .66 1"
+                  keySplines=".35 0 .65 1;.35 0 .65 1;.32 0 .68 1"
                 />
                 <g transform="scale(.55)">
                   <g className="bitconnection-flame-warp">
