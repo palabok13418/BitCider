@@ -1198,7 +1198,8 @@ export default function App() {
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [accountOverlayOpen, setAccountOverlayOpen] = useState(false);
   const [pageMode, setPageMode] = useState(() => (
-    typeof window !== 'undefined' && window.location.pathname.replace(/\\/+$/, '') === '/bitmono'
+    typeof window !== 'undefined'
+      && (window.location.pathname === '/bitmono/' || window.location.pathname === '/bitmono')
       ? 'mono'
       : 'cider'
   ));

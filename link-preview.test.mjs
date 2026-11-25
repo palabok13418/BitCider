@@ -37,7 +37,7 @@ test('BitCider and BitMono each expose their own share preview and open the matc
   assert.ok(monoHtml.includes('href="/monofavicon.svg"'));
 
   assert.ok(viteConfig.includes("resolve(projectRoot, 'bitmono/index.html')"));
-  assert.match(appSource, /window\.location\.pathname\.replace\(\/\\\/\+\$\//);
+  assert.ok(appSource.includes("window.location.pathname === '/bitmono/'"));
   assert.ok(appSource.includes("const nextPath = nextMode === 'mono' ? '/bitmono/' : '/'"));
   assert.ok(appSource.includes('window.history.replaceState('));
   assert.ok(packageJson.includes('link-preview.test.mjs'));
