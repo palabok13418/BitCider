@@ -700,6 +700,10 @@ function CreateRoomWindow() {
 export default function BitConnection() {
   const [apiState, setApiState] = useState('checking');
   const [entryStage, setEntryStage] = useState(initialEntryStage);
+  const burnMaskAnimationRef = useRef(null);
+  const burnGlowAnimationRef = useRef(null);
+  const burnCoreAnimationRef = useRef(null);
+  const burnHotAnimationRef = useRef(null);
   const isCreateWindow = new URLSearchParams(window.location.search).get('create') === '1';
 
   useEffect(() => {
@@ -733,13 +737,24 @@ export default function BitConnection() {
       if (cancelled) return;
       timers.push(window.setTimeout(() => setEntryStage('holding'), 5200));
       timers.push(window.setTimeout(() => setEntryStage('burning'), 7200));
-      timers.push(window.setTimeout(() => setEntryStage('idle'), 8550));
+      timers.push(window.setTimeout(() => setEntryStage('idle'), 8850));
     };
     waitForPage();
     return () => {
       cancelled = true;
       timers.forEach(timer => window.clearTimeout(timer));
     };
+  }, [entryStage]);
+
+  useEffect(() => {
+    if (entryStage !== 'burning') return;
+    [burnMaskAnimationRef, burnGlowAnimationRef, burnCoreAnimationRef, burnHotAnimationRef].forEach(animationRef => {
+      try {
+        animationRef.current?.beginElement?.();
+      } catch {
+        // The cover still clears when reduced-motion or an older SVG engine skips SMIL.
+      }
+    });
   }, [entryStage]);
 
   if (isCreateWindow) return <CreateRoomWindow />;
@@ -801,10 +816,125 @@ export default function BitConnection() {
       </footer>
       {entryStage !== 'idle' && (
         <div className={`bitconnection-entry-cover is-${entryStage}`} aria-hidden="true">
+          <svg className="bitconnection-burn-field" viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false">
+            <defs>
+              <linearGradient id="bitconnection-fire-edge" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="#fff6b0" />
+                <stop offset=".2" stopColor="#ffd35a" />
+                <stop offset=".48" stopColor="#ff6a20" />
+                <stop offset=".76" stopColor="#e92712" />
+                <stop offset="1" stopColor="#7d120d" />
+              </linearGradient>
+              <filter id="bitconnection-burn-distortion" filterUnits="userSpaceOnUse" x="-80" y="-80" width="1160" height="1160">
+                <feTurbulence type="fractalNoise" baseFrequency=".024 .07" numOctaves="2" seed="13" result="burnNoise">
+                  <animate attributeName="baseFrequency" values=".024 .07;.048 .13;.024 .07" dur=".46s" repeatCount="indefinite" />
+                </feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="burnNoise" scale="28" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+              <filter id="bitconnection-fire-glow" x="-70%" y="-70%" width="240%" height="240%">
+                <feGaussianBlur stdDeviation="22" result="soft" />
+                <feMerge>
+                  <feMergeNode in="soft" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <mask id="bitconnection-burn-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000">
+                <rect x="0" y="0" width="1000" height="1000" fill="white" />
+                <circle cx="500" cy="500" r="0" fill="black" filter="url(#bitconnection-burn-distortion)">
+                  <animate
+                    ref={burnMaskAnimationRef}
+                    attributeName="r"
+                    values="0;180;480;760;1040"
+                    keyTimes="0;.22;.52;.8;1"
+                    dur="1.65s"
+                    begin="indefinite"
+                    fill="freeze"
+                    calcMode="spline"
+                    keySplines=".18 .72 .22 1;.18 .72 .22 1;.18 .72 .22 1;.18 .72 .22 1"
+                  />
+                </circle>
+              </mask>
+            </defs>
+
+            <rect className="bitconnection-burn-blackness" width="1000" height="1000" fill="#020102" mask="url(#bitconnection-burn-mask)" />
+
+            <g className="bitconnection-burn-front">
+              <circle className="bitconnection-burn-halo" cx="500" cy="500" r="0" fill="none" stroke="#ed2c10" strokeWidth="108" filter="url(#bitconnection-fire-glow)">
+                <animate ref={burnGlowAnimationRef} attributeName="r" from="0" to="920" dur="1.65s" begin="indefinite" fill="freeze" />
+              </circle>
+              <circle className="bitconnection-burn-orange" cx="500" cy="500" r="0" fill="none" stroke="#ff4a16" strokeWidth="55" filter="url(#bitconnection-burn-distortion)">
+                <animate ref={burnCoreAnimationRef} attributeName="r" from="0" to="920" dur="1.65s" begin="indefinite" fill="freeze" />
+              </circle>
+              <circle className="bitconnection-burn-hot" cx="500" cy="500" r="0" fill="none" stroke="url(#bitconnection-fire-edge)" strokeWidth="18" filter="url(#bitconnection-burn-distortion)">
+                <animate ref={burnHotAnimationRef} attributeName="r" from="0" to="920" dur="1.65s" begin="indefinite" fill="freeze" />
+              </circle>
+
+              <g className="bitconnection-burn-tongues">
+                <path d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(45 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(90 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(135 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(180 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(225 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(270 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+                <path transform="rotate(315 500 500)" d="M500 238 C456 194 480 145 520 92 C558 148 548 197 500 238Z" />
+              </g>
+            </g>
+          </svg>
+
           <div className="bitconnection-flame-wrap">
-            <svg className="bitconnection-entry-flame" viewBox="0 0 64 80" focusable="false">
-              <path className="bitconnection-flame-outer" d="M34 2C38 17 57 22 55 44c-1 19-12 32-25 32S5 63 7 45C8 31 18 23 22 12c1 12 6 16 8 18C36 21 35 12 34 2Z" />
-              <path className="bitconnection-flame-inner" d="M34 35c2 9 12 13 10 25-1 8-6 13-14 13-8 0-13-7-12-15 1-6 5-10 8-15 1 6 4 8 5 9 3-5 3-10 3-17Z" />
+            <svg className="bitconnection-entry-flame" viewBox="0 0 260 320" focusable="false">
+              <defs>
+                <linearGradient id="bitconnection-flame-shell" x1=".5" y1="1" x2=".5" y2="0">
+                  <stop offset="0" stopColor="#a9150d" />
+                  <stop offset=".28" stopColor="#f03a12" />
+                  <stop offset=".62" stopColor="#ff8425" />
+                  <stop offset="1" stopColor="#ffd85b" />
+                </linearGradient>
+                <linearGradient id="bitconnection-flame-lobe" x1="0" y1="1" x2="1" y2="0">
+                  <stop offset="0" stopColor="#ff3214" />
+                  <stop offset=".52" stopColor="#ff8a27" />
+                  <stop offset="1" stopColor="#ffe88b" />
+                </linearGradient>
+                <radialGradient id="bitconnection-flame-core" cx=".5" cy=".68" r=".58">
+                  <stop offset="0" stopColor="#fffde2" />
+                  <stop offset=".34" stopColor="#fff2a0" />
+                  <stop offset=".72" stopColor="#ffbd43" />
+                  <stop offset="1" stopColor="#ff5a19" stopOpacity=".1" />
+                </radialGradient>
+                <filter id="bitconnection-flame-warp" x="-30%" y="-25%" width="160%" height="160%">
+                  <feTurbulence type="fractalNoise" baseFrequency=".018 .035" numOctaves="2" seed="7" result="flameNoise">
+                    <animate attributeName="baseFrequency" values=".018 .035;.032 .075;.018 .035" dur=".38s" repeatCount="indefinite" />
+                  </feTurbulence>
+                  <feDisplacementMap in="SourceGraphic" in2="flameNoise" scale="12" xChannelSelector="R" yChannelSelector="G" />
+                </filter>
+                <filter id="bitconnection-flame-soft-glow" x="-50%" y="-45%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="11" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              <g className="bitconnection-flame-warp" filter="url(#bitconnection-flame-warp)">
+                <path className="bitconnection-flame-outer" d="M130 12 C151 53 194 69 190 119 C225 159 217 222 181 263 C154 294 105 300 72 274 C29 241 23 183 51 143 C65 119 87 104 91 69 C109 88 118 111 121 130 C145 95 137 49 130 12Z" />
+                <path className="bitconnection-flame-tongue tongue-a" d="M89 261 C55 229 57 192 77 161 C83 184 98 194 103 214 C115 188 107 160 113 138 C140 176 141 222 121 260Z" />
+                <path className="bitconnection-flame-tongue tongue-b" d="M155 267 C185 231 187 201 171 170 C166 193 151 201 146 221 C139 195 146 169 141 148 C118 186 119 233 139 264Z" />
+                <path className="bitconnection-flame-tongue tongue-c" d="M126 247 C103 220 111 183 130 153 C149 181 157 215 143 247Z" />
+                <path className="bitconnection-flame-inner" d="M130 278 C93 277 78 244 91 211 C101 186 117 171 123 143 C151 177 175 203 166 240 C161 262 148 276 130 278Z" />
+                <path className="bitconnection-flame-core" d="M130 269 C111 261 107 241 116 222 C123 208 129 201 130 184 C151 207 158 226 150 246 C146 259 139 267 130 269Z" />
+              </g>
+
+              <g className="bitconnection-flame-embers">
+                <circle cx="62" cy="151" r="4" />
+                <circle cx="205" cy="171" r="3" />
+                <circle cx="95" cy="95" r="3" />
+                <circle cx="165" cy="83" r="4" />
+                <circle cx="128" cy="56" r="3" />
+                <circle cx="78" cy="211" r="2.5" />
+                <circle cx="187" cy="222" r="2.5" />
+              </g>
             </svg>
           </div>
         </div>
