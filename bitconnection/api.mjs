@@ -1217,7 +1217,7 @@ export function createBitConnectionRouter({
     });
   });
 
-  router.post('/rooms/:roomId/heartbeat', bitConnectionCsrf, async (req, res) => {
+  router.post('/rooms/:roomId/heartbeat', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
       if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
@@ -1233,7 +1233,7 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, participant: result.participant });
   });
 
-  router.post('/rooms/:roomId/playback', bitConnectionCsrf, async (req, res) => {
+  router.post('/rooms/:roomId/playback', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
       if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
@@ -1286,7 +1286,7 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, playbackState: result.playbackState });
   });
 
-  router.post('/rooms/:roomId/volume', bitConnectionCsrf, async (req, res) => {
+  router.post('/rooms/:roomId/volume', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
       if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
@@ -1306,7 +1306,7 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, volume: result.volume });
   });
 
-  router.post('/rooms/:roomId/signals', bitConnectionCsrf, rateSignal, async (req, res) => {
+  router.post('/rooms/:roomId/signals', identityCsrf, rateSignal, async (req, res) => {
     const messageType = String(req.body?.type || '');
     const toParticipantId = String(req.body?.toParticipantId || '');
     const payload = req.body?.payload;
@@ -1356,7 +1356,7 @@ export function createBitConnectionRouter({
     return res.json({ messages, nextSequence: messages.reduce((max, item) => Math.max(max, item.sequence), after) });
   });
 
-  router.post('/rooms/:roomId/leave', bitConnectionCsrf, async (req, res) => {
+  router.post('/rooms/:roomId/leave', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
       if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
