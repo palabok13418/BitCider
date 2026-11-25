@@ -256,7 +256,7 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   const guest = await joined.json();
   assert.equal(joined.status, 201);
   assert.equal(guest.verification, 'proximity');
-  assert.match(guest.username, /^[A-Za-z]+[A-Za-z]+\\d{3}$/);
+  assert.match(guest.username, /^[A-Za-z]+[A-Za-z]+\d{3}$/);
   assert.ok(guest.participantCredential);
 
   const guestHeaders = {
@@ -363,7 +363,7 @@ test('private-room distance fallback requires a host-relayed code that expires f
   assert.equal(hostRequests.status, 200);
   assert.equal(hostRequestPayload.requests.length, 1);
   const delivered = hostRequestPayload.requests[0];
-  assert.match(delivered.oneTimeCode, /^\\d{6}$/);
+  assert.match(delivered.oneTimeCode, /^\d{6}$/);
   const expiresIn = Date.parse(delivered.expiresAt) - Date.now();
   assert.ok(expiresIn > 4 * 60 * 1000 && expiresIn <= 5 * 60 * 1000);
 
