@@ -604,7 +604,7 @@ function AccountManagementWindow() {
     setAccount(payload);
     setIdentityMode(selectedMode);
     setProfile(payload.profile || null);
-    if (payload.authenticated && mode === 'bitconnection') {
+    if (payload.authenticated && selectedMode === 'bitconnection') {
       const passkeyResponse = await fetch('/api/bitconnection/passkeys', {
         cache: 'no-store', credentials: 'same-origin'
       });
@@ -628,7 +628,8 @@ function AccountManagementWindow() {
 
   useEffect(() => {
     let active = true;
-    loadAccount().catch(loadError => {
+    const requestedIdentity = new URLSearchParams(window.location.search).get('identity');
+    loadAccount(requestedIdentity === 'bitconnection' ? 'bitconnection' : 'auto').catch(loadError => {
       if (!active) return;
       setError(loadError.message || 'Could not connect to your account.');
       setStage('error');
@@ -806,12 +807,6 @@ function AccountManagementWindow() {
       {stage === 'manage' && profile && (
         <section className="bc-window-state bc-account-manage">
           <UnifiedAccountCenterIdentity profile={profile} createdAt={profile.createdAt} />
-          <div className="bc-account-heading">
-            <span className="bc-account-avatar">
-              {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" /> : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>}
-            </span>
-            <div><h1>{profile.username}</h1><p>{identityMode === 'bitcider' ? 'Using your signed-in BitCider account' : 'BitConnection account'}</p></div>
-          </div>
           <div className="bc-account-actions">
             <button className="bc-secondary-button" type="button" onClick={() => setStage('profile')}>Edit profile</button>
             <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
