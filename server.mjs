@@ -3397,6 +3397,12 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, personalAddonStreamRateLimi
 
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST, { index: false, maxAge: '1h' }));
+  app.get(['/bitmono', '/bitmono/'], (req, res) => {
+    if (req.path === '/bitmono') return res.redirect(308, '/bitmono/');
+    const entry = path.join(DIST, 'index.html');
+    if (fs.existsSync(entry)) return res.sendFile(entry);
+    return res.status(503).type('text').send('BitMono UI has not been built yet. Run npm run build.');
+  });
   app.get(['/bitconnection', '/bitconnection/'], (req, res) => {
     if (req.path === '/bitconnection') return res.redirect(308, '/bitconnection/');
     const entry = path.join(DIST, 'bitconnection', 'index.html');
