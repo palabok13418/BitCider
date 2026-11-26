@@ -236,6 +236,24 @@ test('public directory shows only active public rooms and supports search, with 
   assert.equal(overLimit.status, 400);
   assert.equal((await overLimit.json()).error, 'INVALID_PARTY_SIZE');
 
+  const guestCsrf = await csrfContext(client);
+  const publicJoin = await client.request('/rooms/' + publicPayload.room.roomId + '/join', {
+    method: 'POST',
+    headers: guestCsrf.headers
+  });
+  const publicGuest = await publicJoin.json();
+  assert.equal(publicJoin.status, 201);
+  assert.equal(publicGuest.verification, 'not-required');
+  assert.ok(publicGuest.participantCredential);
+  assert.ok(publicGuest.participantId);
+  assert.equal(publicGuest.requestId, undefined);
+
+  const hostJoinRequests = await client.request('/rooms/' + publicPayload.room.roomId + '/verification-requests', {
+    headers: { ...csrf.headers, Authorization: 'Bearer ' + publicPayload.hostCredential }
+  });
+  assert.equal(hostJoinRequests.status, 200);
+  assert.deepEqual((await hostJoinRequests.json()).requests, []);
+
   const privateResponse = await client.request('/rooms', {
     method: 'POST',
     headers: csrf.headers,
@@ -254,7 +272,7 @@ test('public directory shows only active public rooms and supports search, with 
   assert.equal(directoryPayload.total, 1);
   assert.equal(directoryPayload.featured.length, 1);
   assert.equal(directoryPayload.rooms[0].roomId, publicPayload.room.roomId);
-  assert.equal(directoryPayload.rooms[0].participantCount, 1);
+  assert.equal(directoryPayload.rooms[0].participantCount, 2);
   assert.equal(directoryPayload.rooms[0].visibility, 'public');
   assert.equal(directoryPayload.rooms[0].partySize, 30);
   assert.equal(directoryPayload.rooms.some(room => room.roomName === 'Private Listening'), false);
