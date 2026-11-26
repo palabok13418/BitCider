@@ -130,10 +130,14 @@ export function createAdminRouter({
   const rateBootstrap = createRateLimit(5);
   const rateAuthentication = createRateLimit(8);
 
+  function bootstrapCodeConfigured() {
+    return Buffer.byteLength(String(process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE || ''), 'utf8') >= 32;
+  }
+
   function bootstrapCodeMatches(suppliedValue) {
     const expected = String(process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE || '');
     const supplied = typeof suppliedValue === 'string' ? suppliedValue : '';
-    if (expected.length < 32 || supplied.length < 1) return false;
+    if (!bootstrapCodeConfigured() || supplied.length < 1) return false;
     return secureEqual(expected, supplied);
   }
 
@@ -222,8 +226,8 @@ export function createAdminRouter({
     return res.json({
       initialized: Boolean(current.credential?.id && current.credential?.publicKey),
       authenticated: Boolean(active),
-      bootstrapAvailable: !current.credential && !current.bootstrapConsumed
-        && String(process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE || '').length >= 32,
+      bootstrapConfigured: bootstrapCodeConfigured(),
+      bootstrapAvailable: !current.credential && !current.bootstrapConsumed && bootstrapCodeConfigured(),
       csrfToken: active?.session.csrfToken || null,
       sessionExpiresAt: active ? new Date(active.session.expiresAt).toISOString() : null,
       passkeyLimit: 1,
@@ -236,8 +240,17 @@ export function createAdminRouter({
     if (current.credential || current.bootstrapConsumed) {
       return res.status(409).json({ error: 'ADMIN_ALREADY_INITIALIZED', message: 'Admin mode has already been initialized. Use its passkey to sign in.' });
     }
+    if (!bootstrapCodeConfigured()) {
+      return res.status(503).json({
+        error: 'ADMIN_BOOTSTRAP_NOT_CONFIGURED',
+        message: 'BITCIDER_ADMIN_BOOTSTRAP_CODE is missing or shorter than 32 bytes on the Deplexo backend. Configure it there and redeploy.'
+      });
+    }
     if (!bootstrapCodeMatches(req.body?.code)) {
-      return res.status(401).json({ error: 'INVALID_BOOTSTRAP_CODE', message: 'The bootstrap code is not valid or is not configured.' });
+      return res.status(401).json({
+        error: 'INVALID_BOOTSTRAP_CODE',
+        message: 'The bootstrap code does not match the value configured on the Deplexo backend. Paste the exact generated value and try again.'
+      });
     }
     let context;
     try { context = webAuthnContext(req); }
