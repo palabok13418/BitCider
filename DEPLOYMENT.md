@@ -66,6 +66,8 @@ Add these runtime environment variables in Netlify:
 
 The Netlify Function forwards only `/api/*` and BitChord addon routes to Deplexo. The static website is served from `dist`.
 
+The `/api/bitconnection/*` namespace has its own session-cookie, CSRF, and room-credential checks, so it remains available even if the optional gateway secret is missing. The shared secret is still required for the root BitCider API and addon routes. Configure it for full functionality and defense in depth.
+
 ## 3. Deploy the website on Cloudflare Workers
 
 Create a Worker connected to this repository. Use the checked-in `wrangler.jsonc`:
@@ -81,6 +83,8 @@ npx wrangler secret put BITCIDER_PROXY_SECRET
 ```
 
 Paste the exact shared secret configured on Deplexo when prompted. The secret must be available to the deployed Worker at runtime.
+
+The `/api/bitconnection/*` namespace has its own session-cookie, CSRF, and room-credential checks, so it remains available even if the optional gateway secret is missing. The shared secret is still required for the root BitCider API and addon routes. Configure it for full functionality and defense in depth.
 
 Build the frontend with `npm run build` before deploying the Worker. Cloudflare serves ordinary frontend assets directly and invokes the Worker for API/addon paths.
 
