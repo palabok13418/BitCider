@@ -30,9 +30,14 @@ export default {
 
     const backendOrigin = String(env.BITCIDER_BACKEND_ORIGIN || '').replace(/\/+$/, '');
     const proxySecret = String(env.BITCIDER_PROXY_SECRET || '');
-    if (!backendOrigin || !proxySecret) {
+    // BitConnection is a separately authenticated API: account routes use
+    // session cookies, CSRF tokens, and room credentials. Keep this namespace
+    // available when the optional Worker gateway secret is not provisioned.
+    // Other API and addon traffic remains fail-closed without that secret.
+    const isBitConnectionApi = incoming.pathname.startsWith('/api/bitconnection/');
+    if (!backendOrigin || (!proxySecret && !isBitConnectionApi)) {
       return protect(Response.json(
-        { error: 'BACKEND_NOT_CONFIGURED', message: 'Set BITCIDER_BACKEND_ORIGIN and BITCIDER_PROXY_SECRET as Worker variables.' },
+        { error: 'BACKEND_NOT_CONFIGURED', message: 'Set BITCIDER_BACKEND_ORIGIN and, for non-BitConnection routes, BITCIDER_PROXY_SECRET as Worker variables.' },
         { status: 503 }
       ));
     }
@@ -50,8 +55,14 @@ export default {
     // Request an uncompressed upstream representation to avoid stale
     // compression metadata after the runtime decodes the body.
     headers.set('accept-encoding', 'identity');
-    headers.set('x-bitcider-proxy-secret', proxySecret);
-    headers.set('x-bitcider-public-origin', incoming.origin);
+    if (proxySecret) {
+      headers.set('x-bitcider-proxy-secret', proxySecret);
+      headers.set('x-bitcider-public-origin', incoming.origin);
+    } else {
+      // Do not relay a visitor-supplied value as a trusted gateway secret.
+      headers.delete('x-bitcider-proxy-secret');
+      headers.delete('x-bitcider-public-origin');
+    }
 
     try {
       const init = {
