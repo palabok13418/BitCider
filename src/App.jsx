@@ -4,6 +4,7 @@ import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
 import BitConnectionEntrance from './BitConnectionEntrance.jsx';
 import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
+import AdminConsole from './AdminConsole.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-24-account-center-v13';
@@ -1217,6 +1218,8 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
 
 export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
+  const [adminConsoleOpen, setAdminConsoleOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1');
+  const [adminBootstrapCode, setAdminBootstrapCode] = useState('');
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
   const [accountOverlayOpen, setAccountOverlayOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account-center') === '1');
   const [bitConnectionAccountAuthenticated, setBitConnectionAccountAuthenticated] = useState(false);
@@ -1334,6 +1337,36 @@ export default function App() {
       });
     }
   }
+
+  useEffect(() => {
+    function openAdminConsole(event) {
+      setAdminBootstrapCode(typeof event?.detail?.code === 'string' ? event.detail.code : '');
+      setAdminConsoleOpen(true);
+    }
+    const helper = Object.freeze({
+      open() {
+        window.dispatchEvent(new CustomEvent('bitcider-admin-open'));
+        return 'Opening the protected BitCider admin console.';
+      },
+      bootstrap(code) {
+        if (typeof code !== 'string' || code.length < 1) {
+          return 'Provide the one-time BITCIDER_ADMIN_BOOTSTRAP_CODE value.';
+        }
+        window.dispatchEvent(new CustomEvent('bitcider-admin-open', { detail: { code } }));
+        return 'Bootstrap request opened. The code is kept in page memory and is only used for first-owner passkey enrollment.';
+      }
+    });
+    const previousHelper = window.bitciderAdmin;
+    window.bitciderAdmin = helper;
+    window.addEventListener('bitcider-admin-open', openAdminConsole);
+    return () => {
+      window.removeEventListener('bitcider-admin-open', openAdminConsole);
+      if (window.bitciderAdmin === helper) {
+        if (previousHelper === undefined) delete window.bitciderAdmin;
+        else window.bitciderAdmin = previousHelper;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (isAccountPopup) return undefined;
@@ -2587,6 +2620,15 @@ export default function App() {
         <span>{pageMode === 'mono' ? 'MADE FOR BITCHORD · POWERED BY MONOCHROME' : 'MADE FOR BITCHORD · POWERED BY CIDER'}</span>
         <a href="https://bitchord.kushagrasingh.in/docs" target="_blank" rel="noreferrer">ADDON PROTOCOL <Icon name="external" size={12} /></a>
       </footer>
+      {adminConsoleOpen && (
+        <AdminConsole
+          bootstrapCode={adminBootstrapCode}
+          onClose={() => {
+            setAdminConsoleOpen(false);
+            setAdminBootstrapCode('');
+          }}
+        />
+      )}
     </main>
   );
 }
