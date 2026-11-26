@@ -329,9 +329,9 @@
 }
 .admin-map-connectors circle { fill: #a0eee4; filter: url(#admin-link-glow); }
 .admin-map-node-wrap { position: absolute; z-index: 4; transform: translateZ(75px); }
-.admin-map-core { left: 260px; top: 180px; width: 440px; }
-.admin-map-mono { left: 805px; top: 235px; width: 340px; transform: translateZ(8px) rotateY(-5deg); }
-.admin-map-connection { left: 260px; top: 620px; width: 440px; transform: translateZ(28px) rotateX(-3deg); }
+.admin-map-core { left: 380px; top: 180px; width: 440px; }
+.admin-map-mono { left: 860px; top: 235px; width: 340px; transform: translateZ(8px) rotateY(-5deg); }
+.admin-map-connection { left: 380px; top: 620px; width: 440px; transform: translateZ(28px) rotateX(-3deg); }
 .admin-map-node {
   overflow: hidden;
   border: 1px solid rgba(151, 221, 218, .24);
