@@ -9,6 +9,33 @@ function accountRef(product, accountId) {
   return prefix + hashSessionId('BitCider admin account reference v1:' + product + ':' + accountId).slice(0, 12).toUpperCase();
 }
 
+
+function revokeRoomIdentity(data, identityId, { deleteOwnedRooms = false } = {}) {
+  const now = new Date().toISOString();
+  for (const [roomId, room] of Object.entries(data.rooms || {})) {
+    if (!room || typeof room !== 'object') continue;
+    const ownsRoom = room.hostIdentityId === identityId;
+    if (ownsRoom && deleteOwnedRooms) {
+      delete data.rooms[roomId];
+      continue;
+    }
+    let changed = false;
+    if (ownsRoom) {
+      room.status = 'closed';
+      changed = true;
+    }
+    for (const participant of Object.values(room.participants || {})) {
+      if (ownsRoom || participant?.identityId === identityId) {
+        participant.status = 'left';
+        delete participant.credentialHash;
+        participant.lastSeenAt = now;
+        changed = true;
+      }
+    }
+    if (changed) room.updatedAt = now;
+  }
+}
+
 function recentlyActive(sessions, accountId, now) {
   return Object.values(sessions || {}).some(session => (
     session?.accountId === accountId
@@ -88,6 +115,11 @@ export function createAdminController({
             invalidateBrowserBridge(registration.ownerKey, 'This BitCider account was suspended by the site administrator.');
           }
         }
+        const bitConnectionStore = getBitConnectionStore?.();
+        await bitConnectionStore?.update?.(data => {
+          revokeRoomIdentity(data, 'cider:' + targetAccountId);
+          return { ok: true };
+        });
       }
       return result;
     }
@@ -103,6 +135,7 @@ export function createAdminController({
         for (const [key, session] of Object.entries(data.authSessions || {})) {
           if (session?.accountId === accountId) delete data.authSessions[key];
         }
+        revokeRoomIdentity(data, 'bitconnection:' + accountId);
       } else {
         delete account.suspendedAt;
       }
@@ -143,9 +176,7 @@ export function createAdminController({
       const bitConnectionStore = getBitConnectionStore?.();
       await bitConnectionStore?.update?.(data => {
         delete data.profiles['cider:' + deletedAccountId];
-        for (const [roomId, room] of Object.entries(data.rooms || {})) {
-          if (room?.hostIdentityId === 'cider:' + deletedAccountId) delete data.rooms[roomId];
-        }
+        revokeRoomIdentity(data, 'cider:' + deletedAccountId, { deleteOwnedRooms: true });
         return { ok: true };
       });
       return { ok: true };
@@ -165,9 +196,7 @@ export function createAdminController({
       for (const [key, challenge] of Object.entries(data.webauthnChallenges || {})) {
         if (challenge?.accountId === accountId) delete data.webauthnChallenges[key];
       }
-      for (const [roomId, room] of Object.entries(data.rooms || {})) {
-        if (room?.hostIdentityId === 'bitconnection:' + accountId) delete data.rooms[roomId];
-      }
+      revokeRoomIdentity(data, 'bitconnection:' + accountId, { deleteOwnedRooms: true });
       return { ok: true };
     });
   }
