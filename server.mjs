@@ -1319,8 +1319,13 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
         : pendingAccountAuthFor(store, sessionId);
       const currentAccountId = currentMatch?.accountId || null;
       const account = currentAccountId ? store.accounts[currentAccountId] : null;
-      if (currentAccountId !== accountId || !account || account.password?.hash !== accountSnapshot.password.hash) {
-        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The Account Key or password is incorrect.', write: false };
+      if (currentAccountId !== accountId || !account || account.suspendedAt || account.password?.hash !== accountSnapshot.password.hash) {
+        return {
+          status: account?.suspendedAt ? 403 : 401,
+          error: account?.suspendedAt ? 'ACCOUNT_SUSPENDED' : 'INVALID_CREDENTIALS',
+          message: account?.suspendedAt ? 'This BitCider account is suspended.' : 'The Account Key or password is incorrect.',
+          write: false
+        };
       }
       const pendingConnection = accountConnection(store.sessions[sessionId]);
       const savedConnection = accountConnection(account);
