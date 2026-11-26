@@ -22,14 +22,17 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_PROXY_SECRET` | A long random secret, shared only with the Netlify and Cloudflare gateways |
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
+| `BITCIDER_ADMIN_BOOTSTRAP_CODE` | One-time, high-entropy owner setup code; remove after the first passkey is enrolled |
 
 ### Admin mode owner bootstrap
 
 Admin mode is disabled until an owner passkey is enrolled. Configure `BITCIDER_ADMIN_BOOTSTRAP_CODE` in Deplexo's environment with a high-entropy random secret of at least 32 characters. Generate one in a trusted terminal, for example:
 
 ```sh
-openssl rand -base64 36
+node -e "console.log(require('node:crypto').randomBytes(36).toString('base64url'))"
 ```
+
+You can also use `openssl rand -base64 36` if OpenSSL is available.
 
 Do not put the generated value in source control, a URL, a frontend build variable, or a chat message. It is a backend-only Deplexo secret.
 
