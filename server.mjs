@@ -3399,8 +3399,10 @@ if (fs.existsSync(DIST)) {
   app.use(express.static(DIST, { index: false, maxAge: '1h' }));
   app.get(['/bitmono', '/bitmono/'], (req, res) => {
     if (req.path === '/bitmono') return res.redirect(308, '/bitmono/');
-    const entry = path.join(DIST, 'index.html');
-    if (fs.existsSync(entry)) return res.sendFile(entry);
+    const bitMonoEntry = path.join(DIST, 'bitmono', 'index.html');
+    const fallbackEntry = path.join(DIST, 'index.html');
+    if (fs.existsSync(bitMonoEntry)) return res.sendFile(bitMonoEntry);
+    if (fs.existsSync(fallbackEntry)) return res.sendFile(fallbackEntry);
     return res.status(503).type('text').send('BitMono UI has not been built yet. Run npm run build.');
   });
   app.get(['/bitconnection', '/bitconnection/'], (req, res) => {
