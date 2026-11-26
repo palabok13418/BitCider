@@ -1056,7 +1056,7 @@ async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high'
 function validAddonKey(req, res, next) {
   const store = readStore();
   const accountMatch = Object.entries(store.accounts || {}).find(([, entry]) =>
-    entry?.addonKey === req.params.addonKey && entry?.ciderToken
+    entry?.addonKey === req.params.addonKey && entry?.ciderToken && !entry?.suspendedAt
   );
   const sessionMatch = accountMatch ? null : Object.entries(store.sessions || {}).find(([, entry]) =>
     entry?.addonKey === req.params.addonKey && entry?.ciderToken
