@@ -582,6 +582,7 @@ function AccountManagementWindow() {
   const [identityMode, setIdentityMode] = useState('bitconnection');
   const [profile, setProfile] = useState(null);
   const [passkeys, setPasskeys] = useState([]);
+  const [passkeysUnavailable, setPasskeysUnavailable] = useState(false);
   const [stage, setStage] = useState('loading');
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [recoveryPassword, setRecoveryPassword] = useState('');
@@ -595,19 +596,31 @@ function AccountManagementWindow() {
     const payload = await readResponse(await fetch('/api/bitconnection/account', {
       headers, cache: 'no-store', credentials: 'same-origin'
     }), 'Could not load your account.');
-    if (mode === 'bitconnection' && !payload.authenticated && payload.bitCiderAccountAvailable) {
+    // A signed-in BitCider identity takes precedence over a stale independent
+    // BitConnection session. This preserves the user's existing BitCider login.
+    if (mode === 'bitconnection' && payload.bitCiderAccountAvailable) {
       return loadAccount('bitcider');
     }
     setAccount(payload);
     setIdentityMode(mode);
     setProfile(payload.profile || null);
     if (payload.authenticated && mode === 'bitconnection') {
-      const passkeyPayload = await readResponse(await fetch('/api/bitconnection/passkeys', {
+      const passkeyResponse = await fetch('/api/bitconnection/passkeys', {
         cache: 'no-store', credentials: 'same-origin'
-      }), 'Could not load your passkeys.');
-      setPasskeys(passkeyPayload.passkeys || []);
+      });
+      if (passkeyResponse.status === 404) {
+        // Older Deplexo deployments may not yet expose passkey listing. Keep
+        // Account Center usable instead of failing the entire account load.
+        setPasskeys([]);
+        setPasskeysUnavailable(true);
+      } else {
+        const passkeyPayload = await readResponse(passkeyResponse, 'Could not load your passkeys.');
+        setPasskeys(passkeyPayload.passkeys || []);
+        setPasskeysUnavailable(false);
+      }
     } else {
       setPasskeys([]);
+      setPasskeysUnavailable(false);
     }
     setStage(!payload.authenticated ? 'auth' : payload.profile?.username ? 'manage' : 'profile');
     return payload;
@@ -804,21 +817,28 @@ function AccountManagementWindow() {
             <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
           </div>
           {identityMode === 'bitconnection' ? (
-            <div className="bc-account-security">
-              <div className="bc-account-section-heading"><strong>Passkeys</strong><small>{passkeys.length} / 5 registered</small></div>
-              <p>Use a device passkey to sign in without typing your password.</p>
-              <label className="bc-field-card">
-                <span className="bc-field-label">ACCOUNT PASSWORD <small>REQUIRED FOR PASSKEY CHANGES</small></span>
-                <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} autoComplete="current-password" placeholder="Confirm your password" />
-              </label>
-              <button className="bc-primary-button bc-account-add-passkey" type="button" onClick={addPasskey} disabled={busy || passkeys.length >= 5 || !passkeyPassword}>Add a passkey</button>
-              {passkeys.length > 0 ? passkeys.map((passkey, index) => (
-                <div className="bc-account-passkey" key={passkey.id}>
-                  <span><strong>{passkey.name || 'Passkey ' + (index + 1)}</strong><small>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device passkey'}</small></span>
-                  <button className="bc-secondary-button" type="button" onClick={() => removePasskey(passkey.id)} disabled={busy || !passkeyPassword}>Remove</button>
-                </div>
-              )) : <div className="bc-account-empty">No passkeys added yet.</div>}
-            </div>
+            passkeysUnavailable ? (
+              <div className="bc-account-security">
+                <div className="bc-account-section-heading"><strong>Passkeys</strong><small>Temporarily unavailable</small></div>
+                <p>This Deplexo backend has not exposed passkey listing yet. Your account and profile are available; passkey management will appear when the backend is updated.</p>
+              </div>
+            ) : (
+              <div className="bc-account-security">
+                <div className="bc-account-section-heading"><strong>Passkeys</strong><small>{passkeys.length} / 5 registered</small></div>
+                <p>Use a device passkey to sign in without typing your password.</p>
+                <label className="bc-field-card">
+                  <span className="bc-field-label">ACCOUNT PASSWORD <small>REQUIRED FOR PASSKEY CHANGES</small></span>
+                  <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} autoComplete="current-password" placeholder="Confirm your password" />
+                </label>
+                <button className="bc-primary-button bc-account-add-passkey" type="button" onClick={addPasskey} disabled={busy || passkeys.length >= 5 || !passkeyPassword}>Add a passkey</button>
+                {passkeys.length > 0 ? passkeys.map((passkey, index) => (
+                  <div className="bc-account-passkey" key={passkey.id}>
+                    <span><strong>{passkey.name || 'Passkey ' + (index + 1)}</strong><small>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device passkey'}</small></span>
+                    <button className="bc-secondary-button" type="button" onClick={() => removePasskey(passkey.id)} disabled={busy || !passkeyPassword}>Remove</button>
+                  </div>
+                )) : <div className="bc-account-empty">No passkeys added yet.</div>}
+              </div>
+            )
           ) : (
             <div className="bc-account-security"><p>Your existing BitCider sign-in is being used for this profile. BitConnection will not sign you out of BitCider or change its credentials here.</p></div>
           )}
