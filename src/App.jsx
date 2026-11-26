@@ -3,6 +3,7 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
 import BitConnectionEntrance from './BitConnectionEntrance.jsx';
+import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
 const API_VERSION = '2026-11-24-account-center-v13';
@@ -733,7 +734,7 @@ function AccountSetupWindow({
 }
 
 
-function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onStatusRefresh }) {
+function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticated = false, onClose, onDeleted, onStatusRefresh }) {
   const [passwordChangeCurrentPassword, setPasswordChangeCurrentPassword] = useState('');
   const [passkeyPassword, setPasskeyPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1064,6 +1065,26 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 
   if (deleteStage === 'crt-off' || deleteStage === 'crt-on') return null;
 
+  if (!status.account?.authenticated) {
+    return (
+      <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+        <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
+          <header className="account-center-header">
+            <UnifiedAccountCenterIdentity bitConnectionAuthenticated={bitConnectionAuthenticated} />
+            <button className="account-center-close" type="button" onClick={onClose} aria-label="Close account settings">×</button>
+          </header>
+          <div className="account-center-content">
+            <section className="account-center-card">
+              <div className="account-center-card-head"><span>BITCONNECTION ACCOUNT</span><span className="account-center-state">SIGNED IN</span></div>
+              <p>Your BitConnection session is active. Manage its profile, passkeys, and account security in the same unified account center from BitConnection.</p>
+              <a className="account-center-action unified-account-center-open-link" href="/bitconnection/?account=1" target="_blank" rel="noreferrer">OPEN BITCONNECTION SETTINGS</a>
+            </section>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (deleteStage === 'deleting') {
     return (
       <div className="account-delete-cinema is-black" role="status" aria-live="polite">
@@ -1085,12 +1106,11 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
     <div className={'account-center-overlay' + (deleteStage === 'game' || deleteStage === 'hands' ? ' is-delete-hunt' : '')} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && deleteStage !== 'game' && deleteStage !== 'hands') closeOverlay(); }}>
       <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
         <header className="account-center-header">
-          <div className="account-center-avatar"><Icon name="account" size={22} /></div>
-          <div className="account-center-title">
-            <span className="account-center-kicker">BITCIDER ACCOUNT</span>
-            <h2 id="account-center-title">Account & security</h2>
-            <p>Created {accountDate}</p>
-          </div>
+          <UnifiedAccountCenterIdentity
+            bitCiderAuthenticated={status.account?.authenticated === true}
+            bitConnectionAuthenticated={bitConnectionAuthenticated}
+            createdAt={status.account?.createdAt}
+          />
           <button className="account-center-close" type="button" onClick={closeOverlay} aria-label="Close account settings">×</button>
         </header>
 
@@ -1197,7 +1217,8 @@ function AccountManagementOverlay({ status, csrfToken, onClose, onDeleted, onSta
 export default function App() {
   const isAccountPopup = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account') === 'setup';
   const [inlineAccountFlow, setInlineAccountFlow] = useState(null);
-  const [accountOverlayOpen, setAccountOverlayOpen] = useState(false);
+  const [accountOverlayOpen, setAccountOverlayOpen] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('account-center') === '1');
+  const [bitConnectionAccountAuthenticated, setBitConnectionAccountAuthenticated] = useState(false);
   const [pageMode, setPageMode] = useState(() => (
     typeof window !== 'undefined'
       && (window.location.pathname === '/bitmono/' || window.location.pathname === '/bitmono')
@@ -1315,6 +1336,21 @@ export default function App() {
 
   useEffect(() => {
     if (isAccountPopup) return undefined;
+    let active = true;
+    async function refreshBitConnectionAccountStatus() {
+      try {
+        const response = await fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error('BitConnection account status unavailable.');
+        if (active) setBitConnectionAccountAuthenticated(payload.authenticated === true);
+      } catch {
+        if (active) setBitConnectionAccountAuthenticated(false);
+      }
+    }
+    refreshBitConnectionAccountStatus();
+    const timer = window.setInterval(refreshBitConnectionAccountStatus, 15000);
+    const refreshOnFocus = () => refreshBitConnectionAccountStatus();
+    window.addEventListener('focus', refreshOnFocus);
     function onAccountPopupMessage(event) {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'BITCIDER_ACCOUNT_POPUP_READY' && event.source === window.__bitciderAccountPopup) {
@@ -1338,7 +1374,12 @@ export default function App() {
     }
     window.addEventListener('message', onAccountPopupMessage);
     refreshStatus();
-    return () => window.removeEventListener('message', onAccountPopupMessage);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshOnFocus);
+      window.removeEventListener('message', onAccountPopupMessage);
+    };
   }, [isAccountPopup]);
   
   useEffect(() => {
@@ -2193,8 +2234,8 @@ export default function App() {
             <span className="brand-word brand-word-mono">Bit<span><CipherText text="Mono" phase={modeTransitionPhase} /></span></span>
           </span>
         </a>
-        {status.account?.authenticated === true && (
-          <button className="account-avatar-trigger" type="button" onClick={() => setAccountOverlayOpen(true)} aria-label="Open account and security settings" title="Account">
+        {(status.account?.authenticated === true || bitConnectionAccountAuthenticated) && (
+          <button className="account-avatar-trigger" type="button" onClick={() => setAccountOverlayOpen(true)} aria-label="Open unified account center" title="Account">
             <Icon name="account" size={21} />
           </button>
         )}
@@ -2204,6 +2245,7 @@ export default function App() {
         <AccountManagementOverlay
           status={status}
           csrfToken={csrfToken}
+          bitConnectionAuthenticated={bitConnectionAccountAuthenticated}
           onClose={() => setAccountOverlayOpen(false)}
           onStatusRefresh={refreshStatus}
           onDeleted={async () => {
