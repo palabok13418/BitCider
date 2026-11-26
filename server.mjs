@@ -1089,7 +1089,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/health', (_req, res) => res.json({
+app.get(['/health', '/api/health'], (_req, res) => res.json({
   ok: true,
   service: 'BitCider',
   apiVersion: API_VERSION,
