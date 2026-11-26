@@ -22,8 +22,12 @@ export default async function backendProxy(request) {
   const protect = response => secureResponse(response, { isHttps: incoming.protocol === 'https:' });
   const backendOrigin = String(process.env.BITCIDER_BACKEND_ORIGIN || '').replace(/\/+$/, '');
   const proxySecret = String(process.env.BITCIDER_PROXY_SECRET || '');
+  const isBitConnectionApi = incoming.pathname.startsWith('/api/bitconnection/');
 
-  if (!backendOrigin || !proxySecret) {
+  // BitConnection enforces its own session, CSRF, and room-credential checks.
+  // Keep that namespace reachable if the optional gateway secret is absent.
+  // All other API and addon traffic remains fail-closed without the secret.
+  if (!backendOrigin || (!proxySecret && !isBitConnectionApi)) {
     return protect(Response.json(
       { error: 'BACKEND_NOT_CONFIGURED', message: 'Configure BITCIDER_BACKEND_ORIGIN and BITCIDER_PROXY_SECRET for the Deplexo backend.' },
       { status: 503 }
@@ -48,8 +52,14 @@ export default async function backendProxy(request) {
   // Request an uncompressed upstream representation so the proxy never
   // forwards stale compression metadata after a runtime decodes the body.
   headers.set('accept-encoding', 'identity');
-  headers.set('x-bitcider-proxy-secret', proxySecret);
-  headers.set('x-bitcider-public-origin', incoming.origin);
+  if (proxySecret) {
+    headers.set('x-bitcider-proxy-secret', proxySecret);
+    headers.set('x-bitcider-public-origin', incoming.origin);
+  } else {
+    // Never relay a visitor-supplied value as a trusted gateway secret.
+    headers.delete('x-bitcider-proxy-secret');
+    headers.delete('x-bitcider-public-origin');
+  }
 
   try {
     const init = {
