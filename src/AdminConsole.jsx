@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './admin-console.css';
 
+const DEFAULT_MAP_CAMERA = Object.freeze({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 });
+
 const SITE_DEFINITIONS = [
   { id: 'bitcider', name: 'BitCider', page: '/', health: '/health', description: 'Personal Cider source and account hub' },
   { id: 'bitmono', name: 'BitMono', page: '/bitmono/', health: '/api/bitmono/health', description: 'Monochrome music source with fallback search' },
@@ -95,41 +97,74 @@ function SiteNode({ site, status, openSite, runTest }) {
 }
 
 function MapView({ overview, pageStatuses, refreshPages, runTest }) {
-  const [camera, setCamera] = useState({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 });
+  const [camera, setCamera] = useState(() => ({ ...DEFAULT_MAP_CAMERA }));
   const pointer = useRef(null);
-  const sceneRef = useRef(null);
+  const viewportRef = useRef(null);
+
+  const updateCamera = updater => {
+    setCamera(value => updater(value && typeof value === 'object' ? value : DEFAULT_MAP_CAMERA));
+  };
+
+  // React may register wheel handlers as passive. Attach explicitly as
+  // non-passive so preventing page scroll while zooming never throws a warning.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return undefined;
+
+    const handleWheel = event => {
+      if (event.cancelable) event.preventDefault();
+      const deltaY = Number(event.deltaY) || 0;
+      setCamera(value => {
+        const current = value && typeof value === 'object' ? value : DEFAULT_MAP_CAMERA;
+        return {
+          ...current,
+          zoom: Math.max(0.58, Math.min(1.24, current.zoom - deltaY * 0.0007))
+        };
+      });
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, []);
 
   const beginOrbit = event => {
-    if (event.button !== 0) return;
-    pointer.current = { x: event.clientX, y: event.clientY, camera };
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const startCamera = camera && typeof camera === 'object' ? camera : DEFAULT_MAP_CAMERA;
+    pointer.current = {
+      x: event.clientX,
+      y: event.clientY,
+      camera: { ...startCamera }
+    };
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const moveOrbit = event => {
-    if (!pointer.current) return;
-    const dx = event.clientX - pointer.current.x;
-    const dy = event.clientY - pointer.current.y;
-    setCamera(value => ({
+    const activePointer = pointer.current;
+    const startCamera = activePointer?.camera;
+    if (!activePointer || !startCamera || typeof startCamera !== 'object') {
+      pointer.current = null;
+      return;
+    }
+    const dx = event.clientX - activePointer.x;
+    const dy = event.clientY - activePointer.y;
+    updateCamera(value => ({
       ...value,
-      rotateY: Math.max(-60, Math.min(60, pointer.current.camera.rotateY + dx * 0.22)),
-      rotateX: Math.max(-4, Math.min(42, pointer.current.camera.rotateX - dy * 0.14))
+      rotateY: Math.max(-60, Math.min(60, (Number(startCamera.rotateY) || 0) + dx * 0.22)),
+      rotateX: Math.max(-4, Math.min(42, (Number(startCamera.rotateX) || 0) - dy * 0.14))
     }));
   };
   const endOrbit = () => { pointer.current = null; };
-  const zoomScene = event => {
-    event.preventDefault();
-    setCamera(value => ({ ...value, zoom: Math.max(0.58, Math.min(1.24, value.zoom - event.deltaY * 0.0007)) }));
-  };
   const handleKeys = event => {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target?.tagName)) return;
     const step = event.shiftKey ? 42 : 22;
-    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setCamera(value => ({ ...value, panX: value.panX + step }));
-    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setCamera(value => ({ ...value, panX: value.panX - step }));
-    if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') setCamera(value => ({ ...value, panY: value.panY + step }));
-    if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') setCamera(value => ({ ...value, panY: value.panY - step }));
-    if (event.key === '+' || event.key === '=') setCamera(value => ({ ...value, zoom: Math.min(1.24, value.zoom + 0.06) }));
-    if (event.key === '-' || event.key === '_') setCamera(value => ({ ...value, zoom: Math.max(0.58, value.zoom - 0.06) }));
-    if (event.key === '0') setCamera({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 });
+    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') updateCamera(value => ({ ...value, panX: value.panX + step }));
+    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') updateCamera(value => ({ ...value, panX: value.panX - step }));
+    if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') updateCamera(value => ({ ...value, panY: value.panY + step }));
+    if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') updateCamera(value => ({ ...value, panY: value.panY - step }));
+    if (event.key === '+' || event.key === '=') updateCamera(value => ({ ...value, zoom: Math.min(1.24, value.zoom + 0.06) }));
+    if (event.key === '-' || event.key === '_') updateCamera(value => ({ ...value, zoom: Math.max(0.58, value.zoom - 0.06) }));
+    if (event.key === '0') setCamera({ ...DEFAULT_MAP_CAMERA });
   };
+  const viewCamera = camera && typeof camera === 'object' ? camera : DEFAULT_MAP_CAMERA;
 
   const nodes = useMemo(() => SITE_DEFINITIONS, []);
   const openSite = path => window.open(path, '_blank', 'noopener,noreferrer');
@@ -144,10 +179,10 @@ function MapView({ overview, pageStatuses, refreshPages, runTest }) {
         <span><i /> DRAG TO ORBIT</span><span>WASD / ARROWS TO MOVE</span><span>SCROLL TO ZOOM</span>
         <button type="button" onClick={() => setCamera({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 })}>RESET VIEW</button>
       </div>
-      <div className="admin-map-viewport" onWheel={zoomScene} onKeyDown={handleKeys} tabIndex={0} role="region" aria-label="Interactive three dimensional site map">
+      <div className="admin-map-viewport" ref={viewportRef} onKeyDown={handleKeys} tabIndex={0} role="region" aria-label="Interactive three dimensional site map">
         <div className="admin-map-stars" />
-        <div className="admin-map-scene" ref={sceneRef} onPointerDown={beginOrbit} onPointerMove={moveOrbit} onPointerUp={endOrbit} onPointerCancel={endOrbit} onLostPointerCapture={endOrbit}
-          style={{ transform: 'translate3d(' + camera.panX + 'px,' + camera.panY + 'px,0) rotateX(' + camera.rotateX + 'deg) rotateY(' + camera.rotateY + 'deg) scale(' + camera.zoom + ')' }}>
+        <div className="admin-map-scene" onPointerDown={beginOrbit} onPointerMove={moveOrbit} onPointerUp={endOrbit} onPointerCancel={endOrbit} onLostPointerCapture={endOrbit}
+          style={{ transform: 'translate3d(' + viewCamera.panX + 'px,' + viewCamera.panY + 'px,0) rotateX(' + viewCamera.rotateX + 'deg) rotateY(' + viewCamera.rotateY + 'deg) scale(' + viewCamera.zoom + ')' }}>
           <div className="admin-map-grid-plane" />
           <svg className="admin-map-connectors" viewBox="0 0 1200 860" aria-hidden="true">
             <defs>
