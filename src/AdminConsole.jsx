@@ -460,6 +460,7 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
   const nodeStatus = topologyStatuses[node.id] || { state: 'unverified', label: 'NOT PROBED', detail: 'Waiting for the first live check.' };
   const children = TOPOLOGY_NODES.filter(item => item.parentId === node.id);
   const checkCount = TOPOLOGY_NODES.filter(item => item.type === 'check').length;
+  const verifiedChecks = TOPOLOGY_NODES.filter(item => item.type === 'check' && ['operational', 'advertised'].includes(topologyStatuses[item.id]?.state)).length;
   const statusCounts = Object.values(topologyStatuses).reduce((counts, item) => {
     const state = item?.state || 'unverified';
     counts[state] = (counts[state] || 0) + 1;
@@ -468,11 +469,15 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
 
   return (
     <section className="admin-topology">
+      <div className="admin-topology-heading">
+        <div><span className="admin-eyebrow">LIVE SYSTEM GRAPH</span><h2>Product topology</h2><p>Follow each product from Deplexo to its main features and individual service checks. Every dot is based on a live response, a declared capability, or an explicitly gated test.</p></div>
+        <button type="button" className="admin-button admin-button-primary" onClick={refreshTopology} disabled={topologyBusy}>{topologyBusy ? 'SCANNING FEATURES…' : 'RUN FEATURE SCAN ↻'}</button>
+      </div>
       <div className="admin-topology-summary">
         <div><span>REGISTERED ACCOUNTS</span><strong>{overview?.users ?? '—'}</strong></div>
         <div><span>ACTIVE SESSIONS</span><strong>{overview?.activeUsers ?? '—'}</strong></div>
         <div><span>LIVE ROOMS</span><strong>{overview?.activeRooms ?? '—'}</strong></div>
-        <div><span>FEATURE CHECKS</span><strong>{statusCounts.operational || 0}<small> / {checkCount}</small></strong></div>
+        <div><span>FEATURE CHECKS</span><strong>{verifiedChecks}<small> / {checkCount}</small></strong></div>
       </div>
 
       <div className="admin-canvas-toolbar">
@@ -488,7 +493,7 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
           <button type="button" onClick={() => zoomBy(1.14)} aria-label="Zoom in">+</button>
           <button type="button" onClick={fitView}>FIT CANVAS</button>
           <button type="button" onClick={resetLayout}>RESET LAYOUT</button>
-          <button type="button" className="is-scan" onClick={refreshTopology} disabled={topologyBusy}>{topologyBusy ? 'SCANNING…' : 'SCAN FEATURES ↻'}</button>
+          <button type="button" className="is-scan" onClick={refreshTopology} disabled={topologyBusy}>{topologyBusy ? 'SCANNING…' : 'RECHECK ↻'}</button>
         </div>
       </div>
 
@@ -1059,8 +1064,6 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     }
   }
 
-  const selectedSite = SITE_DEFINITIONS.find(site => site.id === tab);
-
   if (phase === 'loading') {
     return <div className="admin-console-overlay"><div className="admin-auth-card"><span className="admin-loading-orbit" /><p>Checking admin authorization…</p><button type="button" onClick={onClose}>CLOSE</button></div></div>;
   }
@@ -1114,33 +1117,65 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     <div className="admin-console-overlay is-dashboard" role="presentation">
       <div className="admin-console-shell">
         <header className="admin-console-topbar">
-          <div className="admin-console-brand"><span className="admin-console-mark">BC</span><div><strong>BITCIDER</strong><small>ADMIN CONSOLE / OWNER ACCESS</small></div></div>
-          <div className="admin-topbar-state"><StatusPill state="online" label="OWNER SESSION" /><span>ONE PASSKEY ENROLLED</span></div>
-          <div className="admin-topbar-actions"><button type="button" className="admin-button admin-button-quiet" onClick={refreshDashboard}>SYNC DATA ↻</button><button type="button" className="admin-button admin-button-quiet" onClick={logout} disabled={busy === 'logout'}>LOCK ADMIN</button><button type="button" className="admin-console-close" onClick={onClose} aria-label="Close admin console">×</button></div>
+          <div className="admin-console-brand">
+            <span className="admin-console-mark">BC</span>
+            <div><strong>BITCIDER</strong><small>OWNER CONTROL / PRODUCTION</small></div>
+          </div>
+          <div className="admin-topbar-state">
+            <StatusPill state="online" label="OWNER SESSION" />
+            <span>PASSKEY VERIFIED · ONE OWNER SLOT</span>
+          </div>
+          <div className="admin-topbar-actions">
+            <button type="button" className="admin-button admin-button-quiet" onClick={() => { refreshDashboard().catch(() => {}); refreshTopology(); }}>SYNC SYSTEM ↻</button>
+            <button type="button" className="admin-button admin-button-quiet" onClick={logout} disabled={busy === 'logout'}>LOCK SESSION</button>
+            <button type="button" className="admin-console-close" onClick={onClose} aria-label="Close admin console">×</button>
+          </div>
         </header>
+
         <div className="admin-console-layout">
           <aside className="admin-console-sidebar">
-            <div className="admin-sidebar-label">CONTROL PLANE</div>
+            <div className="admin-sidebar-label">CONTROL ROOM</div>
             {[
-              ['map', '⌘', 'Site map'],
-              ['users', '◉', 'Users'],
-              ['bots', '✳', 'Bot accounts'],
-              ['diagnostics', '⌁', 'Diagnostics']
-            ].map(([id, symbol, label]) => (
+              ['map', '⌘', 'System graph', 'Pages + feature health'],
+              ['users', '◉', 'Accounts', 'Anonymous moderation'],
+              ['bots', '✳', 'Bot factory', 'Test identities'],
+              ['diagnostics', '⌁', 'Diagnostics', 'HTTP + API checks']
+            ].map(([id, symbol, label, hint], index) => (
               <button key={id} type="button" className={'admin-nav-item' + (tab === id ? ' is-active' : '')} onClick={() => setTab(id)}>
-                <span>{symbol}</span>{label}{tab === id && <i />}
+                <span className="admin-nav-index">{String(index + 1).padStart(2, '0')}</span>
+                <span className="admin-nav-symbol">{symbol}</span>
+                <span className="admin-nav-copy"><strong>{label}</strong><small>{hint}</small></span>
+                {tab === id && <i />}
               </button>
             ))}
+
             <div className="admin-sidebar-spacer" />
-            <div className="admin-sidebar-owner"><i /><span>OWNER ACCESS</span><small>Session expires in 2 hours</small></div>
-            <div className="admin-sidebar-version">BITCIDER ADMIN · 1.0</div>
+            <div className="admin-sidebar-health">
+              <div className="admin-sidebar-health-head"><span>PRIMARY BACKEND</span><i /></div>
+              <strong>Deplexo</strong>
+              <small>Persistent API · main service</small>
+              <span className="admin-sidebar-health-foot">3 PRODUCT PAGES CONNECTED</span>
+            </div>
+            <div className="admin-sidebar-owner">
+              <i /><span>OWNER ACCESS</span><small>Fresh passkey required on every console opening.</small>
+            </div>
+            <div className="admin-sidebar-version">BITCIDER ADMIN · SECURE WORKSPACE</div>
           </aside>
+
           <main className="admin-console-main">
-            {tab === 'map' && <MapView overview={overview} pageStatuses={pageStatuses} refreshPages={refreshPageStatuses} runTest={runTest} />}
+            {tab === 'map' && <MapView overview={overview} topologyStatuses={topologyStatuses} topologyBusy={topologyBusy} refreshTopology={refreshTopology} />}
+
             {tab === 'users' && (
               <section className="admin-pane">
-                <div className="admin-section-heading"><div><span className="admin-eyebrow">ANONYMIZED PRESENCE</span><h2>Users</h2><p>Only anonymous account references and access state are shown. No usernames, profile data, device names, addresses, or IPs.</p></div><button type="button" className="admin-button admin-button-quiet" onClick={refreshDashboard}>REFRESH LIST ↻</button></div>
-                <div className="admin-user-summary"><div><span>ACCOUNTS</span><strong>{users.length}</strong></div><div><span>ACTIVE</span><strong>{users.filter(user => user.active).length}</strong></div><div><span>SUSPENDED</span><strong>{users.filter(user => user.suspended).length}</strong></div></div>
+                <div className="admin-section-heading">
+                  <div><span className="admin-eyebrow">ACCOUNT OVERSIGHT</span><h2>Accounts</h2><p>Manage anonymized account records and access state. Usernames, profile data, device names, addresses, and IPs remain hidden.</p></div>
+                  <button type="button" className="admin-button admin-button-quiet" onClick={refreshDashboard}>SYNC ACCOUNTS ↻</button>
+                </div>
+                <div className="admin-user-summary">
+                  <div><span>REGISTERED</span><strong>{users.length}</strong></div>
+                  <div><span>ACTIVE SESSIONS</span><strong>{users.filter(user => user.active).length}</strong></div>
+                  <div><span>SUSPENDED</span><strong>{users.filter(user => user.suspended).length}</strong></div>
+                </div>
                 <div className="admin-user-list">
                   {users.length ? users.map((user, index) => (
                     <article className="admin-user-row" key={user.ref}>
@@ -1154,17 +1189,18 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
                     </article>
                   )) : <div className="admin-empty-state">No registered accounts were found.</div>}
                 </div>
-                <p className="admin-privacy-footnote">Active means the account made an authenticated request within the last two minutes. These are session presence estimates, not a live network trace.</p>
+                <p className="admin-privacy-footnote">“Active” means the account made an authenticated request within the last two minutes. These are session-presence estimates, not live network tracking.</p>
               </section>
             )}
+
             {tab === 'bots' && (
               <section className="admin-pane">
-                <div className="admin-section-heading"><div><span className="admin-eyebrow">TEST IDENTITIES</span><h2>Bot accounts</h2><p>Create a generated test identity for BitCider, BitConnection, or both products.</p></div></div>
+                <div className="admin-section-heading"><div><span className="admin-eyebrow">TEST IDENTITIES</span><h2>Bot factory</h2><p>Create a generated test identity for BitCider, BitConnection, or both products. Generated secrets are only displayed once.</p></div></div>
                 <div className="admin-bot-builder">
                   <div className="admin-bot-card-head"><span>NEW BOT IDENTITY</span><StatusPill state="online" label="SERVER GENERATED" /></div>
                   <div className="admin-bot-product-select">
                     <label><span>PRODUCT TARGET</span><select value={botTarget} onChange={event => setBotTarget(event.target.value)}><option value="both">Both products</option><option value="bitcider">BitCider only</option><option value="bitconnection">BitConnection only</option></select></label>
-                    <div className="admin-bot-product-hints"><span>BitCider requires its generated Account Key at sign-in.</span><span>Both products receive separate account records with the same generated username and password.</span></div>
+                    <div className="admin-bot-product-hints"><span>BitCider receives an Account Key and password, but no Cider token.</span><span>Paired creation makes separate product records with shared generated sign-in credentials.</span></div>
                   </div>
                   <button className="admin-button admin-button-primary" type="button" onClick={createBot} disabled={busy === 'bot'}>{busy === 'bot' ? 'GENERATING…' : 'GENERATE BOT ACCOUNT'} <span>↗</span></button>
                 </div>
@@ -1181,9 +1217,10 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
                 )}
               </section>
             )}
+
             {tab === 'diagnostics' && (
               <section className="admin-pane">
-                <div className="admin-section-heading"><div><span className="admin-eyebrow">LIVE SERVICE CHECKS</span><h2>Diagnostics</h2><p>Inspect each page, test its backing API, and open a separate live preview.</p></div><button type="button" className="admin-button admin-button-primary" onClick={runAllTests} disabled={busy === 'tests'}>{busy === 'tests' ? 'TESTING…' : 'RUN ALL TESTS'}</button></div>
+                <div className="admin-section-heading"><div><span className="admin-eyebrow">LIVE SERVICE CHECKS</span><h2>Diagnostics</h2><p>Inspect the page, backing API, latency, and live service response for each product.</p></div><button type="button" className="admin-button admin-button-primary" onClick={runAllTests} disabled={busy === 'tests'}>{busy === 'tests' ? 'TESTING…' : 'RUN ALL TESTS'}</button></div>
                 <div className="admin-diagnostic-list">
                   {SITE_DEFINITIONS.map(site => {
                     const result = pageStatuses[site.id] || {};
@@ -1195,7 +1232,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
                     </article>;
                   })}
                 </div>
-                <div className="admin-security-note"><strong>ADMIN SECURITY</strong><span>One owner passkey is registered. Bootstrap is consumed. Admin sessions are short-lived, same-site, HttpOnly cookies and require passkey verification to renew.</span></div>
+                <div className="admin-security-note"><strong>ADMIN SECURITY</strong><span>One owner passkey is registered. Bootstrap is consumed. Admin sessions are short-lived, same-site, HttpOnly cookies and require fresh passkey verification whenever admin mode is opened.</span></div>
               </section>
             )}
             {error && <div className="admin-console-error admin-console-global-message" role="alert">{error}<button type="button" onClick={() => setError('')}>×</button></div>}
