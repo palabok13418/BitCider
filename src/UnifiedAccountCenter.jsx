@@ -115,7 +115,7 @@ export default function UnifiedAccountCenterIdentity({
       {products.bitCider && products.bitConnection && (
         <nav className="unified-account-center-links" aria-label="Product account settings">
           <a href="/?account-center=1" target="_blank" rel="noreferrer">BitCider settings</a>
-          <a href="/bitconnection/?account=1" target="_blank" rel="noreferrer">BitConnection settings</a>
+          <a href="/bitconnection/?account=1&identity=bitconnection" target="_blank" rel="noreferrer">BitConnection settings</a>
         </nav>
       )}
     </div>
