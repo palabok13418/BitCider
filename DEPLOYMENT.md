@@ -43,9 +43,13 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 
 ## Verify that the current backend is deployed
 
-The current BitCider frontend expects the Deplexo API version `2026-11-23-account-key-v11`.
+The current BitCider backend should report these API versions after deploying the latest `main` branch:
 
-- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-23-account-key-v11"` and `"browserCiderBridgeSupported":true`. The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
+- `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-24-account-center-v13"` and `"browserCiderBridgeSupported":true`.
+- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-25-account-center-passkey-listing-02"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
+- The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
+
+A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still running an older build without the current passkey-listing route. Redeploy the latest `main` branch on Deplexo.
 - `GET /api/connect` is intentionally rejected with HTTP `405 METHOD_NOT_ALLOWED`; the actual linking request is a `POST` sent by the site after Cider approves the native dialog.
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
