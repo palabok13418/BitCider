@@ -897,6 +897,10 @@ function JoinPublicPartyWindow({ roomId }) {
     else if (session) void session.leave();
   }, []);
 
+  useEffect(() => {
+    if (stage === 'ready') void joinParty();
+  }, [stage]);
+
   async function joinParty() {
     if (stage !== 'ready') return;
     setStage('joining');
@@ -964,7 +968,7 @@ function JoinPublicPartyWindow({ roomId }) {
         <div className="bc-window-kicker">{stage === 'connected' ? 'CONNECTED TO PUBLIC PARTY' : 'PUBLIC LISTENING PARTY'}</div>
         <h1>{room?.roomName || (stage === 'loading' ? 'Finding the party…' : 'Join the party.')}</h1>
         {room && <p>Hosted by <strong>{room.hostUsername}</strong> · {room.participantCount || roomState?.participants?.length || 0} / {room.partySize} people</p>}
-        {stage === 'ready' && <button className="bc-primary-button" type="button" onClick={joinParty}>Join party</button>}
+        {stage === 'ready' && <p>Joining the public party…</p>}
         {stage === 'joining' && <p>Connecting to the room and preparing audio…</p>}
         {stage === 'connected' && (
           <>
