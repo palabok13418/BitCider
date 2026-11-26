@@ -1070,7 +1070,7 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
       <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
         <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
           <header className="account-center-header">
-            <UnifiedAccountCenterIdentity bitConnectionAuthenticated={bitConnectionAuthenticated} />
+            <UnifiedAccountCenterIdentity currentProduct="bitcider" bitConnectionAuthenticated={bitConnectionAuthenticated} />
             <button className="account-center-close" type="button" onClick={onClose} aria-label="Close account settings">×</button>
           </header>
           <div className="account-center-content">
@@ -1107,6 +1107,7 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
       <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
         <header className="account-center-header">
           <UnifiedAccountCenterIdentity
+            currentProduct="bitcider"
             bitCiderAuthenticated={status.account?.authenticated === true}
             bitConnectionAuthenticated={bitConnectionAuthenticated}
             createdAt={status.account?.createdAt}
