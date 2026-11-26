@@ -34,6 +34,8 @@ import {
 } from './audio-quality.mjs';
 import { applySecurityHeaders, createIpRateLimiter } from './security-hardening.mjs';
 import { createBitConnectionRouter } from './bitconnection/api.mjs';
+import { createAdminRouter } from './admin/api.mjs';
+import { createAdminController } from './admin/controller.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
@@ -70,12 +72,14 @@ app.use('/api', (_req, res, next) => {
 });
 
 // BitConnection runs as a separate product namespace on the Deplexo primary API.
+let bitConnectionAdminStore = null;
 app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectionRouter({
   getUserSession,
   requireCiderCsrf: requireCsrf,
   csrfTokenForCiderSession: csrfTokenForSession,
   webAuthnContext,
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
+  exposeAdminStore: store => { bitConnectionAdminStore = store; },
   maxPartySize: 30,
   iceConfig: {
     stunUrls: process.env.BITCONNECTION_STUN_URLS,
@@ -368,7 +372,7 @@ function getUserSession(req, res) {
   const authSession = store.authSessions[hashSessionId(sessionId)];
   if (authSession && Date.parse(authSession.expiresAt) > Date.now()) {
     const account = store.accounts[authSession.accountId];
-    if (account) {
+    if (account && !account.suspendedAt) {
       return {
         store, sessionId, user: account,
         accountId: authSession.accountId, authenticated: true
@@ -615,6 +619,20 @@ function webAuthnContext(req) {
   }
   return { origin: parsed.origin, rpID: parsed.hostname.toLowerCase() };
 }
+
+app.use('/api/admin', localOnly, createAdminRouter({
+  dataFile: path.join(DATA_DIR, 'admin.json'),
+  webAuthnContext,
+  controller: createAdminController({
+    readCiderStore: readStore,
+    updateCiderStore: updateStore,
+    getBitConnectionStore: () => bitConnectionAdminStore,
+    invalidateBrowserBridge,
+    browserBridges,
+    createAccountKey,
+    hashAccountKey
+  })
+}));
 
 async function saveWebAuthnChallenge(sessionId, record) {
   return updateStore(store => {
@@ -1287,6 +1305,9 @@ app.post('/api/account/login', localOnly, authRateLimit(8), requireCsrf, require
   const pendingAuth = suppliedAccountKey ? null : pendingAccountAuthFor(snapshot, sessionId);
   const accountId = keyMatch?.accountId || pendingAuth?.accountId || null;
   const accountSnapshot = accountId ? snapshot.accounts[accountId] : null;
+  if (accountSnapshot?.suspendedAt) {
+    return res.status(403).json({ error: 'ACCOUNT_SUSPENDED', message: 'This BitCider account is suspended.' });
+  }
   const valid = await verifyPassword(password, accountSnapshot?.password || DUMMY_PASSWORD_RECORD);
   if (!accountSnapshot || !valid || !validatePassword(password)) {
     return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The Account Key or password is incorrect.' });
@@ -1575,7 +1596,7 @@ app.post('/api/account/secrets/reveal', localOnly, authRateLimit(5), requireCsrf
   const matchedPasskey = (matchedAccount?.passkeys || []).find(entry => (
     entry.id === credentialId && entry.rpID === challenge.rpID
   ));
-  if (!matchedAccount || !matchedPasskey || !matchedAccount.webAuthnUserId
+  if (!matchedAccount || matchedAccount.suspendedAt || !matchedPasskey || !matchedAccount.webAuthnUserId
     || (userHandle && !secureStringEqual(userHandle, matchedAccount.webAuthnUserId))) {
     return res.status(401).json({ error: 'INVALID_PASSKEY', message: 'This passkey could not be verified for this BitCider account.' });
   }
