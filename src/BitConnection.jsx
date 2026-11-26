@@ -1365,6 +1365,7 @@ function CreateRoomWindow() {
 export default function BitConnection() {
   const [apiState, setApiState] = useState('checking');
   const [accountAvailable, setAccountAvailable] = useState(false);
+  const [accountAvatarUrl, setAccountAvatarUrl] = useState('');
   const [entryStage, setEntryStage] = useState(initialEntryStage);
   const flameRunAnimationRef = useRef(null);
   const burnMaskAnimationRef = useRef(null);
@@ -1404,13 +1405,26 @@ export default function BitConnection() {
         const payload = await readResponse(await fetch('/api/bitconnection/account', {
           cache: 'no-store', credentials: 'same-origin'
         }), 'Could not check account availability.');
-        if (active) {
-          // The Account button is only for an active BitConnection account
-          // or an already signed-in BitCider identity.
-          setAccountAvailable(Boolean(payload.authenticated || payload.bitCiderAccountAvailable));
+        // Match Account Center identity precedence: an active BitCider login
+        // is used before an independent BitConnection session.
+        let activeIdentity = payload;
+        if (payload.bitCiderAccountAvailable) {
+          activeIdentity = await readResponse(await fetch('/api/bitconnection/account', {
+            headers: { 'X-BitConnection-Identity': 'bitcider' },
+            cache: 'no-store', credentials: 'same-origin'
+          }), 'Could not load the signed-in BitCider profile.');
         }
+        if (!active) return;
+        const signedIn = Boolean(activeIdentity.authenticated);
+        setAccountAvailable(signedIn);
+        setAccountAvatarUrl(signedIn && typeof activeIdentity.profile?.avatarDataUrl === 'string'
+          ? activeIdentity.profile.avatarDataUrl
+          : '');
       } catch {
-        if (active) setAccountAvailable(false);
+        if (active) {
+          setAccountAvailable(false);
+          setAccountAvatarUrl('');
+        }
       }
     }
     refreshAccountAvailability();
@@ -1561,7 +1575,9 @@ export default function BitConnection() {
         </a>
         {accountAvailable && (
           <button className="bitconnection-account-button" type="button" onClick={openAccountWindow} aria-label="Manage account" title="Manage account">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>
+            {accountAvatarUrl
+              ? <img className="bitconnection-account-avatar" src={accountAvatarUrl} alt="" aria-hidden="true" />
+              : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>}
             <span>Account</span>
           </button>
         )}
