@@ -2623,6 +2623,7 @@ export default function App() {
       {adminConsoleOpen && (
         <AdminConsole
           bootstrapCode={adminBootstrapCode}
+          onBootstrapConsumed={() => setAdminBootstrapCode('')}
           onClose={() => {
             setAdminConsoleOpen(false);
             setAdminBootstrapCode('');
