@@ -222,7 +222,8 @@ function paintCanvasNode(context, node, position, status, scale, selected, hover
   context.shadowBlur = selected ? 24 / scale : 13 / scale;
   context.shadowOffsetY = 5 / scale;
   context.beginPath();
-  context.roundRect(x, y, width, height, radius);
+  if (typeof context.roundRect === 'function') context.roundRect(x, y, width, height, radius);
+  else context.rect(x, y, width, height);
   context.fillStyle = node.type === 'backend'
     ? 'rgba(20, 40, 50, .98)'
     : node.type === 'page'
@@ -247,14 +248,6 @@ function paintCanvasNode(context, node, position, status, scale, selected, hover
   context.font = '800 ' + titleFont + 'px Inter, ui-sans-serif, system-ui, sans-serif';
   context.fillStyle = node.type === 'backend' ? '#e9fbff' : node.type === 'page' ? '#f2f8fa' : '#e3eef1';
   const titleMax = width - 40;
-  context.fillText(truncateCanvasText(context, node.title, titleMax), x + 13, y + (node.type === 'check' ? 17 : 20), titleMax);
-
-  context.font = '600 ' + subtitleFont + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
-  context.fillStyle = 'rgba(186, 211, 218, .66)';
-  const subtitle = node.type === 'check'
-    ? (status?.label || node.subtitle || 'NOT PROBED')
-    : (node.subtitle || '');
-  context.fillText(truncateCanvasText(context, subtitle, width - 25), x + 13, y + height - 18, width - 25);
 
   if (node.type === 'page' || node.type === 'backend') {
     context.font = '700 ' + (7 / scale) + 'px ui-monospace, monospace';
@@ -263,7 +256,16 @@ function paintCanvasNode(context, node, position, status, scale, selected, hover
     context.font = '800 ' + titleFont + 'px Inter, ui-sans-serif, system-ui, sans-serif';
     context.fillStyle = node.type === 'backend' ? '#e9fbff' : '#f2f8fa';
     context.fillText(truncateCanvasText(context, node.title, titleMax), x + 13, y + 29, titleMax);
+  } else {
+    context.fillText(truncateCanvasText(context, node.title, titleMax), x + 13, y + 17, titleMax);
   }
+
+  context.font = '700 ' + subtitleFont + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+  context.fillStyle = node.type === 'check' ? state.color : 'rgba(186, 211, 218, .66)';
+  const subtitle = node.type === 'check' || node.type === 'feature' || node.type === 'page' || node.type === 'backend'
+    ? (status?.label || (node.type === 'check' ? 'NOT PROBED' : 'CHECKING'))
+    : (node.subtitle || '');
+  context.fillText(truncateCanvasText(context, subtitle, width - 25), x + 13, y + height - 18, width - 25);
 
   context.restore();
 }
@@ -447,7 +449,6 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
       return;
     }
     if (active?.mode === 'pan') {
-      const rect = canvasRef.current.getBoundingClientRect();
       setView(current => ({ ...current, x: active.startX + event.clientX - active.clientX, y: active.startY + event.clientY - active.clientY }));
       setHoveredNodeId('');
       return;
@@ -781,9 +782,16 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     };
     const idle = (id, label, detail, endpoint) => save(id, 'idle', label, detail, endpoint);
 
-    direct('deplexo', backend, '/health', backend.payload?.service === 'BitCider'
-      ? 'The primary Deplexo API responded with a healthy BitCider service identity and API version.'
-      : backend.error || 'The primary API responded, but its service identity could not be confirmed.');
+    save(
+      'deplexo',
+      backend.state !== 'operational' ? backend.state : backend.payload?.service === 'BitCider' ? 'operational' : 'degraded',
+      backend.state !== 'operational' ? 'OFFLINE' : backend.payload?.service === 'BitCider' ? 'OPERATIONAL' : 'IDENTITY MISMATCH',
+      backend.payload?.service === 'BitCider'
+        ? 'The primary Deplexo API responded with the expected BitCider service identity and API version.'
+        : backend.error || 'The endpoint responded, but did not identify itself as the expected BitCider backend.',
+      '/health',
+      backend
+    );
 
     direct('site-bitcider', bitciderPage, '/', bitciderPage.state === 'operational' ? 'The BitCider page returned a successful document response.' : bitciderPage.error);
     direct('site-bitmono', bitmonoPage, '/bitmono/', bitmonoPage.state === 'operational' ? 'The BitMono page returned a successful document response.' : bitmonoPage.error);
@@ -797,14 +805,14 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       direct('bc-encryption', bitciderApi, '/api/status', bitciderApi.error);
       idle('bc-addon-manifest', 'NOT LINKED', 'Link Cider in this browser to provision a personal BitChord manifest.', '/api/status');
       idle('bc-addon-search', 'SESSION REQUIRED', 'A connected Cider account and an active browser relay are required to run a real search.', '/api/status');
-      direct('bc-auth-flow', backend, '/health', backend.payload?.browserCiderBridgeSupported === true ? 'The backend advertises browser-local Cider authorization and relay support.' : backend.error);
+      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
     } else {
       save('bc-cider-state', ciderConnected ? 'operational' : 'idle', ciderConnected ? 'CONNECTED' : 'NOT LINKED', ciderConnected ? 'A personal Cider token and add-on key are attached to this browser session.' : 'No Cider token is connected in this browser session.', '/api/status', bitciderApi);
       save('bc-browser-relay', !ciderConnected ? 'idle' : relayOnline ? 'operational' : 'degraded', !ciderConnected ? 'SESSION REQUIRED' : relayOnline ? 'ONLINE' : 'NOT RESPONDING', !ciderConnected ? 'Link Cider to start the browser-local relay.' : relayOnline ? 'The open BitCider tab is polling and responding to local Cider bridge jobs.' : 'Cider is linked, but the browser relay is not currently reporting an active poll.', '/api/status', bitciderApi);
       save('bc-account-state', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? 'SIGNED IN' : 'SIGNED OUT', bitciderData.account?.authenticated ? 'The BitCider account session is authenticated.' : 'The anonymous browser session is available; no account is currently signed in.', '/api/status', bitciderApi);
       save('bc-passkeys', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? String(bitciderData.passkeyCount || 0) + ' REGISTERED' : 'SIGN-IN REQUIRED', bitciderData.account?.authenticated ? 'The account status endpoint returned its passkey inventory.' : 'Passkey inventory is only returned to an authenticated account.', '/api/status', bitciderApi);
       save('bc-encryption', bitciderData.tokenEncryptionConfigured ? 'operational' : 'degraded', bitciderData.tokenEncryptionConfigured ? 'DEDICATED KEY READY' : 'VOLUME KEY', bitciderData.tokenEncryptionConfigured ? 'The dedicated Deplexo token-encryption key is configured.' : 'The service is using its persistent-volume fallback key. Configure BITCIDER_ENCRYPTION_KEY for separated key storage.', '/api/status', bitciderApi);
-      direct('bc-auth-flow', backend, '/health', backend.payload?.browserCiderBridgeSupported === true ? 'The backend advertises browser-local Cider authorization and relay support.' : backend.error);
+      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
       if (addonManifestProbe) {
         direct('bc-addon-manifest', addonManifestProbe, '/<personal-key>/manifest.json', addonManifestProbe.detail);
       } else {
