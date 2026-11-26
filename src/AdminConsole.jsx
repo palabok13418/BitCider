@@ -573,6 +573,8 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     bitmono: { state: 'checking', label: 'CHECKING' },
     bitconnection: { state: 'checking', label: 'CHECKING' }
   });
+  const [topologyStatuses, setTopologyStatuses] = useState(() => buildTopologyStatuses({}));
+  const [topologyBusy, setTopologyBusy] = useState(false);
   const [botTarget, setBotTarget] = useState('both');
   const [botCredentials, setBotCredentials] = useState(null);
   const [busy, setBusy] = useState('');
@@ -623,6 +625,235 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     }));
   }, []);
 
+  const refreshTopology = useCallback(async () => {
+    setTopologyBusy(true);
+    const checkedAt = new Date().toISOString();
+
+    async function probe(endpoint, { method = 'GET', parseJson = true } = {}) {
+      const startedAt = performance.now();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 9000);
+      try {
+        const response = await fetch(endpoint, {
+          method,
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        });
+        const payload = parseJson ? await response.json().catch(() => null) : null;
+        const durationMs = Math.round(performance.now() - startedAt);
+        const state = response.ok
+          ? payload?.ok === false || payload?.status === 'bad' ? 'degraded'
+            : payload?.status === 'slow' ? 'degraded' : 'operational'
+          : response.status >= 500 || response.status === 404 ? 'offline'
+            : response.status === 401 ? 'idle' : 'degraded';
+        return {
+          state,
+          httpStatus: response.status,
+          durationMs,
+          payload,
+          endpoint,
+          checkedAt,
+          error: response.ok ? '' : (payload?.message || payload?.error || 'HTTP ' + response.status)
+        };
+      } catch (requestError) {
+        return {
+          state: 'offline',
+          httpStatus: null,
+          durationMs: Math.round(performance.now() - startedAt),
+          payload: null,
+          endpoint,
+          checkedAt,
+          error: requestError?.name === 'AbortError' ? 'Request timed out after 9 seconds.' : (requestError?.message || 'Request failed.')
+        };
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+
+    const [backend, bitciderPage, bitmonoPage, bitconnectionPage, bitciderApi, monoManifest, monoHealthRaw, connectionHealth, connectionAccount, connectionPasskeys, connectionDirectory] = await Promise.all([
+      probe('/health'),
+      probe('/', { method: 'HEAD', parseJson: false }),
+      probe('/bitmono/', { method: 'HEAD', parseJson: false }),
+      probe('/bitconnection/', { method: 'HEAD', parseJson: false }),
+      probe('/api/status'),
+      probe('/bitmono/manifest.json'),
+      probe('/api/bitmono/health'),
+      probe('/api/bitconnection/health'),
+      probe('/api/bitconnection/account'),
+      probe('/api/bitconnection/passkeys'),
+      probe('/api/bitconnection/rooms/public')
+    ]);
+
+    let monoHealth = monoHealthRaw;
+    let monoFallbackSearch = false;
+    if (monoHealth.httpStatus === 404) {
+      monoHealth = await probe('/bitmono/search?q=Daft%20Punk');
+      monoFallbackSearch = true;
+      if (monoHealth.state === 'operational') {
+        const tracks = Array.isArray(monoHealth.payload?.tracks) ? monoHealth.payload.tracks : [];
+        const provider = tracks.some(track => String(track?.id || '').startsWith('dzr_')) ? 'deezer' : 'monochrome';
+        monoHealth = {
+          ...monoHealth,
+          payload: {
+            ok: tracks.length > 0,
+            status: tracks.length ? 'good' : 'bad',
+            provider: tracks.length ? provider : null,
+            resultCount: tracks.length,
+            message: tracks.length ? 'Live search responded through the compatibility route.' : 'The compatibility search returned no tracks.'
+          }
+        };
+        if (!tracks.length) monoHealth.state = 'degraded';
+      }
+    }
+
+    const bitciderData = bitciderApi.payload || {};
+    const ciderConnected = bitciderApi.state === 'operational' && bitciderData.connected === true;
+    const relayOnline = ciderConnected && bitciderData.ciderRelay?.online === true;
+    const addonUrl = typeof bitciderData.addonUrl === 'string' ? bitciderData.addonUrl : '';
+    let addonPath = '';
+    let addonManifest = null;
+    let addonManifestProbe = null;
+    let addonSearchProbe = null;
+
+    if (ciderConnected && addonUrl) {
+      try {
+        const parsedAddonUrl = new URL(addonUrl, window.location.origin);
+        if (/^\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(parsedAddonUrl.pathname)) {
+          addonPath = parsedAddonUrl.pathname;
+          addonManifestProbe = await probe(addonPath);
+          addonManifest = addonManifestProbe.payload;
+          addonManifestProbe = {
+            ...addonManifestProbe,
+            endpoint: '/<personal-key>/manifest.json',
+            detail: addonManifestProbe.state === 'operational'
+              ? 'The connected account has a personal manifest and the current frontend proxy can reach it.'
+              : addonManifestProbe.error
+          };
+          if (relayOnline && addonManifestProbe.state === 'operational') {
+            const searchPath = addonPath.replace(/\/manifest\.json$/, '/search') + '?q=Daft%20Punk';
+            addonSearchProbe = await probe(searchPath);
+            addonSearchProbe = {
+              ...addonSearchProbe,
+              endpoint: '/<personal-key>/search?q=Daft+Punk',
+              detail: Array.isArray(addonSearchProbe.payload?.tracks) && addonSearchProbe.payload.tracks.length
+                ? 'The browser relay returned ' + addonSearchProbe.payload.tracks.length + ' live track result(s).'
+                : addonSearchProbe.error || 'The search endpoint responded but did not return tracks.'
+            };
+            if (addonSearchProbe.state === 'operational' && !(addonSearchProbe.payload?.tracks || []).length) addonSearchProbe.state = 'degraded';
+          }
+        }
+      } catch {
+        addonPath = '';
+      }
+    }
+
+    const probes = {};
+    const save = (id, state, label, detail, endpoint, source = null) => {
+      probes[id] = {
+        state,
+        label,
+        detail,
+        endpoint: endpoint || source?.endpoint || '',
+        httpStatus: source?.httpStatus ?? null,
+        durationMs: source?.durationMs ?? null,
+        checkedAt
+      };
+    };
+    const direct = (id, source, endpoint, detail) => {
+      save(
+        id,
+        source?.state || 'unverified',
+        source?.state === 'operational' ? 'OPERATIONAL' : source?.state === 'degraded' ? 'DEGRADED' : source?.state === 'offline' ? 'OFFLINE' : 'NOT PROBED',
+        detail || source?.error || 'The endpoint did not return an independent status.',
+        endpoint || source?.endpoint,
+        source
+      );
+    };
+    const capability = (id, enabled, label, detail, endpoint) => {
+      save(id, enabled ? 'advertised' : 'unverified', enabled ? label : 'NOT VERIFIED', enabled ? detail : 'The backend did not advertise this capability.', endpoint);
+    };
+    const idle = (id, label, detail, endpoint) => save(id, 'idle', label, detail, endpoint);
+
+    direct('deplexo', backend, '/health', backend.payload?.service === 'BitCider'
+      ? 'The primary Deplexo API responded with a healthy BitCider service identity and API version.'
+      : backend.error || 'The primary API responded, but its service identity could not be confirmed.');
+
+    direct('site-bitcider', bitciderPage, '/', bitciderPage.state === 'operational' ? 'The BitCider page returned a successful document response.' : bitciderPage.error);
+    direct('site-bitmono', bitmonoPage, '/bitmono/', bitmonoPage.state === 'operational' ? 'The BitMono page returned a successful document response.' : bitmonoPage.error);
+    direct('site-bitconnection', bitconnectionPage, '/bitconnection/', bitconnectionPage.state === 'operational' ? 'The BitConnection page returned a successful document response.' : bitconnectionPage.error);
+
+    if (bitciderApi.state !== 'operational') {
+      direct('bc-cider-state', bitciderApi, '/api/status', bitciderApi.error);
+      direct('bc-browser-relay', bitciderApi, '/api/status', bitciderApi.error);
+      direct('bc-account-state', bitciderApi, '/api/status', bitciderApi.error);
+      direct('bc-passkeys', bitciderApi, '/api/status', bitciderApi.error);
+      direct('bc-encryption', bitciderApi, '/api/status', bitciderApi.error);
+      idle('bc-addon-manifest', 'NOT LINKED', 'Link Cider in this browser to provision a personal BitChord manifest.', '/api/status');
+      idle('bc-addon-search', 'SESSION REQUIRED', 'A connected Cider account and an active browser relay are required to run a real search.', '/api/status');
+      direct('bc-auth-flow', backend, '/health', backend.payload?.browserCiderBridgeSupported === true ? 'The backend advertises browser-local Cider authorization and relay support.' : backend.error);
+    } else {
+      save('bc-cider-state', ciderConnected ? 'operational' : 'idle', ciderConnected ? 'CONNECTED' : 'NOT LINKED', ciderConnected ? 'A personal Cider token and add-on key are attached to this browser session.' : 'No Cider token is connected in this browser session.', '/api/status', bitciderApi);
+      save('bc-browser-relay', !ciderConnected ? 'idle' : relayOnline ? 'operational' : 'degraded', !ciderConnected ? 'SESSION REQUIRED' : relayOnline ? 'ONLINE' : 'NOT RESPONDING', !ciderConnected ? 'Link Cider to start the browser-local relay.' : relayOnline ? 'The open BitCider tab is polling and responding to local Cider bridge jobs.' : 'Cider is linked, but the browser relay is not currently reporting an active poll.', '/api/status', bitciderApi);
+      save('bc-account-state', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? 'SIGNED IN' : 'SIGNED OUT', bitciderData.account?.authenticated ? 'The BitCider account session is authenticated.' : 'The anonymous browser session is available; no account is currently signed in.', '/api/status', bitciderApi);
+      save('bc-passkeys', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? String(bitciderData.passkeyCount || 0) + ' REGISTERED' : 'SIGN-IN REQUIRED', bitciderData.account?.authenticated ? 'The account status endpoint returned its passkey inventory.' : 'Passkey inventory is only returned to an authenticated account.', '/api/status', bitciderApi);
+      save('bc-encryption', bitciderData.tokenEncryptionConfigured ? 'operational' : 'degraded', bitciderData.tokenEncryptionConfigured ? 'DEDICATED KEY READY' : 'VOLUME KEY', bitciderData.tokenEncryptionConfigured ? 'The dedicated Deplexo token-encryption key is configured.' : 'The service is using its persistent-volume fallback key. Configure BITCIDER_ENCRYPTION_KEY for separated key storage.', '/api/status', bitciderApi);
+      direct('bc-auth-flow', backend, '/health', backend.payload?.browserCiderBridgeSupported === true ? 'The backend advertises browser-local Cider authorization and relay support.' : backend.error);
+      if (addonManifestProbe) {
+        direct('bc-addon-manifest', addonManifestProbe, '/<personal-key>/manifest.json', addonManifestProbe.detail);
+      } else {
+        idle('bc-addon-manifest', 'NOT LINKED', 'A personal manifest is created after Cider is linked to this browser.', '/api/status');
+      }
+      if (addonSearchProbe) {
+        direct('bc-addon-search', addonSearchProbe, '/<personal-key>/search?q=Daft+Punk', addonSearchProbe.detail);
+      } else {
+        idle('bc-addon-search', 'SESSION REQUIRED', 'This probe runs a real Cider catalog search only when the linked browser relay is online.', '/api/status');
+      }
+    }
+
+    const bitciderManifest = addonManifest || {};
+    const bitciderOptions = Array.isArray(bitciderManifest.settings) ? bitciderManifest.settings.flatMap(setting => Array.isArray(setting.options) ? setting.options : []) : [];
+    const bitciderAtmos = /dolby\s*atmos/i.test(String(bitciderManifest.description || '')) || bitciderOptions.some(option => /atmos/i.test(String(option.label || option.value || '')));
+    capability('bc-renditions', Boolean(addonManifestProbe?.state === 'operational' && bitciderAtmos), 'OPTIONS LISTED', 'The personal manifest advertises supported AAC and Dolby Atmos renditions; actual playback still requires a real track.', '/<personal-key>/manifest.json');
+
+    const manifestPayload = monoManifest.payload || {};
+    const monoResources = Array.isArray(manifestPayload.resources) ? manifestPayload.resources : [];
+    const monoOptions = Array.isArray(manifestPayload.settings) ? manifestPayload.settings.flatMap(setting => Array.isArray(setting.options) ? setting.options : []) : [];
+    save('mono-manifest', monoManifest.state === 'operational' && monoResources.includes('search') && monoResources.includes('stream') ? 'operational' : monoManifest.state, monoManifest.state === 'operational' ? 'SEARCH + STREAM' : (monoManifest.error || 'NOT AVAILABLE'), monoManifest.state === 'operational' ? 'The BitMono manifest advertises both search and stream resources.' : monoManifest.error || 'The BitMono manifest did not advertise the expected resources.', '/bitmono/manifest.json', monoManifest);
+    direct('mono-search', monoHealth, monoFallbackSearch ? '/bitmono/search?q=Daft+Punk' : '/api/bitmono/health', monoHealth.payload?.message || (monoHealth.state === 'operational' ? 'The live Monochrome/Deezer song-search pipeline returned a result.' : monoHealth.error));
+    const monoProvider = monoHealth.payload?.provider;
+    save('mono-primary', monoHealth.state === 'operational' && monoProvider === 'monochrome' ? 'operational' : monoProvider === 'deezer' ? 'degraded' : monoHealth.state === 'offline' ? 'offline' : 'unverified', monoProvider === 'monochrome' ? 'PRIMARY ONLINE' : monoProvider === 'deezer' ? 'FALLBACK IN USE' : 'NOT VERIFIED', monoProvider === 'monochrome' ? 'The primary Monochrome provider returned the live test search.' : monoProvider === 'deezer' ? 'The search pipeline returned results from Deezer because Monochrome did not supply the selected result.' : monoHealth.error || 'A provider-specific live result was not confirmed.', '/api/bitmono/health', monoHealth);
+    save('mono-fallback', monoProvider === 'deezer' ? 'operational' : monoProvider === 'monochrome' ? 'idle' : 'unverified', monoProvider === 'deezer' ? 'ACTIVE' : monoProvider === 'monochrome' ? 'STANDBY' : 'NOT VERIFIED', monoProvider === 'deezer' ? 'The Deezer fallback is currently serving the test result.' : monoProvider === 'monochrome' ? 'The primary provider succeeded, so fallback was not needed for this check.' : 'The fallback provider could not be independently confirmed.', '/api/bitmono/health', monoHealth);
+    save('mono-stream', monoResources.includes('stream') ? 'advertised' : 'unverified', monoResources.includes('stream') ? 'ROUTE DECLARED' : 'NOT VERIFIED', monoResources.includes('stream') ? 'The addon manifest declares stream resolution. A real track is required to exercise it.' : 'The manifest did not declare stream resolution.', '/bitmono/manifest.json', monoManifest);
+    save('mono-cache', 'unverified', 'TRACK REQUIRED', 'The complete-file cache is validated only while resolving and downloading a real track; this console does not download audio as a health check.', 'Track-dependent');
+    save('mono-lossless', monoOptions.some(option => /lossless/i.test(String(option.value || '') + ' ' + String(option.label || ''))) ? 'advertised' : 'unverified', monoOptions.some(option => /lossless/i.test(String(option.value || '') + ' ' + String(option.label || ''))) ? 'LOSSLESS LISTED' : 'NOT VERIFIED', 'Lossless choices are declared in the BitMono manifest; an actual stream is needed to verify its delivered codec.', '/bitmono/manifest.json', monoManifest);
+    save('mono-hires-atmos', monoOptions.some(option => /hi.?res|atmos/i.test(String(option.value || '') + ' ' + String(option.label || ''))) ? 'advertised' : 'unverified', monoOptions.some(option => /hi.?res|atmos/i.test(String(option.value || '') + ' ' + String(option.label || ''))) ? 'OPTIONS LISTED' : 'NOT VERIFIED', 'Hi-Res and Atmos options are advertised by the manifest; playback output is not inferred from the setting list.', '/bitmono/manifest.json', monoManifest);
+
+    const capabilities = connectionHealth.payload?.capabilities || {};
+    direct('conn-account-api', connectionAccount, '/api/bitconnection/account', connectionAccount.state === 'operational' ? (connectionAccount.payload?.authenticated ? 'The BitConnection account endpoint is live and this browser is signed in.' : 'The account endpoint is live; this browser is currently signed out.') : connectionAccount.error);
+    const passkeyProtected = connectionPasskeys.httpStatus === 401;
+    save('conn-passkeys', passkeyProtected || connectionPasskeys.state === 'operational' ? 'operational' : connectionPasskeys.state, passkeyProtected ? 'AUTH GATED' : connectionPasskeys.state === 'operational' ? 'AVAILABLE' : 'OFFLINE', passkeyProtected ? 'The passkey-listing route is present and correctly requires an authenticated account.' : connectionPasskeys.state === 'operational' ? 'The protected passkey-listing endpoint returned successfully.' : connectionPasskeys.error, '/api/bitconnection/passkeys', connectionPasskeys);
+    capability('conn-recovery', capabilities.recoveryCodes === 'enabled', 'DECLARED READY', 'The BitConnection health contract advertises recovery-code support.', '/api/bitconnection/health');
+    direct('conn-directory', connectionDirectory, '/api/bitconnection/rooms/public', connectionDirectory.state === 'operational' ? 'The public room directory endpoint is responding with ' + Number(connectionDirectory.payload?.total || 0) + ' open room(s).' : connectionDirectory.error);
+    capability('conn-create-room', capabilities.roomCreation === 'enabled', 'DECLARED READY', 'Room creation is advertised; a signed-in account with a completed profile is required to create a real room.', '/api/bitconnection/health');
+    capability('conn-playback-sync', Boolean(capabilities.playbackSync), 'DECLARED READY', 'The health contract advertises playback synchronization through BitChord Web.', '/api/bitconnection/health');
+    capability('conn-shared-queue', Boolean(capabilities.sharedQueue), 'DECLARED READY', 'The health contract advertises a room-permission-aware shared queue.', '/api/bitconnection/health');
+    capability('conn-signaling', String(capabilities.realtimeRooms || '').includes('signaling'), 'SIGNALING DECLARED', 'Realtime polling/signaling is advertised; end-to-end signaling requires an active room.', '/api/bitconnection/health');
+    save('conn-ice', capabilities.iceConfiguration ? 'advertised' : 'unverified', capabilities.iceConfiguration ? 'ROOM SCOPED' : 'NOT VERIFIED', capabilities.iceConfiguration ? 'Participant-scoped ICE settings are advertised. The credential endpoint requires an active room participant.' : 'No ICE capability was reported.', '/api/bitconnection/health');
+    save('conn-direct-audio', 'unverified', 'BROWSER SESSION', 'Direct WebRTC audio can only be verified while a real host and guest are connected to the same room. Audio is not relayed through Deplexo.', 'Live room required');
+    capability('conn-private-access', Boolean(capabilities.privateRoomVerification), 'DECLARED READY', 'Private-room verification is advertised as proximity checks or a host one-time code.', '/api/bitconnection/health');
+
+    setTopologyStatuses(buildTopologyStatuses(probes));
+    setPageStatuses(previous => ({
+      ...previous,
+      bitcider: { ...previous.bitcider, state: bitciderPage.state === 'operational' ? 'online' : bitciderPage.state === 'offline' ? 'offline' : 'warning', label: bitciderPage.state === 'operational' ? 'ONLINE' : bitciderPage.error || 'DEGRADED', httpStatus: bitciderPage.httpStatus, healthStatus: bitciderApi.httpStatus, durationMs: bitciderPage.durationMs, testing: false },
+      bitmono: { ...previous.bitmono, state: bitmonoPage.state === 'operational' ? 'online' : bitmonoPage.state === 'offline' ? 'offline' : 'warning', label: bitmonoPage.state === 'operational' ? 'ONLINE' : bitmonoPage.error || 'DEGRADED', httpStatus: bitmonoPage.httpStatus, healthStatus: monoHealth.httpStatus, durationMs: bitmonoPage.durationMs, testing: false },
+      bitconnection: { ...previous.bitconnection, state: bitconnectionPage.state === 'operational' ? 'online' : bitconnectionPage.state === 'offline' ? 'offline' : 'warning', label: bitconnectionPage.state === 'operational' ? 'ONLINE' : bitconnectionPage.error || 'DEGRADED', httpStatus: bitconnectionPage.httpStatus, healthStatus: connectionHealth.httpStatus, durationMs: bitconnectionPage.durationMs, testing: false }
+    }));
+    setTopologyBusy(false);
+  }, []);
+
   useEffect(() => {
     let active = true;
     requestJson('/api/admin/status').then(payload => {
@@ -650,13 +881,16 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     if (phase !== 'authenticated') return undefined;
     refreshDashboard().catch(loadError => setError(loadError.message || 'Could not load admin data.'));
     refreshPageStatuses();
+    refreshTopology();
     const dashboardTimer = window.setInterval(() => refreshDashboard().catch(() => {}), 20000);
     const pageTimer = window.setInterval(refreshPageStatuses, 30000);
+    const topologyTimer = window.setInterval(refreshTopology, 60000);
     return () => {
       window.clearInterval(dashboardTimer);
       window.clearInterval(pageTimer);
+      window.clearInterval(topologyTimer);
     };
-  }, [phase, refreshDashboard, refreshPageStatuses]);
+  }, [phase, refreshDashboard, refreshPageStatuses, refreshTopology]);
 
   async function enrollOwnerPasskey() {
     setBusy('bootstrap');
