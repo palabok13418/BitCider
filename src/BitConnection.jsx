@@ -806,7 +806,7 @@ function AccountManagementWindow() {
       )}
       {stage === 'manage' && profile && (
         <section className="bc-window-state bc-account-manage">
-          <UnifiedAccountCenterIdentity profile={profile} createdAt={profile.createdAt} />
+          <UnifiedAccountCenterIdentity currentProduct="bitconnection" profile={profile} createdAt={profile.createdAt} />
           <div className="bc-account-actions">
             <button className="bc-secondary-button" type="button" onClick={() => setStage('profile')}>Edit profile</button>
             <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
