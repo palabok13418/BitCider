@@ -450,6 +450,7 @@
 .admin-user-copy { min-width: 0; }
 .admin-user-copy strong { display: block; color: #e3f2f1; font-size: 10px; font-weight: 750; }
 .admin-user-copy span { display: block; margin-top: 4px; color: rgba(165, 199, 201, .47); font-size: 8px; }
+.admin-user-copy code { display: inline-block; margin-top: 4px; color: rgba(149, 208, 210, .36); font: 7px ui-monospace, monospace; letter-spacing: .08em; }
 .admin-user-actions { display: flex; gap: 6px; }
 .admin-user-actions button { min-height: 28px; padding: 0 8px; border: 1px solid rgba(138, 201, 199, .17); border-radius: 6px; color: #a8e0da; background: rgba(86, 171, 163, .05); font: 800 7px ui-monospace, monospace; letter-spacing: .07em; }
 .admin-user-actions button.is-danger { border-color: rgba(226, 115, 115, .19); color: #f1a1a1; background: rgba(164, 55, 55, .07); }
