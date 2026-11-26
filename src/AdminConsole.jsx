@@ -154,9 +154,9 @@ function MapView({ overview, pageStatuses, refreshPages, runTest }) {
               <linearGradient id="admin-link-gradient" x1="0" x2="1"><stop offset="0" stopColor="#ec799c" /><stop offset="1" stopColor="#8de7de" /></linearGradient>
               <filter id="admin-link-glow"><feGaussianBlur stdDeviation="4" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
             </defs>
-            <path d="M700 350 C745 350 760 365 805 365" />
-            <path d="M480 515 C480 550 480 585 480 620" />
-            <circle cx="700" cy="350" r="5" /><circle cx="805" cy="365" r="5" /><circle cx="480" cy="515" r="5" /><circle cx="480" cy="620" r="5" />
+            <path d="M820 350 C835 350 845 365 860 365" />
+            <path d="M600 515 C600 550 600 585 600 620" />
+            <circle cx="820" cy="350" r="5" /><circle cx="860" cy="365" r="5" /><circle cx="600" cy="515" r="5" /><circle cx="600" cy="620" r="5" />
           </svg>
           <div className="admin-map-node-wrap admin-map-core">
             <SiteNode site={nodes[0]} status={pageStatuses.bitcider} openSite={openSite} runTest={runTest} />
