@@ -174,10 +174,17 @@ function aggregateTopologyStatus(children) {
   if (!states.length) return { state: 'unverified', label: 'NOT PROBED', detail: 'No child checks are registered.' };
   if (states.includes('offline')) return { state: 'offline', label: 'OFFLINE', detail: 'At least one child check is unreachable.' };
   if (states.includes('degraded')) return { state: 'degraded', label: 'DEGRADED', detail: 'At least one child check is responding with a degraded result.' };
-  const active = states.filter(state => state === 'operational' || state === 'advertised');
+
+  const operational = states.filter(state => state === 'operational');
+  const advertised = states.filter(state => state === 'advertised');
   const waiting = states.filter(state => state === 'idle' || state === 'unverified');
-  if (active.length && waiting.length) return { state: 'partial', label: 'PARTIAL', detail: active.length + ' child checks are ready; ' + waiting.length + ' require a session or deeper test.' };
-  if (active.length) return { state: 'operational', label: 'OPERATIONAL', detail: 'All child checks are ready or explicitly supported.' };
+  if (operational.length && (advertised.length || waiting.length)) {
+    return { state: 'partial', label: 'PARTIAL', detail: operational.length + ' child checks are operational; ' + (advertised.length + waiting.length) + ' are capability-only, session-gated, or not independently verified.' };
+  }
+  if (advertised.length && (waiting.length || !operational.length)) {
+    return { state: 'partial', label: 'PARTIAL', detail: advertised.length + ' capabilities are declared; ' + waiting.length + ' require a session or deeper test.' };
+  }
+  if (operational.length) return { state: 'operational', label: 'OPERATIONAL', detail: 'All child checks were independently verified by live probes.' };
   if (states.every(state => state === 'idle')) return { state: 'idle', label: 'IDLE', detail: 'The feature is available but waiting for an authenticated or active session.' };
   return { state: 'unverified', label: 'NOT PROBED', detail: 'No independent live probe is available for these child features.' };
 }
@@ -462,12 +469,6 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
   const children = TOPOLOGY_NODES.filter(item => item.parentId === node.id);
   const checkCount = TOPOLOGY_NODES.filter(item => item.type === 'check').length;
   const verifiedChecks = TOPOLOGY_NODES.filter(item => item.type === 'check' && ['operational', 'advertised'].includes(topologyStatuses[item.id]?.state)).length;
-  const statusCounts = Object.values(topologyStatuses).reduce((counts, item) => {
-    const state = item?.state || 'unverified';
-    counts[state] = (counts[state] || 0) + 1;
-    return counts;
-  }, {});
-
   return (
     <section className="admin-topology">
       <div className="admin-topology-heading">
