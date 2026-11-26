@@ -22,6 +22,31 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_PROXY_SECRET` | A long random secret, shared only with the Netlify and Cloudflare gateways |
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
+
+### Admin mode owner bootstrap
+
+Admin mode is disabled until an owner passkey is enrolled. Configure `BITCIDER_ADMIN_BOOTSTRAP_CODE` in Deplexo's environment with a high-entropy random secret of at least 32 characters. Generate one in a trusted terminal, for example:
+
+```sh
+openssl rand -base64 36
+```
+
+Do not put the generated value in source control, a URL, a frontend build variable, or a chat message. It is a backend-only Deplexo secret.
+
+After deploying the Deplexo backend and the matching BitCider frontend:
+
+1. Open BitCider and open the browser developer console.
+2. Run `window.bitciderAdmin.bootstrap('PASTE_THE_BOOTSTRAP_CODE')`.
+3. In the admin gate, choose **Enroll first passkey** and complete the platform authenticator/passkey prompt.
+4. Once enrollment succeeds, remove `BITCIDER_ADMIN_BOOTSTRAP_CODE` from Deplexo's environment and redeploy the backend. The server also permanently records that bootstrap was consumed.
+5. For later visits, run `window.bitciderAdmin.open()` and sign in with the owner passkey.
+
+Only one owner passkey can be registered. There is no second-passkey or password fallback. Keep the enrolled passkey available on a secure device; losing it requires an operator-assisted recovery from the persistent admin state, not another bootstrap attempt.
+
+The owner credential and short-lived admin sessions are stored in `admin.json` under `BITCIDER_DATA_DIR` on the persistent Deplexo volume. Protect that volume and its backups like account-authentication data. The admin console lists anonymous account references only, not usernames, email addresses, IP addresses, device names, or profile data. “Active” is an estimate based on an authenticated request within the last two minutes.
+
+Bot accounts are test identities. A generated BitCider bot has an Account Key and password but no Cider/Apple Music token, so it is not a linked music account. The generated credentials and recovery codes are displayed once in the admin session; copy them before leaving the panel.
+
 | `BITCIDER_ALLOWED_ORIGINS` | Optional comma-separated HTTPS origins if a custom Deplexo domain is used |
 | `BITCIDER_CIDER_REQUEST_TIMEOUT_MS` | Optional browser-bridge Cider request deadline, 1,000 to 30,000 ms; defaults to 20,000 ms |
 
