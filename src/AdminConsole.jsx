@@ -532,7 +532,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
                   {users.length ? users.map((user, index) => (
                     <article className="admin-user-row" key={user.ref}>
                       <div className="admin-user-number">{String(index + 1).padStart(2, '0')}</div>
-                      <div className="admin-user-copy"><strong>Anonymous account {String(index + 1).padStart(2, '0')}</strong><span>{user.product}{user.bot ? ' · Admin-created bot' : ''}</span></div>
+                      <div className="admin-user-copy"><strong>Anonymous account {String(index + 1).padStart(2, '0')}</strong><span>{user.product}{user.bot ? ' · Admin-created bot' : ''}</span><code>{user.ref}</code></div>
                       <StatusPill state={user.suspended ? 'warning' : user.active ? 'online' : 'checking'} label={user.suspended ? 'SUSPENDED' : user.active ? 'ACTIVE' : 'IDLE'} />
                       <div className="admin-user-actions">
                         <button type="button" onClick={() => moderateUser(user, 'suspend')} disabled={busy === 'user:' + user.ref}>{user.suspended ? 'RESTORE' : 'SUSPEND'}</button>
