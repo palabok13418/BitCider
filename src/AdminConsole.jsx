@@ -470,13 +470,17 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
           {phase === 'bootstrap' && (
             <div className="admin-auth-setup-note">
               <strong>ONE OWNER · ONE PASSKEY</strong>
-              <span>Bootstrap is available only when BITCIDER_ADMIN_BOOTSTRAP_CODE is configured and no owner key exists.</span>
+              <span>{status?.bootstrapConfigured === false
+                ? 'BACKEND SECRET MISSING: Add BITCIDER_ADMIN_BOOTSTRAP_CODE to the Deplexo backend environment, then redeploy and reopen this console.'
+                : status?.bootstrapAvailable === false
+                  ? 'BOOTSTRAP IS LOCKED: The backend reports that first-owner enrollment is not currently available. Check the admin state before retrying.'
+                  : 'Bootstrap is available only when BITCIDER_ADMIN_BOOTSTRAP_CODE is configured and no owner key exists.'}</span>
             </div>
           )}
           {error && <div className="admin-console-error" role="alert">{error}</div>}
           {notice && <div className="admin-console-notice" role="status">{notice}</div>}
           {phase === 'bootstrap' ? (
-            <button className="admin-button admin-button-primary admin-auth-submit" type="button" onClick={enrollOwnerPasskey} disabled={busy === 'bootstrap' || !bootstrapCode}>
+            <button className="admin-button admin-button-primary admin-auth-submit" type="button" onClick={enrollOwnerPasskey} disabled={busy === 'bootstrap' || !bootstrapCode || status?.bootstrapAvailable !== true}>
               {busy === 'bootstrap' ? 'WAITING FOR PASSKEY…' : 'ENROLL FIRST PASSKEY'}
             </button>
           ) : phase === 'login' ? (
