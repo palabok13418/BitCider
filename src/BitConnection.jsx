@@ -53,7 +53,7 @@ function openJoinWindow(roomId) {
   if (!popup) window.location.assign('/bitconnection/?join=' + encodeURIComponent(roomId));
 }
 
-function PublicPartyCard({ room, featured = false, onJoin }) {
+function PublicPartyCard({ room, onJoin }) {
   const count = Number(room.participantCount || 0);
   const capacity = Number(room.partySize || 0);
   const track = room.currentTrack?.title;
@@ -61,7 +61,6 @@ function PublicPartyCard({ room, featured = false, onJoin }) {
     <article className="bc-public-party-card">
       <div className="bc-public-party-topline">
         <span className="bc-public-live"><i /> LIVE NOW</span>
-        {featured && <span className="bc-public-featured">FEATURED</span>}
       </div>
       <h3>{room.roomName}</h3>
       <p className="bc-public-host">Hosted by <strong>{room.hostUsername || 'BitConnection host'}</strong></p>
@@ -1348,7 +1347,6 @@ export default function BitConnection() {
   const isCreateWindow = routeParams.get('create') === '1';
   const isAccountWindow = routeParams.get('account') === '1';
   const joinRoomId = routeParams.get('join') || '';
-  const [featuredParties, setFeaturedParties] = useState([]);
   const [publicParties, setPublicParties] = useState([]);
   const [partySearch, setPartySearch] = useState('');
   const [searchResults, setSearchResults] = useState(null);
@@ -1379,7 +1377,6 @@ export default function BitConnection() {
           cache: 'no-store', credentials: 'same-origin'
         }), 'Could not load public parties.');
         if (!active) return;
-        setFeaturedParties(payload.featured || []);
         setPublicParties(payload.rooms || []);
         setPartyDirectoryError('');
       } catch (directoryError) {
@@ -1531,37 +1528,35 @@ export default function BitConnection() {
       <aside className="bitconnection-discovery" aria-label="Public listening parties">
         <div className="bc-discovery-heading">
           <div className="bitconnection-eyebrow"><span /> LIVE DISCOVERY</div>
-          <h2>Featured parties</h2>
-          <p>Random public rooms, live right now.</p>
+          <h2>More happening now</h2>
         </div>
-        <div className="bc-featured-parties">
-          {featuredParties.length > 0 ? featuredParties.map(room => (
-            <PublicPartyCard key={room.roomId} room={room} featured onJoin={openJoinWindow} />
-          )) : (
-            <div className="bc-public-empty">{partyDirectoryLoading ? 'Finding live parties…' : 'No public parties are live right now.'}</div>
-          )}
+        <div className="bc-party-search-shell">
+          <label className="bc-party-search">
+            <span>SEARCH PUBLIC PARTIES</span>
+            <div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.2 4.2" /></svg>
+              <input type="search" value={partySearch} onChange={event => setPartySearch(event.target.value)} placeholder="Search rooms, hosts, or songs" />
+            </div>
+          </label>
         </div>
-        <label className="bc-party-search">
-          <span>SEARCH PUBLIC PARTIES</span>
-          <div>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.2 4.2" /></svg>
-            <input type="search" value={partySearch} onChange={event => setPartySearch(event.target.value)} placeholder="Search rooms, hosts, or songs" />
-          </div>
-        </label>
         <div className="bc-discovery-results" aria-live="polite">
-          <div className="bc-discovery-results-heading">{partySearch.trim() ? 'SEARCH RESULTS' : 'MORE HAPPENING NOW'}</div>
-          {partySearch.trim() ? (
-            partySearchLoading ? <div className="bc-public-empty">Searching live rooms…</div>
-              : searchResults?.length ? searchResults.map(room => <PublicPartyCard key={room.roomId} room={room} onJoin={openJoinWindow} />)
-                : <div className="bc-public-empty">No matching public parties found.</div>
+          <div className="bc-discovery-results-heading">{partySearch.trim() ? 'SEARCH RESULTS' : 'DISCOVERABLE PARTIES'}</div>
+          {partySearch.trim() && partySearchLoading ? (
+            <div className="bc-public-empty">Searching live rooms…</div>
+          ) : (partySearch.trim() ? searchResults : publicParties)?.length ? (
+            (partySearch.trim() ? searchResults : publicParties).map(room => (
+              <PublicPartyCard key={room.roomId} room={room} onJoin={openJoinWindow} />
+            ))
           ) : (
-            (() => {
-              const featuredIds = new Set(featuredParties.map(room => room.roomId));
-              const others = publicParties.filter(room => !featuredIds.has(room.roomId)).slice(0, 3);
-              return others.length ? others.map(room => <PublicPartyCard key={room.roomId} room={room} onJoin={openJoinWindow} />)
-                : partyDirectoryError ? <div className="bc-public-empty">{partyDirectoryError}</div>
-                  : <div className="bc-public-empty">{partyDirectoryLoading ? 'Checking for more rooms…' : featuredParties.length ? 'You are all caught up.' : 'Create a public room to start the next party.'}</div>;
-            })()
+            <div className="bc-public-empty">
+              {partySearch.trim()
+                ? 'No matching public parties found.'
+                : partyDirectoryError
+                  ? partyDirectoryError
+                  : partyDirectoryLoading
+                    ? 'Finding discoverable parties…'
+                    : 'No public parties are live right now.'}
+            </div>
           )}
         </div>
       </aside>
