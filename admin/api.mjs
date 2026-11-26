@@ -193,11 +193,13 @@ export function createAdminRouter({
     return next();
   }
 
-  function createAdminSession(res) {
+  function createAdminSession(req, res) {
+    const previousSessionId = readCookie(req, ADMIN_SESSION_COOKIE);
     const sessionId = crypto.randomBytes(32).toString('base64url');
     const csrfToken = crypto.randomBytes(32).toString('base64url');
     const now = Date.now();
     return state.update(current => {
+      if (ID_PATTERN.test(previousSessionId)) delete current.sessions[sha256(previousSessionId)];
       for (const [key, value] of Object.entries(current.sessions)) {
         if (!value || Number(value.expiresAt) <= now) delete current.sessions[key];
       }
@@ -306,7 +308,7 @@ export function createAdminRouter({
         return { ok: true };
       });
       if (saved.status) return res.status(409).json({ error: 'ADMIN_ALREADY_INITIALIZED' });
-      const session = await createAdminSession(res);
+      const session = await createAdminSession(req, res);
       res.set('Cache-Control', 'no-store');
       return res.status(201).json({ ok: true, authenticated: true, csrfToken: session.csrfToken });
     } catch (error) {
@@ -388,7 +390,7 @@ export function createAdminRouter({
         return { ok: true };
       });
       if (updated.status) return res.status(409).json({ error: 'ADMIN_PASSKEY_REPLAY', message: 'The passkey was used in another sign-in. Start again.' });
-      const session = await createAdminSession(res);
+      const session = await createAdminSession(req, res);
       res.set('Cache-Control', 'no-store');
       return res.json({ ok: true, authenticated: true, csrfToken: session.csrfToken });
     } catch (error) {
