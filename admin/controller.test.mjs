@@ -127,3 +127,15 @@ test('bot provisioning can create a paired BitCider and BitConnection test ident
   assert.equal(ciderBot.ciderToken, undefined);
   assert.equal(bitConnectionData.accounts.generated_bot.adminBot, true);
 });
+
+test('suspending a BitConnection account revokes active sessions', async () => {
+  const { controller, bitConnectionData } = createHarness();
+  const user = (await controller.listUsers()).find(item => item.product === 'BitConnection');
+  const result = await controller.setUserSuspended(user.ref, true);
+  assert.equal(result.ok, true);
+  assert.ok(bitConnectionData.accounts.bc_user_private_id.suspendedAt);
+  assert.equal(Object.keys(bitConnectionData.authSessions).length, 0);
+  const restored = await controller.setUserSuspended(user.ref, false);
+  assert.equal(restored.ok, true);
+  assert.equal(bitConnectionData.accounts.bc_user_private_id.suspendedAt, undefined);
+});
