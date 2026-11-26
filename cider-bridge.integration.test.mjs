@@ -198,6 +198,11 @@ test('addon requests clearly require the BitCider browser tab to remain open', a
 
   const health = await fetch(backend.origin + '/health').then(response => response.json());
   assert.equal(health.browserCiderBridgeSupported, true);
+  const proxiedHealthResponse = await fetch(backend.origin + '/api/health');
+  const proxiedHealth = await proxiedHealthResponse.json();
+  assert.equal(proxiedHealthResponse.status, 200);
+  assert.equal(proxiedHealth.service, 'BitCider');
+  assert.equal(proxiedHealth.apiVersion, health.apiVersion);
 
   const addonUrl = await createAddon(backend);
   const search = await fetch(addonUrl.replace('/manifest.json', '/search?q=bridge-test'));
