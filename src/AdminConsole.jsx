@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './admin-console.css';
 
-const DEFAULT_MAP_CAMERA = Object.freeze({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 });
 
 const SITE_DEFINITIONS = [
   { id: 'bitcider', name: 'BitCider', page: '/', health: '/health', description: 'Personal Cider source and account hub' },
@@ -97,112 +96,103 @@ function SiteNode({ site, status, openSite, runTest }) {
 }
 
 function MapView({ overview, pageStatuses, refreshPages, runTest }) {
-  const [camera, setCamera] = useState(() => ({ ...DEFAULT_MAP_CAMERA }));
-  const pointer = useRef(null);
+  const canvasRef = useRef(null);
   const viewportRef = useRef(null);
+  const backendRef = useRef(null);
+  const siteRefs = useRef({});
 
-  const updateCamera = updater => {
-    setCamera(value => updater(value && typeof value === 'object' ? value : DEFAULT_MAP_CAMERA));
-  };
-
-  // React may register wheel handlers as passive. Attach explicitly as
-  // non-passive so preventing page scroll while zooming never throws a warning.
   useEffect(() => {
+    const canvas = canvasRef.current;
     const viewport = viewportRef.current;
-    if (!viewport) return undefined;
+    if (!canvas || !viewport) return undefined;
 
-    const handleWheel = event => {
-      if (event.cancelable) event.preventDefault();
-      const deltaY = Number(event.deltaY) || 0;
-      setCamera(value => {
-        const current = value && typeof value === 'object' ? value : DEFAULT_MAP_CAMERA;
-        return {
-          ...current,
-          zoom: Math.max(0.58, Math.min(1.24, current.zoom - deltaY * 0.0007))
-        };
+    const drawConnections = () => {
+      const bounds = viewport.getBoundingClientRect();
+      const width = Math.max(1, bounds.width);
+      const height = Math.max(1, bounds.height);
+      const pixelRatio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1));
+      const pixelWidth = Math.round(width * pixelRatio);
+      const pixelHeight = Math.round(height * pixelRatio);
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
+
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, width, height);
+
+      const backend = backendRef.current?.getBoundingClientRect();
+      if (!backend) return;
+      const startX = backend.left + backend.width / 2 - bounds.left;
+      const startY = backend.bottom - bounds.top;
+
+      SITE_DEFINITIONS.forEach((site, index) => {
+        const node = siteRefs.current[site.id]?.getBoundingClientRect();
+        if (!node) return;
+        const endX = node.left + node.width / 2 - bounds.left;
+        const endY = node.top - bounds.top;
+        const distance = Math.max(24, (endY - startY) * 0.48);
+        const gradient = context.createLinearGradient(startX, startY, endX, endY);
+        gradient.addColorStop(0, 'rgba(130, 215, 213, .3)');
+        gradient.addColorStop(1, index === 0 ? 'rgba(239, 139, 168, .78)' : index === 1 ? 'rgba(218, 225, 226, .65)' : 'rgba(151, 206, 225, .72)');
+
+        context.beginPath();
+        context.moveTo(startX, startY);
+        context.bezierCurveTo(startX, startY + distance, endX, endY - distance, endX, endY);
+        context.strokeStyle = gradient;
+        context.lineWidth = 2;
+        context.stroke();
+
+        context.beginPath();
+        context.arc(endX, endY, 3.5, 0, Math.PI * 2);
+        context.fillStyle = index === 0 ? '#ef8ba8' : index === 1 ? '#d8e1e2' : '#97cee1';
+        context.fill();
       });
     };
 
-    viewport.addEventListener('wheel', handleWheel, { passive: false });
-    return () => viewport.removeEventListener('wheel', handleWheel);
+    drawConnections();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(drawConnections) : null;
+    observer?.observe(viewport);
+    if (backendRef.current) observer?.observe(backendRef.current);
+    Object.values(siteRefs.current).forEach(node => observer?.observe(node));
+    window.addEventListener('resize', drawConnections);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', drawConnections);
+    };
   }, []);
 
-  const beginOrbit = event => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    const startCamera = camera && typeof camera === 'object' ? camera : DEFAULT_MAP_CAMERA;
-    pointer.current = {
-      x: event.clientX,
-      y: event.clientY,
-      camera: { ...startCamera }
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const moveOrbit = event => {
-    const activePointer = pointer.current;
-    const startCamera = activePointer?.camera;
-    if (!activePointer || !startCamera || typeof startCamera !== 'object') {
-      pointer.current = null;
-      return;
-    }
-    const dx = event.clientX - activePointer.x;
-    const dy = event.clientY - activePointer.y;
-    updateCamera(value => ({
-      ...value,
-      rotateY: Math.max(-60, Math.min(60, (Number(startCamera.rotateY) || 0) + dx * 0.22)),
-      rotateX: Math.max(-4, Math.min(42, (Number(startCamera.rotateX) || 0) - dy * 0.14))
-    }));
-  };
-  const endOrbit = () => { pointer.current = null; };
-  const handleKeys = event => {
-    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target?.tagName)) return;
-    const step = event.shiftKey ? 42 : 22;
-    if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') updateCamera(value => ({ ...value, panX: value.panX + step }));
-    if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') updateCamera(value => ({ ...value, panX: value.panX - step }));
-    if (event.key === 'ArrowUp' || event.key.toLowerCase() === 'w') updateCamera(value => ({ ...value, panY: value.panY + step }));
-    if (event.key === 'ArrowDown' || event.key.toLowerCase() === 's') updateCamera(value => ({ ...value, panY: value.panY - step }));
-    if (event.key === '+' || event.key === '=') updateCamera(value => ({ ...value, zoom: Math.min(1.24, value.zoom + 0.06) }));
-    if (event.key === '-' || event.key === '_') updateCamera(value => ({ ...value, zoom: Math.max(0.58, value.zoom - 0.06) }));
-    if (event.key === '0') setCamera({ ...DEFAULT_MAP_CAMERA });
-  };
-  const viewCamera = camera && typeof camera === 'object' ? camera : DEFAULT_MAP_CAMERA;
-
-  const nodes = useMemo(() => SITE_DEFINITIONS, []);
   const openSite = path => window.open(path, '_blank', 'noopener,noreferrer');
 
   return (
     <section className="admin-map-view">
       <div className="admin-section-heading">
-        <div><span className="admin-eyebrow">SYSTEM TOPOLOGY</span><h2>Site map</h2><p>Explore the connected products in a 3D workspace. No personal user information is displayed.</p></div>
+        <div><span className="admin-eyebrow">SYSTEM TOPOLOGY</span><h2>Site canvas</h2><p>A flat 2D view of the three connected pages and their Deplexo backend. No personal user information is displayed.</p></div>
         <button className="admin-button admin-button-quiet" type="button" onClick={refreshPages}>REFRESH STATUS <span>↻</span></button>
       </div>
       <div className="admin-map-toolbar">
-        <span><i /> DRAG TO ORBIT</span><span>WASD / ARROWS TO MOVE</span><span>SCROLL TO ZOOM</span>
-        <button type="button" onClick={() => setCamera({ rotateX: 13, rotateY: -17, zoom: 0.88, panX: 0, panY: 0 })}>RESET VIEW</button>
+        <span><i /> 2D SITE CANVAS</span><span>DEPLEXO API CORE</span><span>3 CONNECTED PAGES</span>
       </div>
-      <div className="admin-map-viewport" ref={viewportRef} onKeyDown={handleKeys} tabIndex={0} role="region" aria-label="Interactive three dimensional site map">
-        <div className="admin-map-stars" />
-        <div className="admin-map-scene" onPointerDown={beginOrbit} onPointerMove={moveOrbit} onPointerUp={endOrbit} onPointerCancel={endOrbit} onLostPointerCapture={endOrbit}
-          style={{ transform: 'translate3d(' + viewCamera.panX + 'px,' + viewCamera.panY + 'px,0) rotateX(' + viewCamera.rotateX + 'deg) rotateY(' + viewCamera.rotateY + 'deg) scale(' + viewCamera.zoom + ')' }}>
-          <div className="admin-map-grid-plane" />
-          <svg className="admin-map-connectors" viewBox="0 0 1200 860" aria-hidden="true">
-            <defs>
-              <linearGradient id="admin-link-gradient" x1="0" x2="1"><stop offset="0" stopColor="#ec799c" /><stop offset="1" stopColor="#8de7de" /></linearGradient>
-              <filter id="admin-link-glow"><feGaussianBlur stdDeviation="4" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-            </defs>
-            <path d="M820 350 C835 350 845 365 860 365" />
-            <path d="M600 515 C600 550 600 585 600 620" />
-            <circle cx="820" cy="350" r="5" /><circle cx="860" cy="365" r="5" /><circle cx="600" cy="515" r="5" /><circle cx="600" cy="620" r="5" />
-          </svg>
-          <div className="admin-map-node-wrap admin-map-core">
-            <SiteNode site={nodes[0]} status={pageStatuses.bitcider} openSite={openSite} runTest={runTest} />
+      <div className="admin-map-viewport" ref={viewportRef} role="region" aria-label="Two dimensional map of BitCider, BitMono, and BitConnection">
+        <canvas ref={canvasRef} className="admin-map-canvas-lines" aria-hidden="true" />
+        <div className="admin-map-canvas-content">
+          <div className="admin-map-backend" ref={backendRef}>
+            <span className="admin-map-backend-light" />
+            <span className="admin-map-backend-copy"><strong>DEPLEXO</strong><small>SHARED API CORE</small></span>
+            <span className="admin-map-backend-state">BACKEND</span>
           </div>
-          <div className="admin-map-node-wrap admin-map-mono">
-            <SiteNode site={nodes[1]} status={pageStatuses.bitmono} openSite={openSite} runTest={runTest} />
+          <div className="admin-map-sites">
+            {SITE_DEFINITIONS.map(site => (
+              <div className="admin-map-site" key={site.id} ref={element => {
+                if (element) siteRefs.current[site.id] = element;
+                else delete siteRefs.current[site.id];
+              }}>
+                <SiteNode site={site} status={pageStatuses[site.id]} openSite={openSite} runTest={runTest} />
+              </div>
+            ))}
           </div>
-          <div className="admin-map-node-wrap admin-map-connection">
-            <SiteNode site={nodes[2]} status={pageStatuses.bitconnection} openSite={openSite} runTest={runTest} />
-          </div>
-          <div className="admin-map-datacenter"><span>API CORE</span><i /><small>DEPLEXO BACKEND</small></div>
         </div>
       </div>
       <div className="admin-map-summary">
@@ -214,7 +204,6 @@ function MapView({ overview, pageStatuses, refreshPages, runTest }) {
     </section>
   );
 }
-
 export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed = () => {}, onClose }) {
   const [phase, setPhase] = useState('loading');
   const [status, setStatus] = useState(null);
