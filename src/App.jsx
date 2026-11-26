@@ -1075,9 +1075,9 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
           </header>
           <div className="account-center-content">
             <section className="account-center-card">
-              <div className="account-center-card-head"><span>BITCONNECTION ACCOUNT</span><span className="account-center-state">SIGNED IN</span></div>
-              <p>Your BitConnection session is active. Manage its profile, passkeys, and account security in the same unified account center from BitConnection.</p>
-              <a className="account-center-action unified-account-center-open-link" href="/bitconnection/?account=1" target="_blank" rel="noreferrer">OPEN BITCONNECTION SETTINGS</a>
+              <div className="account-center-card-head"><span>ACCOUNT ACCESS</span><span className="account-center-state">{status.loading ? 'CHECKING' : bitConnectionAuthenticated ? 'SIGNED IN' : 'NO ACTIVE SESSION'}</span></div>
+              <p>{status.loading ? 'Checking your BitCider and BitConnection sessions.' : bitConnectionAuthenticated ? 'Your BitConnection session is active. Manage its profile, passkeys, and account security from the shared account center in BitConnection.' : 'No BitCider account is signed in on this browser. Sign in to either product to manage your account here.'}</p>
+              {bitConnectionAuthenticated && <a className="account-center-action unified-account-center-open-link" href="/bitconnection/?account=1&identity=bitconnection" target="_blank" rel="noreferrer">OPEN BITCONNECTION SETTINGS</a>}
             </section>
           </div>
         </section>
