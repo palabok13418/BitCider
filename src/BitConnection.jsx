@@ -4,6 +4,7 @@ import { startBitConnectionGuestTransport, startBitConnectionHostTransport } fro
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
 import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
+import AdminConsole from './AdminConsole.jsx';
 
 const Grainient = lazy(() => import('./Grainient.jsx'));
 const ENTRY_KEY = 'bitconnection.entry-transition.v1';
@@ -862,6 +863,16 @@ function AccountManagementWindow() {
         </section>
       )}
       {stage !== 'error' && stage !== 'loading' && stage !== 'signedout' && error && stage !== 'manage' && <div className="bc-global-error" role="alert">{error}</div>}
+      {adminConsoleOpen && (
+        <AdminConsole
+          bootstrapCode={adminBootstrapCode}
+          onBootstrapConsumed={() => setAdminBootstrapCode('')}
+          onClose={() => {
+            setAdminConsoleOpen(false);
+            setAdminBootstrapCode('');
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -1358,6 +1369,8 @@ function CreateRoomWindow() {
 }
 
 export default function BitConnection() {
+  const [adminConsoleOpen, setAdminConsoleOpen] = useState(() => new URLSearchParams(window.location.search).get('admin') === '1');
+  const [adminBootstrapCode, setAdminBootstrapCode] = useState('');
   const [apiState, setApiState] = useState('checking');
   const [accountAvailable, setAccountAvailable] = useState(false);
   const [accountAvatarUrl, setAccountAvatarUrl] = useState('');
@@ -1377,6 +1390,36 @@ export default function BitConnection() {
   const [partyDirectoryLoading, setPartyDirectoryLoading] = useState(true);
   const [partySearchLoading, setPartySearchLoading] = useState(false);
   const [partyDirectoryError, setPartyDirectoryError] = useState('');
+
+  useEffect(() => {
+    function openAdminConsole(event) {
+      setAdminBootstrapCode(typeof event?.detail?.code === 'string' ? event.detail.code : '');
+      setAdminConsoleOpen(true);
+    }
+    const helper = Object.freeze({
+      open() {
+        window.dispatchEvent(new CustomEvent('bitcider-admin-open'));
+        return 'Opening the protected BitCider admin console.';
+      },
+      bootstrap(code) {
+        if (typeof code !== 'string' || code.length < 1) {
+          return 'Provide the one-time BITCIDER_ADMIN_BOOTSTRAP_CODE value.';
+        }
+        window.dispatchEvent(new CustomEvent('bitcider-admin-open', { detail: { code } }));
+        return 'Bootstrap request opened. The code is kept in page memory and is only used for first-owner passkey enrollment.';
+      }
+    });
+    const previousHelper = window.bitciderAdmin;
+    window.bitciderAdmin = helper;
+    window.addEventListener('bitcider-admin-open', openAdminConsole);
+    return () => {
+      window.removeEventListener('bitcider-admin-open', openAdminConsole);
+      if (window.bitciderAdmin === helper) {
+        if (previousHelper === undefined) delete window.bitciderAdmin;
+        else window.bitciderAdmin = previousHelper;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
