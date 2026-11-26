@@ -22,7 +22,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-25-public-room-discovery-01';
+export const BITCONNECTION_API_VERSION = '2026-11-25-account-center-passkey-listing-02';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -246,6 +246,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       hostProfiles: 'enabled',
       roomCreation: 'enabled',
       passkeys: 'enabled',
+      passkeyListing: 'enabled',
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
       playbackSync: 'youtube-music-through-bitchord-web',
