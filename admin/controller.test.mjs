@@ -48,7 +48,22 @@ function createHarness() {
       'bitconnection:bc_user_private_id': { username: 'Private BitConnection Username', avatarDataUrl: 'private-image' }
     },
     rooms: {
-      private_room_id: { hostIdentityId: 'bitconnection:bc_user_private_id' }
+      private_room_id: {
+        hostIdentityId: 'bitconnection:bc_user_private_id',
+        status: 'open',
+        participants: {
+          bc_host: { identityId: 'bitconnection:bc_user_private_id', status: 'connected', credentialHash: 'bc-host-secret' },
+          guest: { identityId: 'anonymous-guest', status: 'connected', credentialHash: 'guest-secret' }
+        }
+      },
+      guest_room_id: {
+        hostIdentityId: 'another-host',
+        status: 'open',
+        participants: {
+          bc_guest: { identityId: 'bitconnection:bc_user_private_id', status: 'connected', credentialHash: 'bc-guest-secret' },
+          host: { identityId: 'another-host', status: 'connected', credentialHash: 'other-host-secret' }
+        }
+      }
     },
     webauthnChallenges: {}
   };
@@ -135,6 +150,13 @@ test('suspending a BitConnection account revokes active sessions', async () => {
   assert.equal(result.ok, true);
   assert.ok(bitConnectionData.accounts.bc_user_private_id.suspendedAt);
   assert.equal(Object.keys(bitConnectionData.authSessions).length, 0);
+  assert.equal(bitConnectionData.rooms.private_room_id.status, 'closed');
+  assert.equal(bitConnectionData.rooms.private_room_id.participants.bc_host.status, 'left');
+  assert.equal(bitConnectionData.rooms.private_room_id.participants.bc_host.credentialHash, undefined);
+  assert.equal(bitConnectionData.rooms.private_room_id.participants.guest.status, 'left');
+  assert.equal(bitConnectionData.rooms.guest_room_id.participants.bc_guest.status, 'left');
+  assert.equal(bitConnectionData.rooms.guest_room_id.participants.bc_guest.credentialHash, undefined);
+  assert.equal(bitConnectionData.rooms.guest_room_id.participants.host.status, 'connected');
   const restored = await controller.setUserSuspended(user.ref, false);
   assert.equal(restored.ok, true);
   assert.equal(bitConnectionData.accounts.bc_user_private_id.suspendedAt, undefined);
