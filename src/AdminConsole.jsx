@@ -27,10 +27,10 @@ async function requestJson(path, options = {}) {
 }
 
 function StatusPill({ state = 'checking', label }) {
-  const normalized = state === 'online' ? 'online'
+  const normalized = state === 'online' || state === 'operational' ? 'online'
     : state === 'offline' || state === 'error' ? 'offline'
-      : state === 'warning' || state === 'slow' ? 'warning' : 'checking';
-  return <span className={'admin-status-pill is-' + normalized}><i />{label || (normalized === 'online' ? 'ONLINE' : normalized === 'offline' ? 'OFFLINE' : normalized === 'warning' ? 'SLOW' : 'CHECKING')}</span>;
+      : state === 'warning' || state === 'slow' || state === 'degraded' || state === 'partial' ? 'warning' : 'checking';
+  return <span className={'admin-status-pill is-' + normalized}><i />{label || (normalized === 'online' ? 'ONLINE' : normalized === 'offline' ? 'OFFLINE' : normalized === 'warning' ? 'DEGRADED' : 'CHECKING')}</span>;
 }
 
 function copyText(value) {
@@ -95,111 +95,466 @@ function SiteNode({ site, status, openSite, runTest }) {
   );
 }
 
-function MapView({ overview, pageStatuses, refreshPages, runTest }) {
+const TOPOLOGY_NODES = [
+  { id: 'deplexo', type: 'backend', title: 'Deplexo', subtitle: 'Primary API · persistent data', x: 620, y: 18 },
+  { id: 'site-bitcider', parentId: 'deplexo', type: 'page', title: 'BitCider', subtitle: 'Cider source + account center', x: 28, y: 142, probeKey: 'site-bitcider' },
+  { id: 'site-bitmono', parentId: 'deplexo', type: 'page', title: 'BitMono', subtitle: 'Monochrome music source', x: 518, y: 142, probeKey: 'site-bitmono' },
+  { id: 'site-bitconnection', parentId: 'deplexo', type: 'page', title: 'BitConnection', subtitle: 'Rooms + realtime sync', x: 1008, y: 142, probeKey: 'site-bitconnection' },
+
+  { id: 'bc-connect', parentId: 'site-bitcider', type: 'feature', title: 'Cider connection', subtitle: 'Link + browser bridge', x: 28, y: 292 },
+  { id: 'bc-cider-state', parentId: 'bc-connect', type: 'check', title: 'Cider session', subtitle: 'Account link state', x: 250, y: 258, probeKey: 'bc-cider-state' },
+  { id: 'bc-browser-relay', parentId: 'bc-connect', type: 'check', title: 'Browser relay', subtitle: 'Local Cider bridge', x: 250, y: 330, probeKey: 'bc-browser-relay' },
+  { id: 'bc-auth-flow', parentId: 'bc-connect', type: 'check', title: 'Authorization', subtitle: 'Browser auth support', x: 250, y: 402, probeKey: 'bc-auth-flow' },
+
+  { id: 'bc-identity', parentId: 'site-bitcider', type: 'feature', title: 'Account center', subtitle: 'Sessions + credentials', x: 28, y: 522 },
+  { id: 'bc-account-state', parentId: 'bc-identity', type: 'check', title: 'Account session', subtitle: 'Signed-in state', x: 250, y: 486, probeKey: 'bc-account-state' },
+  { id: 'bc-passkeys', parentId: 'bc-identity', type: 'check', title: 'Passkeys', subtitle: 'Credential inventory', x: 250, y: 558, probeKey: 'bc-passkeys' },
+  { id: 'bc-encryption', parentId: 'bc-identity', type: 'check', title: 'Token encryption', subtitle: 'At-rest key status', x: 250, y: 630, probeKey: 'bc-encryption' },
+
+  { id: 'bc-addon', parentId: 'site-bitcider', type: 'feature', title: 'BitChord add-on', subtitle: 'Manifest + song search', x: 28, y: 752 },
+  { id: 'bc-addon-manifest', parentId: 'bc-addon', type: 'check', title: 'Addon manifest', subtitle: 'Personal source config', x: 250, y: 716, probeKey: 'bc-addon-manifest' },
+  { id: 'bc-addon-search', parentId: 'bc-addon', type: 'check', title: 'Live song search', subtitle: 'Browser-to-Cider path', x: 250, y: 788, probeKey: 'bc-addon-search' },
+  { id: 'bc-renditions', parentId: 'bc-addon', type: 'check', title: 'Audio renditions', subtitle: 'AAC + Atmos options', x: 250, y: 860, probeKey: 'bc-renditions' },
+
+  { id: 'mono-source', parentId: 'site-bitmono', type: 'feature', title: 'Source discovery', subtitle: 'Manifest + live search', x: 518, y: 292 },
+  { id: 'mono-manifest', parentId: 'mono-source', type: 'check', title: 'Addon manifest', subtitle: 'Search + stream routes', x: 740, y: 240, probeKey: 'mono-manifest' },
+  { id: 'mono-search', parentId: 'mono-source', type: 'check', title: 'Live search', subtitle: 'Real upstream query', x: 740, y: 312, probeKey: 'mono-search' },
+  { id: 'mono-primary', parentId: 'mono-source', type: 'check', title: 'Monochrome', subtitle: 'Primary provider', x: 740, y: 384, probeKey: 'mono-primary' },
+  { id: 'mono-fallback', parentId: 'mono-source', type: 'check', title: 'Deezer fallback', subtitle: 'Fallback provider', x: 740, y: 456, probeKey: 'mono-fallback' },
+
+  { id: 'mono-playback', parentId: 'site-bitmono', type: 'feature', title: 'Playback delivery', subtitle: 'Full-track stream cache', x: 518, y: 542 },
+  { id: 'mono-stream', parentId: 'mono-playback', type: 'check', title: 'Stream resolver', subtitle: 'Requires a real track', x: 740, y: 506, probeKey: 'mono-stream' },
+  { id: 'mono-cache', parentId: 'mono-playback', type: 'check', title: 'Complete-file cache', subtitle: 'Verified during playback', x: 740, y: 578, probeKey: 'mono-cache' },
+
+  { id: 'mono-quality', parentId: 'site-bitmono', type: 'feature', title: 'Audio quality', subtitle: 'Lossless + high resolution', x: 518, y: 792 },
+  { id: 'mono-lossless', parentId: 'mono-quality', type: 'check', title: 'Lossless FLAC', subtitle: 'Manifest capability', x: 740, y: 756, probeKey: 'mono-lossless' },
+  { id: 'mono-hires-atmos', parentId: 'mono-quality', type: 'check', title: 'Hi-Res + Atmos', subtitle: 'Declared options', x: 740, y: 828, probeKey: 'mono-hires-atmos' },
+
+  { id: 'conn-identity', parentId: 'site-bitconnection', type: 'feature', title: 'Accounts + profiles', subtitle: 'Independent identity', x: 1008, y: 292 },
+  { id: 'conn-account-api', parentId: 'conn-identity', type: 'check', title: 'Account API', subtitle: 'Session endpoint', x: 1230, y: 258, probeKey: 'conn-account-api' },
+  { id: 'conn-passkeys', parentId: 'conn-identity', type: 'check', title: 'Passkeys', subtitle: 'Protected listing route', x: 1230, y: 330, probeKey: 'conn-passkeys' },
+  { id: 'conn-recovery', parentId: 'conn-identity', type: 'check', title: 'Recovery codes', subtitle: 'Declared capability', x: 1230, y: 402, probeKey: 'conn-recovery' },
+
+  { id: 'conn-rooms', parentId: 'site-bitconnection', type: 'feature', title: 'Listening rooms', subtitle: 'Directory + permissions', x: 1008, y: 542 },
+  { id: 'conn-directory', parentId: 'conn-rooms', type: 'check', title: 'Public directory', subtitle: 'Live room listing', x: 1230, y: 486, probeKey: 'conn-directory' },
+  { id: 'conn-create-room', parentId: 'conn-rooms', type: 'check', title: 'Room creation', subtitle: 'Sign-in/profile gated', x: 1230, y: 558, probeKey: 'conn-create-room' },
+  { id: 'conn-playback-sync', parentId: 'conn-rooms', type: 'check', title: 'Playback sync', subtitle: 'Declared capability', x: 1230, y: 630, probeKey: 'conn-playback-sync' },
+  { id: 'conn-shared-queue', parentId: 'conn-rooms', type: 'check', title: 'Shared queue', subtitle: 'Room permissions', x: 1230, y: 702, probeKey: 'conn-shared-queue' },
+
+  { id: 'conn-audio', parentId: 'site-bitconnection', type: 'feature', title: 'Realtime + audio', subtitle: 'Signaling + direct WebRTC', x: 1008, y: 792 },
+  { id: 'conn-signaling', parentId: 'conn-audio', type: 'check', title: 'Realtime signaling', subtitle: 'Requires an active room', x: 1230, y: 744, probeKey: 'conn-signaling' },
+  { id: 'conn-ice', parentId: 'conn-audio', type: 'check', title: 'ICE configuration', subtitle: 'Participant-scoped test', x: 1230, y: 816, probeKey: 'conn-ice' },
+  { id: 'conn-direct-audio', parentId: 'conn-audio', type: 'check', title: 'Direct WebRTC audio', subtitle: 'Browser session required', x: 1230, y: 888, probeKey: 'conn-direct-audio' },
+  { id: 'conn-private-access', parentId: 'conn-audio', type: 'check', title: 'Private-room checks', subtitle: 'Proximity + host code', x: 1230, y: 960, probeKey: 'conn-private-access' }
+];
+
+const TOPOLOGY_SIZES = {
+  backend: { width: 218, height: 78 },
+  page: { width: 204, height: 82 },
+  feature: { width: 188, height: 66 },
+  check: { width: 184, height: 60 }
+};
+
+const TOPOLOGY_STATES = {
+  operational: { color: '#62d6a1', label: 'OPERATIONAL' },
+  advertised: { color: '#82b9ef', label: 'SUPPORTED' },
+  degraded: { color: '#e7b65e', label: 'DEGRADED' },
+  partial: { color: '#e7b65e', label: 'PARTIAL' },
+  offline: { color: '#f07880', label: 'OFFLINE' },
+  idle: { color: '#8e9ba8', label: 'IDLE' },
+  unverified: { color: '#748696', label: 'NOT PROBED' }
+};
+
+function topologyState(state) {
+  return TOPOLOGY_STATES[state] || TOPOLOGY_STATES.unverified;
+}
+
+function aggregateTopologyStatus(children) {
+  const states = children.map(child => child?.state || 'unverified');
+  if (!states.length) return { state: 'unverified', label: 'NOT PROBED', detail: 'No child checks are registered.' };
+  if (states.includes('offline')) return { state: 'offline', label: 'OFFLINE', detail: 'At least one child check is unreachable.' };
+  if (states.includes('degraded')) return { state: 'degraded', label: 'DEGRADED', detail: 'At least one child check is responding with a degraded result.' };
+  const active = states.filter(state => state === 'operational' || state === 'advertised');
+  const waiting = states.filter(state => state === 'idle' || state === 'unverified');
+  if (active.length && waiting.length) return { state: 'partial', label: 'PARTIAL', detail: active.length + ' child checks are ready; ' + waiting.length + ' require a session or deeper test.' };
+  if (active.length) return { state: 'operational', label: 'OPERATIONAL', detail: 'All child checks are ready or explicitly supported.' };
+  if (states.every(state => state === 'idle')) return { state: 'idle', label: 'IDLE', detail: 'The feature is available but waiting for an authenticated or active session.' };
+  return { state: 'unverified', label: 'NOT PROBED', detail: 'No independent live probe is available for these child features.' };
+}
+
+function buildTopologyStatuses(probes) {
+  const result = { ...probes };
+  for (const node of TOPOLOGY_NODES.filter(item => item.type === 'feature')) {
+    const children = TOPOLOGY_NODES.filter(item => item.parentId === node.id).map(item => result[item.id]);
+    result[node.id] = aggregateTopologyStatus(children);
+  }
+  return result;
+}
+
+function fitTopologyView(width, height) {
+  const graph = { left: 10, top: 8, right: 1430, bottom: 1025 };
+  const scale = Math.max(0.28, Math.min(1.05, Math.min((width - 48) / (graph.right - graph.left), (height - 48) / (graph.bottom - graph.top))));
+  return {
+    scale,
+    x: (width - (graph.right - graph.left) * scale) / 2 - graph.left * scale,
+    y: (height - (graph.bottom - graph.top) * scale) / 2 - graph.top * scale
+  };
+}
+
+function truncateCanvasText(context, value, maxWidth) {
+  const text = String(value || '');
+  if (context.measureText(text).width <= maxWidth) return text;
+  let shortened = text;
+  while (shortened.length > 1 && context.measureText(shortened + '…').width > maxWidth) shortened = shortened.slice(0, -1);
+  return shortened + '…';
+}
+
+function paintCanvasNode(context, node, position, status, scale, selected, hovered) {
+  const size = TOPOLOGY_SIZES[node.type] || TOPOLOGY_SIZES.check;
+  const { width, height } = size;
+  const state = topologyState(status?.state);
+  const x = position.x;
+  const y = position.y;
+  const radius = node.type === 'backend' ? 15 : 11;
+
+  context.save();
+  context.shadowColor = selected ? state.color : 'rgba(0,0,0,.32)';
+  context.shadowBlur = selected ? 24 / scale : 13 / scale;
+  context.shadowOffsetY = 5 / scale;
+  context.beginPath();
+  context.roundRect(x, y, width, height, radius);
+  context.fillStyle = node.type === 'backend'
+    ? 'rgba(20, 40, 50, .98)'
+    : node.type === 'page'
+      ? 'rgba(19, 31, 42, .98)'
+      : node.type === 'feature'
+        ? 'rgba(17, 29, 38, .97)'
+        : 'rgba(11, 22, 31, .98)';
+  context.fill();
+  context.shadowBlur = 0;
+  context.lineWidth = (selected ? 2 : hovered ? 1.7 : 1) / scale;
+  context.strokeStyle = selected ? state.color : hovered ? 'rgba(193, 231, 229, .72)' : state.color + '88';
+  context.stroke();
+
+  context.fillStyle = state.color;
+  context.beginPath();
+  context.arc(x + width - 16, y + 17, 4.6 / scale, 0, Math.PI * 2);
+  context.fill();
+
+  const titleFont = (node.type === 'backend' ? 15 : node.type === 'page' ? 14 : node.type === 'feature' ? 12.5 : 11.5) / scale;
+  const subtitleFont = 8.5 / scale;
+  context.textBaseline = 'top';
+  context.font = '800 ' + titleFont + 'px Inter, ui-sans-serif, system-ui, sans-serif';
+  context.fillStyle = node.type === 'backend' ? '#e9fbff' : node.type === 'page' ? '#f2f8fa' : '#e3eef1';
+  const titleMax = width - 40;
+  context.fillText(truncateCanvasText(context, node.title, titleMax), x + 13, y + (node.type === 'check' ? 17 : 20), titleMax);
+
+  context.font = '600 ' + subtitleFont + 'px ui-monospace, SFMono-Regular, Menlo, monospace';
+  context.fillStyle = 'rgba(186, 211, 218, .66)';
+  const subtitle = node.type === 'check'
+    ? (status?.label || node.subtitle || 'NOT PROBED')
+    : (node.subtitle || '');
+  context.fillText(truncateCanvasText(context, subtitle, width - 25), x + 13, y + height - 18, width - 25);
+
+  if (node.type === 'page' || node.type === 'backend') {
+    context.font = '700 ' + (7 / scale) + 'px ui-monospace, monospace';
+    context.fillStyle = 'rgba(143, 179, 188, .5)';
+    context.fillText(node.type === 'backend' ? 'PRIMARY BACKEND' : 'PRODUCT PAGE', x + 13, y + 8, width - 34);
+    context.font = '800 ' + titleFont + 'px Inter, ui-sans-serif, system-ui, sans-serif';
+    context.fillStyle = node.type === 'backend' ? '#e9fbff' : '#f2f8fa';
+    context.fillText(truncateCanvasText(context, node.title, titleMax), x + 13, y + 29, titleMax);
+  }
+
+  context.restore();
+}
+
+function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) {
   const canvasRef = useRef(null);
   const viewportRef = useRef(null);
-  const backendRef = useRef(null);
-  const siteRefs = useRef({});
+  const dragRef = useRef(null);
+  const viewRef = useRef({ x: 0, y: 0, scale: 0.5 });
+  const positionsRef = useRef({});
+  const [view, setView] = useState({ x: 0, y: 0, scale: 0.5 });
+  const [positions, setPositions] = useState(() => Object.fromEntries(TOPOLOGY_NODES.map(node => [node.id, { x: node.x, y: node.y }])));
+  const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 });
+  const [selectedNodeId, setSelectedNodeId] = useState('deplexo');
+  const [hoveredNodeId, setHoveredNodeId] = useState('');
+  const [hasCustomLayout, setHasCustomLayout] = useState(false);
+
+  viewRef.current = view;
+  positionsRef.current = positions;
 
   useEffect(() => {
-    const canvas = canvasRef.current;
     const viewport = viewportRef.current;
-    if (!canvas || !viewport) return undefined;
-
-    const drawConnections = () => {
-      const bounds = viewport.getBoundingClientRect();
-      const width = Math.max(1, bounds.width);
-      const height = Math.max(1, bounds.height);
-      const pixelRatio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1));
-      const pixelWidth = Math.round(width * pixelRatio);
-      const pixelHeight = Math.round(height * pixelRatio);
-      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
-      }
-
-      const context = canvas.getContext('2d');
-      if (!context) return;
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      context.clearRect(0, 0, width, height);
-
-      const backend = backendRef.current?.getBoundingClientRect();
-      if (!backend) return;
-      const startX = backend.left + backend.width / 2 - bounds.left;
-      const startY = backend.bottom - bounds.top;
-
-      SITE_DEFINITIONS.forEach((site, index) => {
-        const node = siteRefs.current[site.id]?.getBoundingClientRect();
-        if (!node) return;
-        const endX = node.left + node.width / 2 - bounds.left;
-        const endY = node.top - bounds.top;
-        const distance = Math.max(24, (endY - startY) * 0.48);
-        const gradient = context.createLinearGradient(startX, startY, endX, endY);
-        gradient.addColorStop(0, 'rgba(130, 215, 213, .3)');
-        gradient.addColorStop(1, index === 0 ? 'rgba(239, 139, 168, .78)' : index === 1 ? 'rgba(218, 225, 226, .65)' : 'rgba(151, 206, 225, .72)');
-
-        context.beginPath();
-        context.moveTo(startX, startY);
-        context.bezierCurveTo(startX, startY + distance, endX, endY - distance, endX, endY);
-        context.strokeStyle = gradient;
-        context.lineWidth = 2;
-        context.stroke();
-
-        context.beginPath();
-        context.arc(endX, endY, 3.5, 0, Math.PI * 2);
-        context.fillStyle = index === 0 ? '#ef8ba8' : index === 1 ? '#d8e1e2' : '#97cee1';
-        context.fill();
-      });
-    };
-
-    drawConnections();
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(drawConnections) : null;
+    if (!viewport) return undefined;
+    const measure = () => setCanvasSize({ width: Math.max(1, viewport.clientWidth), height: Math.max(1, viewport.clientHeight) });
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
     observer?.observe(viewport);
-    if (backendRef.current) observer?.observe(backendRef.current);
-    Object.values(siteRefs.current).forEach(node => observer?.observe(node));
-    window.addEventListener('resize', drawConnections);
+    window.addEventListener('resize', measure);
     return () => {
       observer?.disconnect();
-      window.removeEventListener('resize', drawConnections);
+      window.removeEventListener('resize', measure);
     };
   }, []);
 
-  const openSite = path => window.open(path, '_blank', 'noopener,noreferrer');
+  const fitView = () => setView(fitTopologyView(canvasSize.width, canvasSize.height));
+  const zoomBy = amount => setView(current => ({ ...current, scale: Math.max(0.28, Math.min(2.4, current.scale * amount)) }));
+  const resetLayout = () => {
+    setPositions(Object.fromEntries(TOPOLOGY_NODES.map(node => [node.id, { x: node.x, y: node.y }])));
+    setHasCustomLayout(false);
+    setSelectedNodeId('deplexo');
+    requestAnimationFrame(() => setView(fitTopologyView(canvasSize.width, canvasSize.height)));
+  };
+
+  useEffect(() => {
+    if (!canvasSize.width || !canvasSize.height) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ratio = Math.max(1, Math.min(2, Number(window.devicePixelRatio) || 1));
+    const pixelWidth = Math.round(canvasSize.width * ratio);
+    const pixelHeight = Math.round(canvasSize.height * ratio);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, canvasSize.width, canvasSize.height);
+    context.fillStyle = 'rgba(8, 16, 23, .24)';
+    context.fillRect(0, 0, canvasSize.width, canvasSize.height);
+
+    context.save();
+    context.translate(view.x, view.y);
+    context.scale(view.scale, view.scale);
+
+    const gridStep = 38;
+    context.fillStyle = 'rgba(142, 189, 198, .19)';
+    for (let x = 0; x < 1480; x += gridStep) {
+      for (let y = 0; y < 1080; y += gridStep) {
+        context.beginPath();
+        context.arc(x, y, 1.05 / view.scale, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+
+    const nodeIndex = new Map(TOPOLOGY_NODES.map(node => [node.id, node]));
+    for (const node of TOPOLOGY_NODES) {
+      if (!node.parentId) continue;
+      const parent = nodeIndex.get(node.parentId);
+      const parentPosition = positions[parent.id] || parent;
+      const childPosition = positions[node.id] || node;
+      const parentSize = TOPOLOGY_SIZES[parent.type];
+      const childSize = TOPOLOGY_SIZES[node.type];
+      const state = topologyState(topologyStatuses[node.id]?.state);
+      context.beginPath();
+      if (node.type === 'check') {
+        const startX = parentPosition.x + parentSize.width;
+        const startY = parentPosition.y + parentSize.height / 2;
+        const endX = childPosition.x;
+        const endY = childPosition.y + childSize.height / 2;
+        context.moveTo(startX, startY);
+        context.bezierCurveTo(startX + 48, startY, endX - 42, endY, endX, endY);
+      } else {
+        const startX = parentPosition.x + parentSize.width / 2;
+        const startY = parentPosition.y + parentSize.height;
+        const endX = childPosition.x + childSize.width / 2;
+        const endY = childPosition.y;
+        context.moveTo(startX, startY);
+        context.bezierCurveTo(startX, startY + 42, endX, endY - 42, endX, endY);
+      }
+      context.strokeStyle = state.color + '9A';
+      context.lineWidth = (node.type === 'page' ? 2.1 : 1.45) / view.scale;
+      context.stroke();
+      context.beginPath();
+      if (node.type === 'check') context.arc(childPosition.x, childPosition.y + childSize.height / 2, 3.4 / view.scale, 0, Math.PI * 2);
+      else context.arc(childPosition.x + childSize.width / 2, childPosition.y, 3.4 / view.scale, 0, Math.PI * 2);
+      context.fillStyle = state.color;
+      context.fill();
+    }
+
+    for (const node of TOPOLOGY_NODES) {
+      const position = positions[node.id] || node;
+      paintCanvasNode(context, node, position, topologyStatuses[node.id], view.scale, selectedNodeId === node.id, hoveredNodeId === node.id);
+    }
+    context.restore();
+  }, [canvasSize, view, positions, topologyStatuses, selectedNodeId, hoveredNodeId]);
+
+  useEffect(() => {
+    if (canvasSize.width > 1 && canvasSize.height > 1 && view.scale === 0.5 && view.x === 0 && view.y === 0) {
+      setView(fitTopologyView(canvasSize.width, canvasSize.height));
+    }
+  }, [canvasSize]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const onWheel = event => {
+      if (event.cancelable) event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const localX = event.clientX - rect.left;
+      const localY = event.clientY - rect.top;
+      const current = viewRef.current;
+      const worldX = (localX - current.x) / current.scale;
+      const worldY = (localY - current.y) / current.scale;
+      const nextScale = Math.max(0.28, Math.min(2.4, current.scale * (event.deltaY < 0 ? 1.12 : 0.89)));
+      setView({ scale: nextScale, x: localX - worldX * nextScale, y: localY - worldY * nextScale });
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const worldPoint = event => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const current = viewRef.current;
+    return { x: (event.clientX - rect.left - current.x) / current.scale, y: (event.clientY - rect.top - current.y) / current.scale };
+  };
+
+  const findNodeAt = point => {
+    for (let index = TOPOLOGY_NODES.length - 1; index >= 0; index -= 1) {
+      const node = TOPOLOGY_NODES[index];
+      const position = positionsRef.current[node.id] || node;
+      const size = TOPOLOGY_SIZES[node.type];
+      if (point.x >= position.x && point.x <= position.x + size.width && point.y >= position.y && point.y <= position.y + size.height) return node;
+    }
+    return null;
+  };
+
+  const handlePointerDown = event => {
+    if (event.button !== 0) return;
+    const point = worldPoint(event);
+    const node = findNodeAt(point);
+    if (node) {
+      setSelectedNodeId(node.id);
+      const position = positionsRef.current[node.id] || node;
+      dragRef.current = { mode: 'node', nodeId: node.id, pointerX: point.x, pointerY: point.y, startX: position.x, startY: position.y, moved: false };
+    } else {
+      dragRef.current = { mode: 'pan', clientX: event.clientX, clientY: event.clientY, startX: viewRef.current.x, startY: viewRef.current.y };
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handlePointerMove = event => {
+    const active = dragRef.current;
+    const point = worldPoint(event);
+    if (active?.mode === 'node') {
+      const dx = point.x - active.pointerX;
+      const dy = point.y - active.pointerY;
+      if (Math.abs(dx) + Math.abs(dy) > 1) active.moved = true;
+      setPositions(current => ({ ...current, [active.nodeId]: { x: active.startX + dx, y: active.startY + dy } }));
+      setHasCustomLayout(true);
+      return;
+    }
+    if (active?.mode === 'pan') {
+      const rect = canvasRef.current.getBoundingClientRect();
+      setView(current => ({ ...current, x: active.startX + event.clientX - active.clientX, y: active.startY + event.clientY - active.clientY }));
+      setHoveredNodeId('');
+      return;
+    }
+    setHoveredNodeId(findNodeAt(point)?.id || '');
+  };
+
+  const handlePointerUp = () => { dragRef.current = null; };
+  const node = TOPOLOGY_NODES.find(item => item.id === selectedNodeId) || TOPOLOGY_NODES[0];
+  const nodeStatus = topologyStatuses[node.id] || { state: 'unverified', label: 'NOT PROBED', detail: 'Waiting for the first live check.' };
+  const children = TOPOLOGY_NODES.filter(item => item.parentId === node.id);
+  const checkCount = TOPOLOGY_NODES.filter(item => item.type === 'check').length;
+  const statusCounts = Object.values(topologyStatuses).reduce((counts, item) => {
+    const state = item?.state || 'unverified';
+    counts[state] = (counts[state] || 0) + 1;
+    return counts;
+  }, {});
 
   return (
-    <section className="admin-map-view">
-      <div className="admin-section-heading">
-        <div><span className="admin-eyebrow">SYSTEM TOPOLOGY</span><h2>Site canvas</h2><p>A flat 2D view of the three connected pages and their Deplexo backend. No personal user information is displayed.</p></div>
-        <button className="admin-button admin-button-quiet" type="button" onClick={refreshPages}>REFRESH STATUS <span>↻</span></button>
+    <section className="admin-topology">
+      <div className="admin-topology-summary">
+        <div><span>REGISTERED ACCOUNTS</span><strong>{overview?.users ?? '—'}</strong></div>
+        <div><span>ACTIVE SESSIONS</span><strong>{overview?.activeUsers ?? '—'}</strong></div>
+        <div><span>LIVE ROOMS</span><strong>{overview?.activeRooms ?? '—'}</strong></div>
+        <div><span>FEATURE CHECKS</span><strong>{statusCounts.operational || 0}<small> / {checkCount}</small></strong></div>
       </div>
-      <div className="admin-map-toolbar">
-        <span><i /> 2D SITE CANVAS</span><span>DEPLEXO API CORE</span><span>3 CONNECTED PAGES</span>
-      </div>
-      <div className="admin-map-viewport" ref={viewportRef} role="region" aria-label="Two dimensional map of BitCider, BitMono, and BitConnection">
-        <canvas ref={canvasRef} className="admin-map-canvas-lines" aria-hidden="true" />
-        <div className="admin-map-canvas-content">
-          <div className="admin-map-backend" ref={backendRef}>
-            <span className="admin-map-backend-light" />
-            <span className="admin-map-backend-copy"><strong>DEPLEXO</strong><small>SHARED API CORE</small></span>
-            <span className="admin-map-backend-state">BACKEND</span>
-          </div>
-          <div className="admin-map-sites">
-            {SITE_DEFINITIONS.map(site => (
-              <div className="admin-map-site" key={site.id} ref={element => {
-                if (element) siteRefs.current[site.id] = element;
-                else delete siteRefs.current[site.id];
-              }}>
-                <SiteNode site={site} status={pageStatuses[site.id]} openSite={openSite} runTest={runTest} />
-              </div>
-            ))}
-          </div>
+
+      <div className="admin-canvas-toolbar">
+        <div className="admin-canvas-legend">
+          <span><i className="is-operational" /> Operational</span>
+          <span><i className="is-degraded" /> Degraded</span>
+          <span><i className="is-offline" /> Offline</span>
+          <span><i className="is-neutral" /> Session / not probed</span>
+        </div>
+        <div className="admin-canvas-actions">
+          <span className="admin-canvas-zoom">{Math.round(view.scale * 100)}%</span>
+          <button type="button" onClick={() => zoomBy(0.88)} aria-label="Zoom out">−</button>
+          <button type="button" onClick={() => zoomBy(1.14)} aria-label="Zoom in">+</button>
+          <button type="button" onClick={fitView}>FIT CANVAS</button>
+          <button type="button" onClick={resetLayout}>RESET LAYOUT</button>
+          <button type="button" className="is-scan" onClick={refreshTopology} disabled={topologyBusy}>{topologyBusy ? 'SCANNING…' : 'SCAN FEATURES ↻'}</button>
         </div>
       </div>
-      <div className="admin-map-summary">
-        <div><span>REGISTERED ACCOUNTS</span><strong>{overview?.users ?? '…'}</strong></div>
-        <div><span>ACTIVE SESSIONS</span><strong>{overview?.activeUsers ?? '…'}</strong></div>
-        <div><span>LIVE ROOMS</span><strong>{overview?.activeRooms ?? '…'}</strong></div>
-        <div><span>SUSPENDED</span><strong>{overview?.suspendedUsers ?? '…'}</strong></div>
+
+      <div className="admin-topology-workspace">
+        <div className="admin-canvas-frame" ref={viewportRef}>
+          <canvas
+            ref={canvasRef}
+            className="admin-topology-canvas"
+            aria-label="Interactive architecture canvas. Drag empty space to move the map, drag nodes to rearrange branches, and scroll to zoom."
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onLostPointerCapture={handlePointerUp}
+          />
+          <div className="admin-canvas-hint"><span>DRAG EMPTY SPACE TO PAN</span><span>DRAG NODES TO REARRANGE</span><span>SCROLL TO ZOOM</span></div>
+          <div className="admin-canvas-corner">{TOPOLOGY_NODES.length} NODES · {checkCount} FEATURE CHECKS</div>
+          <div className="admin-canvas-noise" />
+        </div>
+
+        <aside className="admin-node-inspector">
+          <div className="admin-inspector-head">
+            <div><span className="admin-eyebrow">NODE INSPECTOR</span><strong>{node.type === 'backend' ? 'Backend' : node.type === 'page' ? 'Product page' : node.type === 'feature' ? 'Feature group' : 'Subfeature'}</strong></div>
+            <button type="button" onClick={() => setSelectedNodeId('deplexo')} aria-label="Select Deplexo root">⌂</button>
+          </div>
+          <div className="admin-inspector-title">
+            <h3>{node.title}</h3>
+            <span className={'admin-topology-badge state-' + nodeStatus.state}><i />{nodeStatus.label || topologyState(nodeStatus.state).label}</span>
+            <p>{node.subtitle || nodeStatus.detail}</p>
+          </div>
+          <div className="admin-inspector-detail">
+            <span>CHECK RESULT</span>
+            <p>{nodeStatus.detail || 'This node has no independent live probe.'}</p>
+            {nodeStatus.endpoint && <div><small>ENDPOINT</small><code>{nodeStatus.endpoint}</code></div>}
+            <div className="admin-inspector-metrics">
+              <span><small>HTTP</small><strong>{nodeStatus.httpStatus || '—'}</strong></span>
+              <span><small>LATENCY</small><strong>{nodeStatus.durationMs != null ? nodeStatus.durationMs + ' ms' : '—'}</strong></span>
+            </div>
+          </div>
+          <div className="admin-inspector-children">
+            <span>{children.length ? 'BRANCHES / SUBFEATURES' : 'PARENT BRANCH'}</span>
+            {children.length ? children.map(child => {
+              const childStatus = topologyStatuses[child.id] || { state: 'unverified', label: 'NOT PROBED' };
+              return (
+                <button type="button" key={child.id} className={child.id === selectedNodeId ? 'is-selected' : ''} onClick={() => setSelectedNodeId(child.id)}>
+                  <i className={'state-' + childStatus.state} />
+                  <span>{child.title}</span>
+                  <small>{childStatus.label || topologyState(childStatus.state).label}</small>
+                </button>
+              );
+            }) : node.parentId ? (
+              <button type="button" onClick={() => setSelectedNodeId(node.parentId)}>
+                <i className="state-unverified" /><span>View parent feature</span><small>OPEN</small>
+              </button>
+            ) : <p className="admin-inspector-empty">Select a page, feature, or subfeature to inspect its branch.</p>}
+          </div>
+          <div className="admin-inspector-footer">
+            <span>{hasCustomLayout ? 'CUSTOM LAYOUT' : 'DEFAULT LAYOUT'}</span>
+            <button type="button" onClick={() => setSelectedNodeId(node.parentId || 'deplexo')}>UP ONE LEVEL ↑</button>
+          </div>
+        </aside>
+      </div>
+
+      <div className="admin-topology-footnote">
+        <span>LIVE CHECKS RUN FROM THIS BROWSER SESSION.</span>
+        <span>SESSION-GATED AND TRACK-DEPENDENT FEATURES ARE LABELLED, NOT ASSUMED HEALTHY.</span>
       </div>
     </section>
   );
