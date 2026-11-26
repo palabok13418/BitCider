@@ -4,7 +4,7 @@ import './admin-console.css';
 
 
 const SITE_DEFINITIONS = [
-  { id: 'bitcider', name: 'BitCider', page: '/', health: '/health', description: 'Personal Cider source and account hub' },
+  { id: 'bitcider', name: 'BitCider', page: '/', health: '/api/health', description: 'Personal Cider source and account hub' },
   { id: 'bitmono', name: 'BitMono', page: '/bitmono/', health: '/api/bitmono/health', description: 'Monochrome music source with fallback search' },
   { id: 'bitconnection', name: 'BitConnection', page: '/bitconnection/', health: '/api/bitconnection/health', description: 'Listening rooms, profiles, and realtime sync' }
 ];
@@ -682,7 +682,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     }
 
     const [backend, bitciderPage, bitmonoPage, bitconnectionPage, bitciderApi, monoManifest, monoHealthRaw, connectionHealth, connectionAccount, connectionPasskeys, connectionDirectory] = await Promise.all([
-      probe('/health'),
+      probe('/api/health'),
       probe('/', { method: 'HEAD', parseJson: false }),
       probe('/bitmono/', { method: 'HEAD', parseJson: false }),
       probe('/bitconnection/', { method: 'HEAD', parseJson: false }),
@@ -792,7 +792,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       backend.payload?.service === 'BitCider'
         ? 'The primary Deplexo API responded with the expected BitCider service identity and API version.'
         : backend.error || 'The endpoint responded, but did not identify itself as the expected BitCider backend.',
-      '/health',
+      '/api/health',
       backend
     );
 
@@ -810,7 +810,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       idle('bc-addon-search', 'SESSION REQUIRED', 'A connected Cider account and an active browser relay are required to run a real search.', '/api/status');
       idle('bc-addon-stream', 'TRACK REQUIRED', 'A linked personal add-on and a real track are required to exercise stream resolution.', '/api/status');
       idle('bc-recovery', 'SIGN-IN REQUIRED', 'The account recovery-code inventory is only returned to a signed-in BitCider account.', '/api/status');
-      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
+      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/api/health');
     } else {
       save('bc-cider-state', ciderConnected ? 'operational' : 'idle', ciderConnected ? 'CONNECTED' : 'NOT LINKED', ciderConnected ? 'A personal Cider token and add-on key are attached to this browser session.' : 'No Cider token is connected in this browser session.', '/api/status', bitciderApi);
       save('bc-browser-relay', !ciderConnected ? 'idle' : relayOnline ? 'operational' : 'degraded', !ciderConnected ? 'SESSION REQUIRED' : relayOnline ? 'ONLINE' : 'NOT RESPONDING', !ciderConnected ? 'Link Cider to start the browser-local relay.' : relayOnline ? 'The open BitCider tab is polling and responding to local Cider bridge jobs.' : 'Cider is linked, but the browser relay is not currently reporting an active poll.', '/api/status', bitciderApi);
@@ -820,7 +820,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       const recoveryReady = bitciderData.account?.authenticated === true && Number.isFinite(recoveryCount);
       save('bc-recovery', !recoveryReady ? 'idle' : recoveryCount > 0 ? 'operational' : 'degraded', !recoveryReady ? 'SIGN-IN REQUIRED' : recoveryCount > 0 ? recoveryCount + ' UNUSED' : 'NO UNUSED CODES', !recoveryReady ? 'The recovery-code inventory requires a signed-in BitCider account.' : recoveryCount > 0 ? 'The account status endpoint reports unused recovery codes.' : 'No unused recovery codes remain for this account. Regenerate them from the account security panel.', '/api/status', bitciderApi);
       save('bc-encryption', bitciderData.tokenEncryptionConfigured ? 'operational' : 'degraded', bitciderData.tokenEncryptionConfigured ? 'DEDICATED KEY READY' : 'VOLUME KEY', bitciderData.tokenEncryptionConfigured ? 'The dedicated Deplexo token-encryption key is configured.' : 'The service is using its persistent-volume fallback key. Configure BITCIDER_ENCRYPTION_KEY for separated key storage.', '/api/status', bitciderApi);
-      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
+      capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/api/health');
       if (addonManifestProbe) {
         direct('bc-addon-manifest', addonManifestProbe, '/<personal-key>/manifest.json', addonManifestProbe.detail);
         const personalResources = Array.isArray(addonManifest?.resources) ? addonManifest.resources : [];
