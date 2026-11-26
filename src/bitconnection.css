@@ -267,33 +267,36 @@ a { color: inherit; text-decoration: none; }
   min-width: 0;
   max-height: min(760px, calc(100dvh - 150px));
   align-content: start;
-  gap: 16px;
+  gap: 14px;
   overflow: auto;
-  padding: 19px;
-  border: 1px solid rgba(255,210,222,.12);
-  border-radius: 20px;
-  background: linear-gradient(155deg, rgba(39,15,25,.62), rgba(13,7,11,.72));
-  box-shadow: inset 0 1px rgba(255,255,255,.055), 0 25px 80px rgba(0,0,0,.2);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   scrollbar-width: thin;
   scrollbar-color: rgba(228,102,137,.3) transparent;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .bc-discovery-heading h2 {
-  margin: 11px 0 5px;
+  margin: 9px 0 0;
   color: #fff2f6;
   font-size: clamp(24px, 2.6vw, 32px);
   font-weight: 600;
   letter-spacing: -.065em;
   line-height: 1;
 }
-.bc-discovery-heading p {
+.bc-party-search-shell {
+  display: grid;
+  min-width: 0;
   margin: 0;
-  color: rgba(255,224,232,.52);
-  font-size: 11px;
-  line-height: 1.5;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
-.bc-featured-parties,
 .bc-discovery-results {
   display: grid;
   gap: 9px;
@@ -320,8 +323,7 @@ a { color: inherit; text-decoration: none; }
   justify-content: space-between;
   gap: 10px;
 }
-.bc-public-live,
-.bc-public-featured {
+.bc-public-live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -336,7 +338,6 @@ a { color: inherit; text-decoration: none; }
   background: #76d5a1;
   box-shadow: 0 0 9px rgba(118,213,161,.62);
 }
-.bc-public-featured { color: #f1a6ba; }
 .bc-public-party-card h3 {
   margin: 9px 0 4px;
   overflow: hidden;
@@ -406,8 +407,9 @@ a { color: inherit; text-decoration: none; }
 .bc-public-party-bottom button span { font-size: 12px; }
 .bc-party-search {
   display: grid;
+  min-width: 0;
   gap: 8px;
-  margin-top: 2px;
+  margin: 0;
 }
 .bc-party-search > div {
   position: relative;
@@ -442,7 +444,7 @@ a { color: inherit; text-decoration: none; }
 }
 .bc-party-search input::placeholder { color: rgba(255,222,231,.3); }
 .bc-party-search input:focus { border-color: rgba(255,119,153,.65); box-shadow: 0 0 0 3px rgba(255,73,119,.09); }
-.bc-discovery-results { padding-top: 3px; }
+.bc-discovery-results { padding-top: 0; }
 .bc-discovery-results-heading { padding: 0 1px 2px; }
 .bc-public-empty {
   padding: 12px;
