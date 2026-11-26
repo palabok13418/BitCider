@@ -861,6 +861,7 @@ function JoinPublicPartyWindow({ roomId }) {
   const audioRef = useRef(null);
   const sessionRef = useRef(null);
   const transportRef = useRef(null);
+  const automaticJoinStartedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -898,7 +899,9 @@ function JoinPublicPartyWindow({ roomId }) {
   }, []);
 
   useEffect(() => {
-    if (stage === 'ready') void joinParty();
+    if (stage !== 'ready' || automaticJoinStartedRef.current) return;
+    automaticJoinStartedRef.current = true;
+    void joinParty();
   }, [stage]);
 
   async function joinParty() {
