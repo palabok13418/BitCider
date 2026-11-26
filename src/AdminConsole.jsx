@@ -203,12 +203,10 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
   const refreshStatus = useCallback(async () => {
     const payload = await requestJson('/api/admin/status');
     setStatus(payload);
-    if (payload.authenticated) {
-      setCsrfToken(payload.csrfToken || '');
-      setPhase('authenticated');
-    } else {
-      setPhase(payload.initialized ? 'login' : 'bootstrap');
-    }
+    // Every admin-console opening requires a fresh owner-passkey ceremony,
+    // even when an unexpired HttpOnly admin session cookie is present.
+    setCsrfToken('');
+    setPhase(payload.initialized ? 'login' : 'bootstrap');
     return payload;
   }, []);
 
@@ -251,12 +249,10 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     requestJson('/api/admin/status').then(payload => {
       if (!active) return;
       setStatus(payload);
-      if (payload.authenticated) {
-        setCsrfToken(payload.csrfToken || '');
-        setPhase('authenticated');
-      } else {
-        setPhase(payload.initialized ? 'login' : 'bootstrap');
-      }
+      // Do not resume the dashboard from an existing cookie on a new console
+      // visit. Require the owner passkey each time admin mode is opened.
+      setCsrfToken('');
+      setPhase(payload.initialized ? 'login' : 'bootstrap');
     }).catch(loadError => {
       if (active) {
         setError(loadError.message || 'Admin authorization service is unavailable.');
