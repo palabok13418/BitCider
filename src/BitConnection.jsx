@@ -3,6 +3,7 @@ import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
 import { startBitConnectionGuestTransport, startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
+import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
 
 const Grainient = lazy(() => import('./Grainient.jsx'));
 const ENTRY_KEY = 'bitconnection.entry-transition.v1';
@@ -591,18 +592,17 @@ function AccountManagementWindow() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  async function loadAccount(mode = 'bitconnection') {
-    const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
+  async function loadAccount(mode = 'auto') {
+    const selectedMode = mode === 'auto' ? 'bitconnection' : mode;
+    const headers = selectedMode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
     const payload = await readResponse(await fetch('/api/bitconnection/account', {
       headers, cache: 'no-store', credentials: 'same-origin'
     }), 'Could not load your account.');
-    // A signed-in BitCider identity takes precedence over a stale independent
-    // BitConnection session. This preserves the user's existing BitCider login.
-    if (mode === 'bitconnection' && payload.bitCiderAccountAvailable) {
+    if (mode === 'auto' && payload.bitCiderAccountAvailable) {
       return loadAccount('bitcider');
     }
     setAccount(payload);
-    setIdentityMode(mode);
+    setIdentityMode(selectedMode);
     setProfile(payload.profile || null);
     if (payload.authenticated && mode === 'bitconnection') {
       const passkeyResponse = await fetch('/api/bitconnection/passkeys', {
@@ -805,7 +805,7 @@ function AccountManagementWindow() {
       )}
       {stage === 'manage' && profile && (
         <section className="bc-window-state bc-account-manage">
-          <div className="bc-window-kicker">BITCONNECTION ACCOUNT CENTER</div>
+          <UnifiedAccountCenterIdentity profile={profile} createdAt={profile.createdAt} />
           <div className="bc-account-heading">
             <span className="bc-account-avatar">
               {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" /> : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></svg>}
