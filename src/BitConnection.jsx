@@ -1272,7 +1272,7 @@ function CreateRoomWindow() {
               <button type="button" aria-pressed={visibility === 'public'} onClick={() => setVisibility('public')}>Public</button>
               <button type="button" aria-pressed={visibility === 'private'} onClick={() => setVisibility('private')}>Private</button>
             </div>
-            <small className="bc-field-hint">{visibility === 'public' ? 'Anyone can discover and request to join.' : 'Guests need an invitation link or QR code.'}</small>
+            <small className="bc-field-hint">{visibility === 'public' ? 'Anyone can discover and join.' : 'Guests need an invitation link or QR code.'}</small>
           </fieldset>
           <label className="bc-field-card">
             <span className="bc-field-label">PARTY SIZE <small>2–30 PEOPLE MAX</small></span>
