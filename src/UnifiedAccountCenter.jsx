@@ -11,7 +11,8 @@ export default function UnifiedAccountCenterIdentity({
   profile = null,
   createdAt = null,
   bitCiderAuthenticated = false,
-  bitConnectionAuthenticated = false
+  bitConnectionAuthenticated = false,
+  currentProduct = ''
 }) {
   const [products, setProducts] = useState({
     bitCider: Boolean(bitCiderAuthenticated),
@@ -40,6 +41,7 @@ export default function UnifiedAccountCenterIdentity({
           : Boolean(bitCiderAuthenticated),
         bitConnection: connectionPayload
           ? connectionPayload.authenticated === true
+            || (currentProduct === 'bitconnection' && connectionPayload.bitCiderAccountAvailable === true)
           : Boolean(bitConnectionAuthenticated),
         loading: false
       };
