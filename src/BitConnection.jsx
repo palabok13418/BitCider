@@ -1364,6 +1364,7 @@ function CreateRoomWindow() {
 
 export default function BitConnection() {
   const [apiState, setApiState] = useState('checking');
+  const [accountAvailable, setAccountAvailable] = useState(false);
   const [entryStage, setEntryStage] = useState(initialEntryStage);
   const flameRunAnimationRef = useRef(null);
   const burnMaskAnimationRef = useRef(null);
@@ -1394,6 +1395,34 @@ export default function BitConnection() {
       });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (isCreateWindow || isAccountWindow || joinRoomId) return undefined;
+    let active = true;
+    async function refreshAccountAvailability() {
+      try {
+        const payload = await readResponse(await fetch('/api/bitconnection/account', {
+          cache: 'no-store', credentials: 'same-origin'
+        }), 'Could not check account availability.');
+        if (active) {
+          // The Account button is only for an active BitConnection account
+          // or an already signed-in BitCider identity.
+          setAccountAvailable(Boolean(payload.authenticated || payload.bitCiderAccountAvailable));
+        }
+      } catch {
+        if (active) setAccountAvailable(false);
+      }
+    }
+    refreshAccountAvailability();
+    const timer = window.setInterval(refreshAccountAvailability, 15000);
+    const refreshOnFocus = () => refreshAccountAvailability();
+    window.addEventListener('focus', refreshOnFocus);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshOnFocus);
+    };
+  }, [isCreateWindow, isAccountWindow, joinRoomId]);
 
   useEffect(() => {
     if (isCreateWindow || isAccountWindow || joinRoomId) return undefined;
@@ -1530,10 +1559,12 @@ export default function BitConnection() {
           <img className="bitconnection-logo" src="/bitconnection/connection_favicon.svg?v=bc-favicon-64-v2" alt="" aria-hidden="true" />
           <span>BitConnection</span>
         </a>
-        <button className="bitconnection-account-button" type="button" onClick={openAccountWindow} aria-label="Manage account" title="Manage account">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>
-          <span>Account</span>
-        </button>
+        {accountAvailable && (
+          <button className="bitconnection-account-button" type="button" onClick={openAccountWindow} aria-label="Manage account" title="Manage account">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>
+            <span>Account</span>
+          </button>
+        )}
       </header>
       <div className="bitconnection-layout">
       <section className="bitconnection-hero">
