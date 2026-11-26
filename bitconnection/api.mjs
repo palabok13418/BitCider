@@ -181,9 +181,10 @@ function createAuthenticatedSession(data, accountId, sessionId, req) {
 function sessionForRequest(data, req, res) {
   const sessionId = ensureSessionId(req, res);
   const authSession = data.authSessions[hashSessionId(sessionId)];
-  const account = authSession && Date.parse(authSession.expiresAt || 0) > Date.now()
+  const accountCandidate = authSession && Date.parse(authSession.expiresAt || 0) > Date.now()
     ? data.accounts[authSession.accountId]
     : null;
+  const account = accountCandidate && !accountCandidate.suspendedAt ? accountCandidate : null;
   return {
     sessionId,
     accountId: account ? authSession.accountId : null,
@@ -271,11 +272,47 @@ export function createBitConnectionRouter({
   },
   dataFile,
   maxPartySize = 30,
-  iceConfig = {}
+  iceConfig = {},
+  exposeAdminStore = null
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
   const store = createDataStore(dataFile);
   const secret = makeSecretFile(dataFile);
+  async function createAdminBotAccount({ username, password }) {
+    const normalizedUsername = cleanUsername(username);
+    if (!normalizedUsername || !validatePassword(password)) return { status: 400, error: 'INVALID_BOT_CREDENTIALS' };
+    const passwordRecord = await createPasswordRecord(password);
+    const recovery = createRecoveryCodes();
+    const accountId = crypto.randomBytes(24).toString('base64url');
+    const webAuthnUserId = crypto.randomBytes(32).toString('base64url');
+    const createdAt = new Date().toISOString();
+    const result = await store.update(data => {
+      if (!usernameAvailable(data, normalizedUsername)) {
+        return { status: 409, error: 'BOT_USERNAME_TAKEN', write: false };
+      }
+      data.accounts[accountId] = {
+        username: normalizedUsername,
+        password: passwordRecord,
+        recoveryCodeHashes: recovery.hashes,
+        webAuthnUserId,
+        passkeys: [],
+        createdAt,
+        adminBot: true
+      };
+      data.profiles['bitconnection:' + accountId] = {
+        username: normalizedUsername, avatarDataUrl: null, createdAt, updatedAt: createdAt
+      };
+      return { ok: true, accountId };
+    });
+    return result.status ? result : { ok: true, accountId, recoveryCodes: recovery.codes };
+  }
+  if (typeof exposeAdminStore === 'function') {
+    exposeAdminStore({
+      read: () => store.read(),
+      update: mutator => store.update(mutator),
+      createBotAccount: createAdminBotAccount
+    });
+  }
   const router = express.Router();
   const maximum = Number.isSafeInteger(Number(maxPartySize))
     ? Math.min(30, Math.max(2, Number(maxPartySize)))
@@ -678,6 +715,9 @@ export function createBitConnectionRouter({
     const snapshot = store.read();
     const normalized = usernameKey(username);
     const match = Object.entries(snapshot.accounts).find(([, account]) => usernameKey(account.username) === normalized);
+    if (match?.[1]?.suspendedAt) {
+      return res.status(403).json({ error: 'ACCOUNT_SUSPENDED', message: 'This BitConnection account is suspended.' });
+    }
     const valid = await verifyPassword(password, match?.[1]?.password || PASSWORD_DUMMY);
     if (!match || !validatePassword(password) || !valid) {
       return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'The username or password is incorrect.' });
@@ -689,8 +729,13 @@ export function createBitConnectionRouter({
     const sessionHash = hashSessionId(req.bitConnectionSessionId);
     const result = await store.update(data => {
       const account = data.accounts[accountId];
-      if (!account || account.password?.hash !== accountSnapshot.password.hash) {
-        return { status: 401, error: 'INVALID_CREDENTIALS', message: 'The username or password is incorrect.', write: false };
+      if (!account || account.suspendedAt || account.password?.hash !== accountSnapshot.password.hash) {
+        return {
+          status: account?.suspendedAt ? 403 : 401,
+          error: account?.suspendedAt ? 'ACCOUNT_SUSPENDED' : 'INVALID_CREDENTIALS',
+          message: account?.suspendedAt ? 'This BitConnection account is suspended.' : 'The username or password is incorrect.',
+          write: false
+        };
       }
       const sessionInfo = createAuthenticatedSession(data, accountId, req.bitConnectionSessionId, req);
       return { ok: true, evictedDevice: sessionInfo.evictedDevice || null };
@@ -921,7 +966,9 @@ export function createBitConnectionRouter({
       }
       const result = await store.update(data => {
         const account = data.accounts[matchedAccountId];
-        if (!account || account.webAuthnUserId !== matchedAccount.webAuthnUserId) return { status: 401, error: 'INVALID_PASSKEY', write: false };
+        if (!account || account.suspendedAt || account.webAuthnUserId !== matchedAccount.webAuthnUserId) {
+          return { status: account?.suspendedAt ? 403 : 401, error: account?.suspendedAt ? 'ACCOUNT_SUSPENDED' : 'INVALID_PASSKEY', write: false };
+        }
         const passkey = (account.passkeys || []).find(entry => entry.id === credentialId && entry.rpID === challenge.rpID);
         if (!passkey || Number(passkey.counter || 0) !== Number(matchedPasskey.counter || 0)) return { status: 401, error: 'INVALID_PASSKEY', write: false };
         passkey.counter = Number(verification.authenticationInfo.newCounter || 0);
