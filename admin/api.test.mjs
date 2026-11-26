@@ -36,8 +36,17 @@ test('admin status stays uninitialized unless a backend bootstrap secret is conf
   assert.equal(response.status, 200);
   assert.equal(status.initialized, false);
   assert.equal(status.authenticated, false);
+  assert.equal(status.bootstrapConfigured, false);
   assert.equal(status.bootstrapAvailable, false);
   assert.equal(status.passkeyLimit, 1);
+
+  const bootstrap = await fetch(origin + '/api/admin/bootstrap/options', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: 'a-valid-looking-but-unconfigured-bootstrap-code' })
+  });
+  assert.equal(bootstrap.status, 503);
+  assert.equal((await bootstrap.json()).error, 'ADMIN_BOOTSTRAP_NOT_CONFIGURED');
 });
 
 test('bootstrap code alone cannot create an admin session and invalid codes are rejected', async t => {
