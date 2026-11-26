@@ -32,6 +32,8 @@ Admin mode is disabled until an owner passkey is enrolled. Configure `BITCIDER_A
 node -e "console.log(require('node:crypto').randomBytes(36).toString('base64url'))"
 ```
 
+Use the command's ASCII base64url output exactly as printed. Do not replace it with a UI-generated password or add spaces, quotes, Unicode glyphs, or line breaks. If a bootstrap code has been exposed in a chat or public log, generate a new one and replace the Deplexo environment value before proceeding.
+
 You can also use `openssl rand -base64 36` if OpenSSL is available.
 
 Do not put the generated value in source control, a URL, a frontend build variable, or a chat message. It is a backend-only Deplexo secret.
