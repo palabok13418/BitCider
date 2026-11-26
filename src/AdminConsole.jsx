@@ -109,12 +109,14 @@ const TOPOLOGY_NODES = [
   { id: 'bc-identity', parentId: 'site-bitcider', type: 'feature', title: 'Account center', subtitle: 'Sessions + credentials', x: 28, y: 522 },
   { id: 'bc-account-state', parentId: 'bc-identity', type: 'check', title: 'Account session', subtitle: 'Signed-in state', x: 250, y: 486, probeKey: 'bc-account-state' },
   { id: 'bc-passkeys', parentId: 'bc-identity', type: 'check', title: 'Passkeys', subtitle: 'Credential inventory', x: 250, y: 558, probeKey: 'bc-passkeys' },
-  { id: 'bc-encryption', parentId: 'bc-identity', type: 'check', title: 'Token encryption', subtitle: 'At-rest key status', x: 250, y: 630, probeKey: 'bc-encryption' },
+  { id: 'bc-recovery', parentId: 'bc-identity', type: 'check', title: 'Recovery codes', subtitle: 'Unused recovery inventory', x: 250, y: 630, probeKey: 'bc-recovery' },
+  { id: 'bc-encryption', parentId: 'bc-identity', type: 'check', title: 'Token encryption', subtitle: 'At-rest key status', x: 250, y: 702, probeKey: 'bc-encryption' },
 
-  { id: 'bc-addon', parentId: 'site-bitcider', type: 'feature', title: 'BitChord add-on', subtitle: 'Manifest + song search', x: 28, y: 752 },
-  { id: 'bc-addon-manifest', parentId: 'bc-addon', type: 'check', title: 'Addon manifest', subtitle: 'Personal source config', x: 250, y: 716, probeKey: 'bc-addon-manifest' },
-  { id: 'bc-addon-search', parentId: 'bc-addon', type: 'check', title: 'Live song search', subtitle: 'Browser-to-Cider path', x: 250, y: 788, probeKey: 'bc-addon-search' },
-  { id: 'bc-renditions', parentId: 'bc-addon', type: 'check', title: 'Audio renditions', subtitle: 'AAC + Atmos options', x: 250, y: 860, probeKey: 'bc-renditions' },
+  { id: 'bc-addon', parentId: 'site-bitcider', type: 'feature', title: 'BitChord add-on', subtitle: 'Manifest + search + stream', x: 28, y: 840 },
+  { id: 'bc-addon-manifest', parentId: 'bc-addon', type: 'check', title: 'Addon manifest', subtitle: 'Personal source config', x: 250, y: 804, probeKey: 'bc-addon-manifest' },
+  { id: 'bc-addon-search', parentId: 'bc-addon', type: 'check', title: 'Live song search', subtitle: 'Browser-to-Cider path', x: 250, y: 876, probeKey: 'bc-addon-search' },
+  { id: 'bc-addon-stream', parentId: 'bc-addon', type: 'check', title: 'Stream resolver', subtitle: 'Requires a real track', x: 250, y: 948, probeKey: 'bc-addon-stream' },
+  { id: 'bc-renditions', parentId: 'bc-addon', type: 'check', title: 'Audio renditions', subtitle: 'AAC + Atmos options', x: 250, y: 1020, probeKey: 'bc-renditions' },
 
   { id: 'mono-source', parentId: 'site-bitmono', type: 'feature', title: 'Source discovery', subtitle: 'Manifest + live search', x: 518, y: 292 },
   { id: 'mono-manifest', parentId: 'mono-source', type: 'check', title: 'Addon manifest', subtitle: 'Search + stream routes', x: 740, y: 240, probeKey: 'mono-manifest' },
@@ -199,7 +201,7 @@ function buildTopologyStatuses(probes) {
 }
 
 function fitTopologyView(width, height) {
-  const graph = { left: 10, top: 8, right: 1430, bottom: 1025 };
+  const graph = { left: 10, top: 8, right: 1430, bottom: 1090 };
   const scale = Math.max(0.28, Math.min(1.05, Math.min((width - 48) / (graph.right - graph.left), (height - 48) / (graph.bottom - graph.top))));
   return {
     scale,
@@ -806,18 +808,26 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       direct('bc-encryption', bitciderApi, '/api/status', bitciderApi.error);
       idle('bc-addon-manifest', 'NOT LINKED', 'Link Cider in this browser to provision a personal BitChord manifest.', '/api/status');
       idle('bc-addon-search', 'SESSION REQUIRED', 'A connected Cider account and an active browser relay are required to run a real search.', '/api/status');
+      idle('bc-addon-stream', 'TRACK REQUIRED', 'A linked personal add-on and a real track are required to exercise stream resolution.', '/api/status');
+      idle('bc-recovery', 'SIGN-IN REQUIRED', 'The account recovery-code inventory is only returned to a signed-in BitCider account.', '/api/status');
       capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
     } else {
       save('bc-cider-state', ciderConnected ? 'operational' : 'idle', ciderConnected ? 'CONNECTED' : 'NOT LINKED', ciderConnected ? 'A personal Cider token and add-on key are attached to this browser session.' : 'No Cider token is connected in this browser session.', '/api/status', bitciderApi);
       save('bc-browser-relay', !ciderConnected ? 'idle' : relayOnline ? 'operational' : 'degraded', !ciderConnected ? 'SESSION REQUIRED' : relayOnline ? 'ONLINE' : 'NOT RESPONDING', !ciderConnected ? 'Link Cider to start the browser-local relay.' : relayOnline ? 'The open BitCider tab is polling and responding to local Cider bridge jobs.' : 'Cider is linked, but the browser relay is not currently reporting an active poll.', '/api/status', bitciderApi);
       save('bc-account-state', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? 'SIGNED IN' : 'SIGNED OUT', bitciderData.account?.authenticated ? 'The BitCider account session is authenticated.' : 'The anonymous browser session is available; no account is currently signed in.', '/api/status', bitciderApi);
       save('bc-passkeys', bitciderData.account?.authenticated ? 'operational' : 'idle', bitciderData.account?.authenticated ? String(bitciderData.passkeyCount || 0) + ' REGISTERED' : 'SIGN-IN REQUIRED', bitciderData.account?.authenticated ? 'The account status endpoint returned its passkey inventory.' : 'Passkey inventory is only returned to an authenticated account.', '/api/status', bitciderApi);
+      const recoveryCount = Number(bitciderData.account?.recoveryCodeCount);
+      const recoveryReady = bitciderData.account?.authenticated === true && Number.isFinite(recoveryCount);
+      save('bc-recovery', !recoveryReady ? 'idle' : recoveryCount > 0 ? 'operational' : 'degraded', !recoveryReady ? 'SIGN-IN REQUIRED' : recoveryCount > 0 ? recoveryCount + ' UNUSED' : 'NO UNUSED CODES', !recoveryReady ? 'The recovery-code inventory requires a signed-in BitCider account.' : recoveryCount > 0 ? 'The account status endpoint reports unused recovery codes.' : 'No unused recovery codes remain for this account. Regenerate them from the account security panel.', '/api/status', bitciderApi);
       save('bc-encryption', bitciderData.tokenEncryptionConfigured ? 'operational' : 'degraded', bitciderData.tokenEncryptionConfigured ? 'DEDICATED KEY READY' : 'VOLUME KEY', bitciderData.tokenEncryptionConfigured ? 'The dedicated Deplexo token-encryption key is configured.' : 'The service is using its persistent-volume fallback key. Configure BITCIDER_ENCRYPTION_KEY for separated key storage.', '/api/status', bitciderApi);
       capability('bc-auth-flow', backend.payload?.browserCiderBridgeSupported === true, 'SUPPORTED', 'The backend health contract advertises browser-local Cider authorization and relay support.', '/health');
       if (addonManifestProbe) {
         direct('bc-addon-manifest', addonManifestProbe, '/<personal-key>/manifest.json', addonManifestProbe.detail);
+        const personalResources = Array.isArray(addonManifest?.resources) ? addonManifest.resources : [];
+        save('bc-addon-stream', personalResources.includes('stream') ? 'advertised' : 'unverified', personalResources.includes('stream') ? 'ROUTE DECLARED' : 'NOT VERIFIED', personalResources.includes('stream') ? 'The personal BitCider manifest declares stream resolution. A real track and connected Cider session are required to verify playback.' : 'The personal manifest did not advertise stream resolution.', '/<personal-key>/manifest.json', addonManifestProbe);
       } else {
         idle('bc-addon-manifest', 'NOT LINKED', 'A personal manifest is created after Cider is linked to this browser.', '/api/status');
+        idle('bc-addon-stream', 'TRACK REQUIRED', 'A linked personal add-on and a real track are required to exercise stream resolution.', '/api/status');
       }
       if (addonSearchProbe) {
         direct('bc-addon-search', addonSearchProbe, '/<personal-key>/search?q=Daft+Punk', addonSearchProbe.detail);
