@@ -154,9 +154,9 @@ function MapView({ overview, pageStatuses, refreshPages, runTest }) {
               <linearGradient id="admin-link-gradient" x1="0" x2="1"><stop offset="0" stopColor="#ec799c" /><stop offset="1" stopColor="#8de7de" /></linearGradient>
               <filter id="admin-link-glow"><feGaussianBlur stdDeviation="4" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
             </defs>
-            <path d="M650 342 C720 342 724 365 795 365" />
-            <path d="M505 475 C505 522 505 520 505 572" />
-            <circle cx="650" cy="342" r="5" /><circle cx="795" cy="365" r="5" /><circle cx="505" cy="475" r="5" /><circle cx="505" cy="572" r="5" />
+            <path d="M700 350 C745 350 760 365 805 365" />
+            <path d="M480 515 C480 550 480 585 480 620" />
+            <circle cx="700" cy="350" r="5" /><circle cx="805" cy="365" r="5" /><circle cx="480" cy="515" r="5" /><circle cx="480" cy="620" r="5" />
           </svg>
           <div className="admin-map-node-wrap admin-map-core">
             <SiteNode site={nodes[0]} status={pageStatuses.bitcider} openSite={openSite} runTest={runTest} />
@@ -180,7 +180,7 @@ function MapView({ overview, pageStatuses, refreshPages, runTest }) {
   );
 }
 
-export default function AdminConsole({ bootstrapCode = '', onClose }) {
+export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed = () => {}, onClose }) {
   const [phase, setPhase] = useState('loading');
   const [status, setStatus] = useState(null);
   const [csrfToken, setCsrfToken] = useState('');
@@ -301,6 +301,8 @@ export default function AdminConsole({ bootstrapCode = '', onClose }) {
         body: JSON.stringify(registration)
       });
       setCsrfToken(verified.csrfToken || '');
+      onBootstrapConsumed();
+      setShowBootstrapCode(false);
       setStatus({ initialized: true, authenticated: true, passkeyCount: 1, passkeyLimit: 1 });
       setPhase('authenticated');
       setNotice('Owner passkey enrolled. This is the only admin passkey slot.');
