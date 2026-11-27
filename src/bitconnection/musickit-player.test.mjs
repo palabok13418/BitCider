@@ -96,7 +96,7 @@ test('searches the Apple Music catalog and normalizes returned song entries', as
                 durationInMillis: 201000,
                 url: 'https://music.apple.com/us/song/catalog-song/987654321',
                 artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
-                audioTraits: ['lossless', 'atmos']
+                audioVariants: ['lossless', 'dolby-atmos']
               }
             }]
           }
