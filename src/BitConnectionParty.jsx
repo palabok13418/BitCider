@@ -22,7 +22,7 @@ function Icon({ name, size = 18 }) {
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
     copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
     crown: <><path d="m2 8 5 4 5-8 5 8 5-4-2 12H4z" /><path d="M4 20h16" /></>,
-    grip: <><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></>,
+    grip: <><path d="M9 5v14M15 5v14" /></>,
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>
   };
   return <svg {...common}>{paths[name] || <circle cx="12" cy="12" r="8" />}</svg>;
@@ -64,7 +64,9 @@ function PartyRoomExperience({
   hostAudioState = 'idle',
   hostAudioError = '',
   onStartHostAudio = () => {},
-  onStopHostAudio = () => {}
+  onStopHostAudio = () => {},
+  audioBlocked = false,
+  onResumeAudio = () => {}
 }) {
   const [activeTab, setActiveTab] = useState('lyrics');
   const [volume, setVolume] = useState(1);
@@ -90,7 +92,7 @@ function PartyRoomExperience({
 
   const participants = roomState?.participants || [];
   const currentParticipant = roomState?.participant;
-  const isHost = currentParticipant?.role === 'host' || role === 'host';
+  const isHost = currentParticipant ? currentParticipant.role === 'host' : role === 'host';
   const playback = roomState?.playbackState || {};
   const track = playback.track || null;
   const queue = roomState?.queue || [];
@@ -108,8 +110,8 @@ function PartyRoomExperience({
 
   useEffect(() => {
     if (audioRef?.current) audioRef.current.volume = volume;
-    if (session?.setVolume) void session.setVolume(volume).catch(() => {});
-  }, [volume, audioRef, session]);
+    window.dispatchEvent(new CustomEvent('bitconnection:local-volume', { detail: { roomId: room?.roomId, volume } }));
+  }, [volume, audioRef, room?.roomId]);
 
   useEffect(() => {
     const base = Number(playback.positionSeconds || 0);
@@ -117,9 +119,9 @@ function PartyRoomExperience({
     if (!isPlaying) return undefined;
     const startedAt = Date.parse(playback.updatedAt || 0);
     const elapsed = Number.isFinite(startedAt) && startedAt > 0 ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
-    const initial = base + elapsed;
     const timer = window.setInterval(() => {
-      setProgressSeconds(Math.min(duration || Number.MAX_SAFE_INTEGER, initial + (Date.now() - (startedAt > 0 ? startedAt : Date.now())) / 1000));
+      const current = base + (startedAt > 0 ? Math.max(0, (Date.now() - startedAt) / 1000) : 0);
+      setProgressSeconds(Math.min(duration || Number.MAX_SAFE_INTEGER, current));
     }, 500);
     return () => window.clearInterval(timer);
   }, [playback.positionSeconds, playback.updatedAt, isPlaying, duration]);
@@ -180,9 +182,8 @@ function PartyRoomExperience({
       }
       if (action === 'toggle') {
         await session?.updatePlayback?.({ isPlaying: !isPlaying });
-      } else {
-        setPlaybackMessage('The BitChord playback-control bridge must be connected to control the source tab.');
       }
+      setPlaybackMessage('Party playback state was sent. Direct BitChord source controls still need the player bridge.');
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not update party playback.');
     }
@@ -428,6 +429,7 @@ function PartyRoomExperience({
           <input type="range" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(Number(event.target.value))} aria-label="Volume"/>
           <span>{Math.round(volume * 100)}%</span>
         </div>
+        {audioBlocked && !isHost && <button className="bc-party-resume-audio" type="button" onClick={onResumeAudio}>Tap to enable party audio</button>}
         {isHost && (
           <div className="bc-party-host-audio">
             <div className="bc-party-host-audio-status">
@@ -453,7 +455,10 @@ function PartyRoomExperience({
             <span className="bc-party-eyebrow">{roomCode ? 'ROOM ' + roomCode : 'LISTENING PARTY'}</span>
             <h1>{roomName}</h1>
           </div>
+          <div className="bc-party-header-actions">
           <div className="bc-party-member-count"><span/>{participants.length} members</div>
+          {roomCode && <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}><Icon name="copy" size={13}/>Copy code</button>}
+        </div>
         </header>
 
         <div className={'bc-party-tab-content is-' + activeTab}>
