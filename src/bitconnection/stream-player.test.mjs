@@ -54,7 +54,7 @@ test('validates provider-issued FairPlay license authorization headers', () => {
   });
   assert.throws(() => normalizeFairPlayLicenseHeaders({ 'Media-User-Token': 'subscriber-token' }), /cannot authenticate a FairPlay license/);
   assert.throws(() => normalizeFairPlayLicenseHeaders({ Cookie: 'session=secret' }), /cannot authenticate a FairPlay license/);
-  assert.throws(() => normalizeFairPlayLicenseHeaders({ Authorization: 'Bearer bad\\r\\nInjected: yes' }), /single-line strings/);
+  assert.throws(() => normalizeFairPlayLicenseHeaders({ Authorization: 'Bearer bad\r\nInjected: yes' }), /single-line strings/);
   assert.throws(() => normalizeFairPlayLicenseHeaders(['not', 'an', 'object']), /must be an object/);
 });
 
