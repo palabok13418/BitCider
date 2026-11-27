@@ -12,6 +12,10 @@ BitCider is configured for only these hosting providers:
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, and the Deplexo same-origin API rule.
 
+## BitAccount
+
+**BitAccount** is the shared account identity and account-management brand across the Bit* products. **BitAccount Center** is the user-facing place to review profile details, connected-product sign-in status, and available security settings. Product names such as BitCider and BitConnection remain visible where they describe the service being managed. The BitAccount brand does not silently merge their existing authentication systems: BitCider and BitConnection credentials and sessions remain product-scoped unless a future explicit identity migration changes that behavior.
+
 ## Current features
 
 - Requests a Cider app token directly through `POST http://127.0.0.1:10767/api/v2/auth/request` as **BitCider**.
