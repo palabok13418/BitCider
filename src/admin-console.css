@@ -285,3 +285,9 @@
   .admin-addon-test-controls label { grid-column: auto; }
   .admin-addon-test-controls .admin-button { width: 100%; white-space: normal; }
 }
+
+.admin-inspector-child-row { display: grid; grid-template-columns: minmax(0,1fr) 44px; gap: 5px; align-items: stretch; }
+.admin-inspector-child-row > button:first-child { min-width: 0; }
+.admin-inspector-child-test { min-height: 38px; border: 1px solid #3b4a52; border-radius: 7px; color: #b7d8d0; background: #202b32; font: 700 7px ui-monospace,monospace; cursor: pointer; }
+.admin-inspector-child-test:hover:not(:disabled) { border-color: #6b948a; background: #293b3a; }
+.admin-inspector-child-test:disabled { opacity: .45; cursor: wait; }
