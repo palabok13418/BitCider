@@ -22,8 +22,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_PROXY_SECRET` | A long random secret, shared only with the Netlify and Cloudflare gateways |
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
-| `APPLE_MUSIC_DEVELOPER_TOKEN` | Optional Apple Music API developer JWT for the separate official personalized-recommendations feed; not used for TTML lyrics |
-| `APPLE_MUSIC_WEB_PLAYER_TOKEN` | Optional web-player Bearer override; leave blank to auto-discover it from `music.apple.com` for TTML lyrics |
+| `APPLE_MUSIC_WEB_PLAYER_TOKEN` | Optional web-player Bearer override; leave blank to auto-discover it from `music.apple.com` for private TTML lyrics and personal recommendation shelves |
 | `BITCIDER_ADMIN_BOOTSTRAP_CODE` | One-time, high-entropy owner setup code; remove after the first passkey is enrolled |
 | `BITCONNECTION_GIPHY_API_KEY` | Free GIPHY beta API key used only by the Deplexo GIF search proxy; never expose it in frontend variables |
 
@@ -167,11 +166,9 @@ The party Browser searches the existing `/bitmono/search` route. A host can prep
 
 Users add their own Apple Music Music User Token (also referred to in the account UI as a User Media Token) in BitAccount Center. Deplexo stores that credential encrypted with the dedicated `BITCIDER_ENCRYPTION_KEY`; the plaintext token is never returned to the browser or written to logs.
 
-**TTML lyrics do not require `APPLE_MUSIC_DEVELOPER_TOKEN` or an Apple Developer Program key.** When a track needs lyrics, Deplexo discovers the short-lived web-player Bearer token from the public JavaScript bundle served by `music.apple.com`, caches it until shortly before its JWT expiry, and sends it with the account's `Media-User-Token` to Apple's private `amp-api` lyrics endpoint. `APPLE_MUSIC_WEB_PLAYER_TOKEN` is only an optional override for that automatic discovery; it can normally remain blank. The account connection saves the user token securely and validates subscriber access on the first TTML request.
+**Apple Music does not require a BitCider-owned developer token for subscriber-backed features.** Deplexo discovers the short-lived web-player Bearer JWT from the public JavaScript bundle served by `music.apple.com`, caches it until shortly before its JWT expiry, and pairs it with the account's encrypted `Media-User-Token`. TTML lyrics use Apple's private `amp-api` catalog lyrics routes; personalized recommendation shelves use the private `amp-api-edge` route `/v1/recommendations/{storefront}`. The subscriber's own `Media-User-Token` unlocks account-specific content. `APPLE_MUSIC_WEB_PLAYER_TOKEN` is only an optional override for the web-player Bearer and can normally remain blank. No Apple Developer Program key or `APPLE_MUSIC_DEVELOPER_TOKEN` environment variable is needed.
 
-The separate official personalized-recommendations endpoint still uses `APPLE_MUSIC_DEVELOPER_TOKEN`; that setting is optional and only enables that recommendations feed. Its absence does not block connecting Apple Music or fetching TTML lyrics.
-
-The account-scoped TTML endpoint first tries Apple's private `syllable-lyrics` response and falls back to `lyrics` for line-level timing. These lyrics routes are undocumented Apple web-player endpoints, not part of the stable public API, so they may change or stop working without notice.
+The account connection stores the user token encrypted with `BITCIDER_ENCRYPTION_KEY`. Subscriber access is checked when the first private Apple Music request is made. The account-scoped TTML endpoint first tries Apple's private `syllable-lyrics` response and falls back to `lyrics` for line-level timing. Both the lyrics and recommendation routes are undocumented web-player endpoints, not part of Apple's stable public API, so Apple may change or disable them without notice.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
 
 ## BitMono complete-audio cache
