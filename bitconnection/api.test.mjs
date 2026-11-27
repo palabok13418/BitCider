@@ -499,6 +499,7 @@ test('live rooms support temporary guests, proximity admission, playback permiss
         durationSeconds: 204,
         artworkUrl: 'https://is1-ssl.mzstatic.com/image/600x600bb.jpg',
         url: 'https://music.apple.com/us/song/example/1234567890',
+        playbackMode: 'embed',
         appleMusicStorefront: 'us'
       },
       isPlaying: true,
@@ -510,6 +511,8 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   assert.equal(appleMusicPayload.playbackState.source, 'apple-music');
   assert.equal(appleMusicPayload.playbackState.track.appleMusicSongId, '1234567890');
   assert.equal(appleMusicPayload.playbackState.track.source, 'apple-music');
+  assert.equal(appleMusicPayload.playbackState.track.playbackMode, 'embed');
+  assert.equal(appleMusicPayload.playbackState.track.appleMusicUrl, 'https://music.apple.com/us/song/example/1234567890');
 
   const deniedVolume = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/volume', {
     method: 'POST',
