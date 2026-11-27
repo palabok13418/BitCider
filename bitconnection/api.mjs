@@ -339,7 +339,7 @@ export function createBitConnectionRouter({
   const ratePublicDiscovery = createRateLimit(120, 60 * 1000);
   const rateGifSearch = createRateLimit(30, 60 * 1000);
   const rateSignal = createRateLimit(180, 60 * 1000);
-  const rateAutoMix = createRateLimit(4, 10 * 60 * 1000);
+  const rateAutoMix = createRateLimit(12, 60 * 1000);
   const hostLocations = new Map();
   const pendingVerificationCodes = new Map();
   const PRESENCE_TTL_MS = 75 * 1000;
@@ -773,7 +773,9 @@ export function createBitConnectionRouter({
         memberModeration: true,
         directWebRtcAudio: true,
         serverSideOnnxAnalysis: true,
+        serverSideOnnxDjPlanning: true,
         serverSideOnnxAutoMix: false,
+        liveAutoMixExecution: false,
         sourcePlaybackCommands: false,
         synchronizedLyrics: false
       },
@@ -1590,6 +1592,7 @@ export function createBitConnectionRouter({
       ...await autoMix.status(),
       canAnalyze: isRoomOwner(room, participant),
       analyzedQueueItems: (room.queue || []).filter(item => Boolean(item.autoMixAnalysis)).length,
+      planningAvailable: true,
       livePlaybackEnabled: false
     });
   });
