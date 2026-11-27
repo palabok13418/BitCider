@@ -21,9 +21,242 @@ async function requestJson(path, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || payload.error || 'The admin request could not be completed.');
+    const error = new Error(payload.message || payload.error || 'The admin request could not be completed.');
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
+}
+
+async function runPersonalAddonChecks(stage = 'stream', query = 'Chicago Michael Jackson') {
+  const checks = {};
+  const shouldSearch = stage !== 'manifest';
+  const shouldStream = ['stream', 'renditions', 'all'].includes(stage);
+  const shouldRenditions = ['renditions', 'all'].includes(stage);
+  const checkedAt = new Date().toISOString();
+
+  const record = (id, state, label, detail, endpoint, durationMs = null, httpStatus = 200) => {
+    checks[id] = { state, label, detail, endpoint, durationMs, httpStatus, checkedAt };
+  };
+
+  let manifest;
+  let manifestPath = '';
+  let track = null;
+
+  try {
+    const started = performance.now();
+    const status = await requestJson('/api/status');
+    if (status.connected !== true || typeof status.addonUrl !== 'string' || !status.addonUrl) {
+      throw new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
+    }
+    const addonUrl = new URL(status.addonUrl, window.location.origin);
+    if (!/^\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(addonUrl.pathname)) {
+      throw new Error('The personal add-on URL did not match the expected proxied manifest route.');
+    }
+    manifestPath = addonUrl.pathname;
+    manifest = await requestJson(manifestPath);
+    if (typeof manifest.id !== 'string' || !manifest.id.trim()) {
+      throw new Error('The personal add-on manifest is missing its required stable ID.');
+    }
+    record(
+      'bc-addon-manifest',
+      'operational',
+      'MANIFEST VALID',
+      'The personalized manifest returned a stable addon ID and declared resources: ' + (manifest.resources || []).join(', ') + '.',
+      manifestPath,
+      Math.round(performance.now() - started)
+    );
+  } catch (error) {
+    record(
+      'bc-addon-manifest',
+      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+      'MANIFEST FAILED',
+      error.message || 'The personalized manifest could not be checked.',
+      manifestPath || '/api/status',
+      null,
+      error.status || null
+    );
+    return { checks, error, track, manifest };
+  }
+
+  if (stage === 'manifest') return { checks, manifest, track };
+
+  if (!Array.isArray(manifest.resources) || !manifest.resources.includes('search')) {
+    const error = new Error('The personal manifest does not declare search support.');
+    record('bc-addon-search', 'degraded', 'SEARCH NOT DECLARED', error.message, manifestPath);
+    return { checks, error, manifest, track };
+  }
+
+  try {
+    const started = performance.now();
+    const searchPath = manifestPath.replace(/\/manifest\.json$/, '/search') +
+      '?q=' + encodeURIComponent(query.trim()) + '&quality=high';
+    const search = await requestJson(searchPath);
+    const tracks = Array.isArray(search.tracks) ? search.tracks : [];
+    track = tracks.find(item =>
+      String(item.title || '').trim().toLowerCase() === 'chicago' &&
+      String(item.artist || '').toLowerCase().includes('michael jackson') &&
+      !item.atmos
+    ) || null;
+    if (!track) {
+      const candidates = tracks.slice(0, 5).map(item =>
+        String(item.title || 'Untitled') + ' · ' + String(item.artist || 'Unknown artist')
+      );
+      const error = new Error(tracks.length
+        ? 'The search returned results, but none matched the exact recording “Chicago” by Michael Jackson.'
+        : 'The Cider catalogue search returned no tracks. Check that Cider is signed in and its browser relay is running.');
+      error.candidates = candidates;
+      record(
+        'bc-addon-search',
+        'degraded',
+        'EXACT TRACK NOT FOUND',
+        error.message,
+        searchPath,
+        Math.round(performance.now() - started)
+      );
+      return { checks, error, candidates, manifest, track };
+    }
+    record(
+      'bc-addon-search',
+      'operational',
+      'EXACT TRACK FOUND',
+      'The live Cider catalogue search returned the requested title and artist with a track ID.',
+      searchPath,
+      Math.round(performance.now() - started)
+    );
+  } catch (error) {
+    record(
+      'bc-addon-search',
+      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+      'SEARCH FAILED',
+      error.message || 'The live Cider search failed.',
+      manifestPath.replace(/\/manifest\.json$/, '/search'),
+      null,
+      error.status || null
+    );
+    return { checks, error, manifest, track };
+  }
+
+  if (!shouldStream) return { checks, manifest, track };
+
+  if (!manifest.resources.includes('stream')) {
+    const error = new Error('The personal manifest found the sample track but does not declare stream support.');
+    record('bc-addon-stream', 'degraded', 'STREAM NOT DECLARED', error.message, manifestPath);
+    return { checks, error, manifest, track };
+  }
+
+  async function resolveRendition(trackId, quality) {
+    const started = performance.now();
+    const streamPath = manifestPath.replace(/\/manifest\.json$/, '/stream/' + encodeURIComponent(trackId)) +
+      '?quality=' + encodeURIComponent(quality);
+    const stream = await requestJson(streamPath);
+    if (typeof stream.url !== 'string' || !stream.url.trim()) {
+      throw new Error('The stream resolver did not return a media URL for ' + quality + '.');
+    }
+    const mediaUrl = new URL(stream.url);
+    if (mediaUrl.protocol !== 'https:') {
+      throw new Error('The ' + quality + ' rendition returned a non-HTTPS media URL.');
+    }
+    return {
+      stream,
+      mediaUrl,
+      endpoint: streamPath,
+      durationMs: Math.round(performance.now() - started)
+    };
+  }
+
+  try {
+    const result = await resolveRendition(track.id, 'high');
+    record(
+      'bc-addon-stream',
+      'operational',
+      'STREAM RESOLVED',
+      'The sample recording resolved to an absolute HTTPS media URL. The resolver returned ' +
+        (result.stream.codec || result.stream.format || 'codec metadata') + '.',
+      result.endpoint,
+      result.durationMs
+    );
+    if (!shouldRenditions) {
+      return { checks, manifest, track, stream: result.stream, mediaHost: result.mediaUrl.host };
+    }
+
+    const optionList = Array.isArray(manifest.settings)
+      ? manifest.settings.flatMap(setting => Array.isArray(setting.options) ? setting.options : [])
+      : [];
+    const qualityValues = optionList.map(option => String(option.value || '').toLowerCase());
+    const supportsLow = qualityValues.includes('low');
+    const supportsAtmos = qualityValues.includes('atmos');
+    if (!supportsLow) {
+      record('bc-renditions', 'partial', 'LOW NOT DECLARED', 'The manifest does not declare the AAC 64 kbps option.', manifestPath);
+      return { checks, manifest, track, stream: result.stream, mediaHost: result.mediaUrl.host };
+    }
+
+    const low = await resolveRendition(track.id, 'low');
+    let atmosResult = null;
+    if (supportsAtmos) {
+      const atmosSearchPath = manifestPath.replace(/\/manifest\.json$/, '/search') +
+        '?q=' + encodeURIComponent(query.trim()) + '&quality=high&atmos=auto';
+      const atmosSearch = await requestJson(atmosSearchPath);
+      const atmosTrack = (Array.isArray(atmosSearch.tracks) ? atmosSearch.tracks : []).find(item =>
+        String(item.title || '').trim().toLowerCase() === 'chicago' &&
+        String(item.artist || '').toLowerCase().includes('michael jackson') &&
+        (item.atmos === true || (Array.isArray(item.audioModes) && item.audioModes.includes('DOLBY_ATMOS')))
+      );
+      if (atmosTrack) atmosResult = await resolveRendition(atmosTrack.id, 'atmos');
+      else {
+        record(
+          'bc-renditions',
+          'partial',
+          'ATMOS NOT IN SAMPLE',
+          'AAC high and low were resolved. The manifest advertises Dolby Atmos, but this catalogue search did not return an Atmos variant for Chicago.',
+          atmosSearchPath,
+          low.durationMs
+        );
+        return {
+          checks,
+          manifest,
+          track,
+          stream: result.stream,
+          lowStream: low.stream,
+          mediaHost: result.mediaUrl.host,
+          atmosAvailable: false
+        };
+      }
+    }
+    record(
+      'bc-renditions',
+      'operational',
+      'RENDITIONS RESOLVED',
+      'AAC high (' + (result.stream.quality || result.stream.audioQuality || 'metadata returned') +
+        '), AAC low (' + (low.stream.quality || low.stream.audioQuality || 'metadata returned') + ')' +
+        (atmosResult ? ', and Dolby Atmos (' + (atmosResult.stream.quality || atmosResult.stream.audioQuality || 'metadata returned') + ')' : '') +
+        ' returned playable HTTPS media URLs.',
+      manifestPath,
+      result.durationMs + low.durationMs + (atmosResult?.durationMs || 0)
+    );
+    return {
+      checks,
+      manifest,
+      track,
+      stream: result.stream,
+      lowStream: low.stream,
+      atmosStream: atmosResult?.stream || null,
+      mediaHost: result.mediaUrl.host,
+      atmosAvailable: Boolean(atmosResult)
+    };
+  } catch (error) {
+    record(
+      shouldRenditions ? 'bc-renditions' : 'bc-addon-stream',
+      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+      shouldRenditions ? 'RENDITION TEST FAILED' : 'STREAM TEST FAILED',
+      error.message || 'The stream test failed.',
+      manifestPath.replace(/\/manifest\.json$/, '/stream/' + encodeURIComponent(track.id)),
+      null,
+      error.status || null
+    );
+    return { checks, error, manifest, track };
+  }
 }
 
 function StatusPill({ state = 'checking', label }) {
@@ -55,60 +288,35 @@ function MiniSitePreview({ site }) {
 function AddonTrackTest() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
-  const [query, setQuery] = useState('Chicago Michael Jackson');
 
   async function run() {
+    const accepted = window.confirm(
+      'The stream test will select Chicago in the linked Cider queue and pause Cider after it resolves the media URL. It will not play or download the song. Continue?'
+    );
+    if (!accepted) return;
     setBusy(true);
     setResult(null);
     try {
-      const status = await requestJson('/api/status');
-      if (status.connected !== true || typeof status.addonUrl !== 'string' || !status.addonUrl) {
-        throw new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
-      }
-      const manifestUrl = new URL(status.addonUrl, window.location.origin);
-      if (!/^\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(manifestUrl.pathname)) {
-        throw new Error('The personal add-on URL did not match the expected proxied manifest route.');
-      }
-      const manifest = await requestJson(manifestUrl.pathname);
-      if (!Array.isArray(manifest.resources) || !manifest.resources.includes('search')) {
-        throw new Error('The personal add-on manifest does not declare search support.');
-      }
-      const searchPath = manifestUrl.pathname.replace(/\/manifest\.json$/, '/search') + '?q=' + encodeURIComponent(query.trim());
-      const search = await requestJson(searchPath);
-      const tracks = Array.isArray(search.tracks) ? search.tracks : [];
-      const track = tracks.find(item =>
-        String(item.title || '').trim().toLowerCase() === 'chicago' &&
-        String(item.artist || '').toLowerCase().includes('michael jackson')
-      );
-      if (!track) {
+      const report = await runPersonalAddonChecks('stream');
+      const check = report.checks['bc-addon-stream'] || report.checks['bc-addon-search'] || report.checks['bc-addon-manifest'];
+      if (!report.stream) {
         setResult({
           ok: false,
-          title: 'No exact Chicago match returned',
-          detail: tracks.length
-            ? 'The add-on returned ' + tracks.length + ' result(s), but none matched the exact title “Chicago” and artist “Michael Jackson”. No stream was requested.'
-            : 'The live Cider search returned no tracks. Check that Cider is signed in and its browser relay is running.',
-          candidates: tracks.slice(0, 4).map(item => String(item.title || 'Untitled') + ' · ' + String(item.artist || 'Unknown artist'))
+          title: 'BitChord add-on test failed',
+          detail: check?.detail || report.error?.message || 'The live test could not resolve the sample track.',
+          candidates: report.candidates || []
         });
         return;
       }
-      if (!manifest.resources.includes('stream')) {
-        throw new Error('The add-on found the track but its manifest does not declare stream support.');
-      }
-      const streamPath = manifestUrl.pathname.replace(/\/manifest\.json$/, '/stream/' + encodeURIComponent(track.id)) + '?quality=HIGH';
-      const stream = await requestJson(streamPath);
-      const mediaUrl = new URL(stream.url);
-      if (mediaUrl.protocol !== 'https:') {
-        throw new Error('The stream resolver returned a non-HTTPS media URL. BitChord requires absolute secure media URLs.');
-      }
       setResult({
         ok: true,
-        title: String(track.title) + ' · ' + String(track.artist),
-        detail: 'Exact catalogue match found. The personal add-on returned a valid HTTPS stream URL and metadata. No audio file was downloaded or played.',
-        album: track.album || 'Album not supplied',
-        duration: Number.isFinite(Number(track.duration)) ? Math.round(Number(track.duration)) + ' sec' : 'Not supplied',
-        quality: stream.quality || stream.format || 'Metadata returned',
-        codec: stream.codec || stream.format || 'Not supplied',
-        mediaHost: mediaUrl.host
+        title: String(report.track.title) + ' · ' + String(report.track.artist),
+        detail: 'Exact catalogue match found. The personal add-on returned an absolute HTTPS stream URL and metadata. Cider was asked to resolve the item, then paused. No audio file was downloaded or played.',
+        album: report.track.album || 'Album not supplied',
+        duration: Number.isFinite(Number(report.track.duration)) ? Math.round(Number(report.track.duration)) + ' sec' : 'Not supplied',
+        quality: report.stream.quality || report.stream.audioQuality || report.stream.format || 'Metadata returned',
+        codec: report.stream.codec || report.stream.format || 'Not supplied',
+        mediaHost: report.mediaHost
       });
     } catch (error) {
       setResult({ ok: false, title: 'Addon test failed', detail: error.message || 'The live add-on test failed.' });
@@ -122,12 +330,12 @@ function AddonTrackTest() {
       <div className="admin-addon-test-copy">
         <span className="admin-eyebrow">LIVE BITCHORD ADD-ON CHECK</span>
         <h3>Test a real track</h3>
-        <p>Search the linked Cider catalogue, verify the exact recording, then ask the personal add-on for stream metadata. This does not download or play the audio.</p>
+        <p>Search the linked Cider catalogue, verify the exact recording, then resolve a stream. Stream resolution temporarily selects the track in Cider and pauses Cider afterward. Audio is not played or downloaded.</p>
       </div>
       <div className="admin-addon-test-controls">
-        <label htmlFor="admin-addon-query">TRACK SEARCH</label>
-        <input id="admin-addon-query" value={query} onChange={event => setQuery(event.target.value)} />
-        <button type="button" className="admin-button admin-button-primary" onClick={run} disabled={busy || !query.trim()}>
+        <label htmlFor="admin-addon-query">SAMPLE TRACK</label>
+        <input id="admin-addon-query" value="Chicago · Michael Jackson" readOnly />
+        <button type="button" className="admin-button admin-button-primary" onClick={run} disabled={busy}>
           {busy ? 'TESTING ADD-ON…' : 'TEST CHICAGO BY MICHAEL JACKSON'}
         </button>
       </div>
