@@ -1372,3 +1372,7 @@
   .bc-party-browser-mono-result { grid-template-columns: minmax(0,1fr); }
   .bc-party-browser-mono-result > div { justify-content: flex-start; }
 }
+
+
+/* Hidden source element: audio remains active for host captureStream(). */
+audio.bc-party-audio-output { display: none !important; }
