@@ -1890,6 +1890,8 @@ function CreateRoomWindow() {
           onSeekBitMono={seekBitMonoPlayback}
           onPlayAppleMusicTrack={playAppleMusicTrack}
           onSearchAppleMusicCatalog={searchAppleMusicCatalog}
+          appleMusicPlaybackStatus={appleMusicPlaybackStatus}
+          appleMusicPlaybackError={appleMusicPlaybackError}
           onControlAppleMusic={controlAppleMusic}
           onSeekAppleMusic={seekAppleMusic}
         />
