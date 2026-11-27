@@ -727,6 +727,22 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   assert.equal(messagePayload.message.imageType, 'gif');
   assert.equal(messagePayload.message.participantId, guestPayload.participantId);
 
+  const credentialGif = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/chat', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ imageUrl: 'https://user:password@media.giphy.com/media/example/giphy.gif' })
+  });
+  assert.equal(credentialGif.status, 400);
+  assert.equal((await credentialGif.json()).error, 'INVALID_CHAT_GIF');
+
+  const unsupportedImage = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/chat', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ imageDataUrl: 'data:image/svg+xml;base64,PHN2Zz4=' })
+  });
+  assert.equal(unsupportedImage.status, 400);
+  assert.equal((await unsupportedImage.json()).error, 'INVALID_CHAT_IMAGE');
+
   const settings = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
     method: 'POST',
     headers: guestHeaders,
