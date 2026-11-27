@@ -63,6 +63,11 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.apiVersion, BITCONNECTION_API_VERSION);
   assert.equal(payload.capabilities.independentAccounts, 'enabled');
   assert.equal(payload.capabilities.ciderAddonCreation, 'never');
+  assert.equal(payload.capabilities.partyChat, 'text-images-and-giphy-gifs-enabled');
+  assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
+  assert.equal(payload.capabilities.playbackSourceBridge, 'not-connected');
+  assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
+  assert.equal(payload.capabilities.serverSideAutoMix, 'not-configured');
   assert.equal(payload.limits.maxPartySize, 30);
 });
 
