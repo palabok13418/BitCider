@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   musicKitQueueDescriptor,
   normalizeAppleCatalogTrack,
-  musicKitPlaybackSnapshot
+  musicKitPlaybackSnapshot,
+  searchAppleMusicSongs
 } from './musickit-player.mjs';
 
 test('creates a MusicKit queue descriptor from a catalog song id', () => {
@@ -65,4 +66,37 @@ test('creates a safe playback snapshot from a MusicKit player', () => {
   assert.equal(snapshot.durationSeconds, 180);
   assert.equal(snapshot.track.title, 'Example');
   assert.equal(snapshot.track.artworkUrl, 'https://is1-ssl.mzstatic.com/image/600x600bb.jpg');
+});
+
+
+test('searches the Apple Music catalog and normalizes returned song entries', async () => {
+  const results = await searchAppleMusicSongs({
+    api: {
+      async search(term, options) {
+        assert.equal(term, 'Test Artist');
+        assert.deepEqual(options, { types: 'songs', limit: 10, offset: 0 });
+        return {
+          songs: {
+            data: [{
+              id: '987654321',
+              type: 'songs',
+              attributes: {
+                name: 'Catalog Song',
+                artistName: 'Test Artist',
+                albumName: 'Test Album',
+                durationInMillis: 201000,
+                url: 'https://music.apple.com/us/song/catalog-song/987654321',
+                artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' }
+              }
+            }]
+          }
+        };
+      }
+    }
+  }, 'Test Artist', 10);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, '987654321');
+  assert.equal(results[0].title, 'Catalog Song');
+  assert.equal(results[0].durationSeconds, 201);
 });
