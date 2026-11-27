@@ -11,20 +11,20 @@ export function musicKitQueueDescriptor(track = {}) {
   if (candidate) {
     let url;
     try { url = new URL(candidate); } catch { throw new TypeError('The Apple Music song URL is invalid.'); }
-    if (url.protocol !== 'https:' || !/(^|\\.)music\\.apple\\.com$/i.test(url.hostname)) {
+    if (url.protocol !== 'https:' || !/(^|\.)music\.apple\.com$/i.test(url.hostname)) {
       throw new TypeError('Only Apple Music catalog URLs can be played through MusicKit.');
     }
     return { url: url.href };
   }
 
   const songId = cleanString(track.id || track.appleMusicSongId, 40);
-  if (songId && /^\\d{1,20}$/.test(songId)) return { song: songId };
+  if (songId && /^\d{1,20}$/.test(songId)) return { song: songId };
   throw new TypeError('This Apple Music item does not include a playable catalog song ID or URL.');
 }
 
 export function normalizeAppleCatalogTrack(track = {}) {
   const id = cleanString(track.id || track.appleMusicSongId, 40);
-  if (!/^\\d{1,20}$/.test(id)) throw new TypeError('A valid Apple Music catalog song ID is required.');
+  if (!/^\d{1,20}$/.test(id)) throw new TypeError('A valid Apple Music catalog song ID is required.');
   return {
     id,
     type: 'apple-music',
