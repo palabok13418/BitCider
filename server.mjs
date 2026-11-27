@@ -90,7 +90,21 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
 }));
 
 // Short, stable BitChord setup URL. Keep the full API route working for older clients.
-app.get(['/party', '/party/'], (_req, res) => res.redirect(308, '/api/bitconnection/party-service'));
+const partyDiscoveryPaths = ['/party', '/party/'];
+app.options(partyDiscoveryPaths, (_req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Accept, Content-Type, Authorization');
+  res.set('Cache-Control', 'no-store');
+  return res.status(204).end();
+});
+app.get(partyDiscoveryPaths, (_req, res) => {
+  // Browsers need CORS permission on the redirect response as well as its target.
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Cache-Control', 'no-store');
+  return res.redirect(308, '/api/bitconnection/party-service');
+});
 
 // Preserve the smaller JSON limit for all other BitCider API routes.
 app.use(express.json({ limit: '256kb' }));
