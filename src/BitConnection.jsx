@@ -1501,12 +1501,12 @@ function CreateRoomWindow() {
       setHostAudioState('requesting');
       // Capture the player synchronously before this function reaches its first
       // network await so its audio track is present in the WebRTC runtime.
-      transportPromise = startBitConnectionHostMediaTransport({
+      transportPromise = playPromise.then(() => startBitConnectionHostMediaTransport({
         session: hostSession,
         audioElement: player,
         onRoomState: setRoomState,
         onError: transportError => setHostAudioError(transportError.message || 'The room audio connection encountered an error.')
-      });
+      }));
     }
 
     try {
