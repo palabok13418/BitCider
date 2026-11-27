@@ -87,6 +87,48 @@ function qualityLabel(track) {
   return null;
 }
 
+
+function ttmlTimeToSeconds(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^\d+(?:\.\d+)?ms$/i.test(raw)) return Number(raw.slice(0, -2)) / 1000;
+  if (/^\d+(?:\.\d+)?s$/i.test(raw)) return Number(raw.slice(0, -1));
+  const parts = raw.split(':');
+  if (parts.length === 3 && parts.every(part => /^\d+(?:\.\d+)?$/.test(part))) {
+    return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+  }
+  return null;
+}
+
+function parseAppleTtml(ttml) {
+  if (typeof DOMParser !== 'function' || typeof ttml !== 'string' || !ttml.trim()) return [];
+  try {
+    const document = new DOMParser().parseFromString(ttml, 'application/xml');
+    if (document.getElementsByTagName('parsererror').length) return [];
+    const paragraphs = [
+      ...document.getElementsByTagNameNS('*', 'p'),
+      ...document.getElementsByTagName('p')
+    ];
+    const seen = new Set();
+    return paragraphs.map((paragraph, index) => {
+      if (seen.has(paragraph)) return null;
+      seen.add(paragraph);
+      const text = String(paragraph.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) return null;
+      const begin = ttmlTimeToSeconds(paragraph.getAttribute('begin'));
+      const end = ttmlTimeToSeconds(paragraph.getAttribute('end'));
+      return {
+        id: 'apple-ttml-' + index,
+        text,
+        startSeconds: begin ?? 0,
+        endSeconds: end ?? (begin == null ? 0 : begin + 4)
+      };
+    }).filter(Boolean).sort((left, right) => left.startSeconds - right.startSeconds);
+  } catch {
+    return [];
+  }
+}
+
 function formatTime(seconds) {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
   return Math.floor(value / 60) + ':' + String(value % 60).padStart(2, '0');
@@ -135,6 +177,9 @@ function PartyRoomExperience({
   const [browserSearchError, setBrowserSearchError] = useState('');
   const [bitMonoPrepared, setBitMonoPrepared] = useState({});
   const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
+  const [appleMusicLyrics, setAppleMusicLyrics] = useState([]);
+  const [appleMusicLyricsError, setAppleMusicLyricsError] = useState('');
+  const [appleMusicLyricsLoading, setAppleMusicLyricsLoading] = useState(false);
   const [queueBusy, setQueueBusy] = useState(false);
   const [memberBusy, setMemberBusy] = useState('');
   const [playbackMessage, setPlaybackMessage] = useState('');
@@ -158,6 +203,8 @@ function PartyRoomExperience({
   const isPlaying = Boolean(playback.isPlaying);
   const art = trackArtwork(track);
   const quality = qualityLabel(track);
+  const appleMusicSongId = String(track?.appleMusicSongId || '');
+  const appleMusicStorefront = /^[a-z]{2}$/.test(String(track?.appleMusicStorefront || '')) ? String(track.appleMusicStorefront) : 'us';
   const roomName = room?.roomName || roomState?.room?.roomName || 'Listening Party';
   const roomCode = room?.roomCode || roomState?.room?.roomCode || '';
   const allowPlayback = isHost || !room?.ownerOnlyControls;
@@ -180,6 +227,52 @@ function PartyRoomExperience({
     }, 500);
     return () => window.clearInterval(timer);
   }, [playback.positionSeconds, playback.updatedAt, isPlaying, duration]);
+
+
+  useEffect(() => {
+    let active = true;
+    setAppleMusicLyrics([]);
+    setAppleMusicLyricsError('');
+    if (!/^[0-9]{1,20}$/.test(appleMusicSongId)) {
+      setAppleMusicLyricsLoading(false);
+      return () => { active = false; };
+    }
+    setAppleMusicLyricsLoading(true);
+    async function loadAppleMusicLyrics() {
+      try {
+        const accountResponse = await fetch('/api/bitconnection/account', {
+          credentials: 'same-origin', cache: 'no-store'
+        });
+        const account = await accountResponse.json().catch(() => ({}));
+        if (!accountResponse.ok) throw new Error(account.message || 'Could not check your Apple Music account.');
+        let identityHeaders = {};
+        if (account.bitCiderAccountAvailable) {
+          const ciderHeaders = { 'X-BitConnection-Identity': 'bitcider' };
+          const ciderResponse = await fetch('/api/bitconnection/account', {
+            headers: ciderHeaders, credentials: 'same-origin', cache: 'no-store'
+          });
+          const ciderAccount = await ciderResponse.json().catch(() => ({}));
+          if (ciderResponse.ok && ciderAccount.authenticated) identityHeaders = ciderHeaders;
+        }
+        const query = new URLSearchParams({ songId: appleMusicSongId, storefront: appleMusicStorefront });
+        const response = await fetch('/api/bitconnection/account/providers/apple-music/lyrics?' + query, {
+          headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || 'Apple Music TTML lyrics are unavailable.');
+        const lines = parseAppleTtml(payload.ttml || '');
+        if (!active) return;
+        setAppleMusicLyrics(lines);
+        if (!lines.length) setAppleMusicLyricsError('Apple Music returned TTML that could not be parsed into timed lines.');
+      } catch (error) {
+        if (active) setAppleMusicLyricsError(error.message || 'Apple Music lyrics could not be loaded.');
+      } finally {
+        if (active) setAppleMusicLyricsLoading(false);
+      }
+    }
+    loadAppleMusicLyrics();
+    return () => { active = false; };
+  }, [appleMusicSongId, appleMusicStorefront]);
 
   useEffect(() => {
     if (!session?.getState) return undefined;
@@ -643,8 +736,15 @@ function PartyRoomExperience({
     }
   }
 
-  const lyrics = Array.isArray(roomState?.lyrics?.lines) ? roomState.lyrics.lines : [];
-  const currentLyricIndex = Number.isInteger(roomState?.lyrics?.currentIndex) ? roomState.lyrics.currentIndex : -1;
+  const lyrics = appleMusicLyrics.length
+    ? appleMusicLyrics
+    : Array.isArray(roomState?.lyrics?.lines) ? roomState.lyrics.lines : [];
+  const currentLyricIndex = appleMusicLyrics.length
+    ? Math.max(0, appleMusicLyrics.findIndex((line, index) => (
+        progressSeconds >= Number(line.startSeconds || 0)
+        && (line.endSeconds == null || progressSeconds < Number(line.endSeconds) || index === appleMusicLyrics.length - 1)
+      )))
+    : Number.isInteger(roomState?.lyrics?.currentIndex) ? roomState.lyrics.currentIndex : -1;
 
   return (
     <main className="bc-party-room" data-role={isHost ? 'host' : 'guest'}>
