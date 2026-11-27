@@ -4,8 +4,17 @@ import {
   musicKitQueueDescriptor,
   normalizeAppleCatalogTrack,
   musicKitPlaybackSnapshot,
-  searchAppleMusicSongs
+  searchAppleMusicSongs,
+  normalizeAppleAudioVariants
 } from './musickit-player.mjs';
+
+test('normalizes Apple audio variant names and drops unknown values', () => {
+  assert.deepEqual(
+    normalizeAppleAudioVariants(['atmos', 'lossless', 'hi-res-lossless', 'Dolby Audio', 'unknown', 'lossless']),
+    ['dolby-atmos', 'hi-res-lossless', 'lossless', 'dolby-audio']
+  );
+  assert.deepEqual(normalizeAppleAudioVariants('lossy-stereo, atmos'), ['dolby-atmos', 'lossy-stereo']);
+});
 
 test('creates a MusicKit queue descriptor from a catalog song id', () => {
   assert.deepEqual(musicKitQueueDescriptor({ id: '1234567890' }), { song: '1234567890' });
@@ -86,7 +95,8 @@ test('searches the Apple Music catalog and normalizes returned song entries', as
                 albumName: 'Test Album',
                 durationInMillis: 201000,
                 url: 'https://music.apple.com/us/song/catalog-song/987654321',
-                artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' }
+                artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
+                audioTraits: ['lossless', 'atmos']
               }
             }]
           }
@@ -99,4 +109,5 @@ test('searches the Apple Music catalog and normalizes returned song entries', as
   assert.equal(results[0].id, '987654321');
   assert.equal(results[0].title, 'Catalog Song');
   assert.equal(results[0].durationSeconds, 201);
+  assert.deepEqual(results[0].audioVariants, ['dolby-atmos', 'lossless']);
 });
