@@ -29,6 +29,35 @@ function isSecureServiceUrl(value, label) {
   return url.href;
 }
 
+const FORBIDDEN_FAIRPLAY_HEADERS = new Set([
+  'cookie', 'set-cookie', 'host', 'content-length',
+  'media-user-token', 'music-user-token'
+]);
+
+export function normalizeFairPlayLicenseHeaders(value) {
+  if (value == null) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('FairPlay license headers must be an object of header names and values.');
+  }
+  const output = {};
+  for (const [name, rawValue] of Object.entries(value)) {
+    const headerName = String(name).trim();
+    const lowerName = headerName.toLowerCase();
+    const headerValue = typeof rawValue === 'string' ? rawValue : '';
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/.test(headerName)) {
+      throw new TypeError('FairPlay license header name is invalid.');
+    }
+    if (FORBIDDEN_FAIRPLAY_HEADERS.has(lowerName)) {
+      throw new TypeError('Subscriber cookies and Music User Token headers cannot authenticate a FairPlay license request.');
+    }
+    if (!headerValue || headerValue.length > 4096 || /[\\r\\n\\u0000-\\u001f\\u007f]/u.test(headerValue)) {
+      throw new TypeError('FairPlay license header values must be non-empty single-line strings of at most 4096 characters.');
+    }
+    output[headerName] = headerValue;
+  }
+  return output;
+}
+
 export function validateFairPlayConfig(fairPlay) {
   if (fairPlay && typeof fairPlay === 'object'
     && ('mediaUserToken' in fairPlay || 'userMediaToken' in fairPlay)) {
@@ -47,7 +76,31 @@ export function validateFairPlayConfig(fairPlay) {
   if (!serverCertificateUri && !hasCertificateBytes) {
     throw new TypeError('FairPlay playback requires the provider server certificate.');
   }
-  return { licenseServerUri, serverCertificateUri, serverCertificate: hasCertificateBytes ? serverCertificate : null };
+  if (hasCertificateBytes && serverCertificate.byteLength === 0) {
+    throw new TypeError('FairPlay provider server certificate cannot be empty.');
+  }
+  if (typeof fairPlay.getLicenseRequestHeaders !== 'undefined'
+    && typeof fairPlay.getLicenseRequestHeaders !== 'function') {
+    throw new TypeError('getLicenseRequestHeaders must be a function.');
+  }
+  if (typeof fairPlay.transformLicenseRequest !== 'undefined'
+    && typeof fairPlay.transformLicenseRequest !== 'function') {
+    throw new TypeError('transformLicenseRequest must be a function.');
+  }
+  if (typeof fairPlay.transformLicenseResponse !== 'undefined'
+    && typeof fairPlay.transformLicenseResponse !== 'function') {
+    throw new TypeError('transformLicenseResponse must be a function.');
+  }
+  return {
+    licenseServerUri,
+    serverCertificateUri,
+    serverCertificate: hasCertificateBytes ? serverCertificate : null,
+    licenseRequestHeaders: normalizeFairPlayLicenseHeaders(fairPlay.licenseRequestHeaders),
+    getLicenseRequestHeaders: fairPlay.getLicenseRequestHeaders || null,
+    transformLicenseRequest: fairPlay.transformLicenseRequest || null,
+    transformLicenseResponse: fairPlay.transformLicenseResponse || null,
+    contentIdFromSkdUri: fairPlay.contentIdFromSkdUri || null
+  };
 }
 
 export function chooseStreamEngine({
@@ -123,16 +176,57 @@ export async function attachBitCiderStream(media, source, {
       await player.attach(media);
       const keySystems = ['com.apple.fps', 'com.apple.fps.1_0'];
       const servers = Object.fromEntries(keySystems.map(key => [key, fairPlayConfig.licenseServerUri]));
-      const advanced = Object.fromEntries(keySystems.map(key => [key, fairPlayConfig.serverCertificateUri
-        ? { serverCertificateUri: fairPlayConfig.serverCertificateUri }
-        : { serverCertificate: new Uint8Array(fairPlayConfig.serverCertificate) }]));
+      const advanced = Object.fromEntries(keySystems.map(key => [key, {
+        ...(fairPlayConfig.serverCertificateUri
+          ? { serverCertificateUri: fairPlayConfig.serverCertificateUri }
+          : { serverCertificate: new Uint8Array(fairPlayConfig.serverCertificate) }),
+        headers: fairPlayConfig.licenseRequestHeaders
+      }]));
       player.configure({ drm: { servers, advanced } });
 
-      if (typeof fairPlay.contentIdFromSkdUri === 'function') {
+      const networking = player.getNetworkingEngine?.();
+      if (networking && (fairPlayConfig.getLicenseRequestHeaders || fairPlayConfig.transformLicenseRequest)) {
+        networking.registerRequestFilter(async (type, request, context) => {
+          if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
+          if (fairPlayConfig.getLicenseRequestHeaders) {
+            const dynamicHeaders = normalizeFairPlayLicenseHeaders(
+              await fairPlayConfig.getLicenseRequestHeaders({ request, context, player })
+            );
+            Object.assign(request.headers, dynamicHeaders);
+          }
+          if (fairPlayConfig.transformLicenseRequest) {
+            const transformed = await fairPlayConfig.transformLicenseRequest({ request, context, player, shaka });
+            if (transformed && typeof transformed === 'object') {
+              if (transformed.body !== undefined) request.body = transformed.body;
+              if (transformed.headers) {
+                Object.assign(request.headers, normalizeFairPlayLicenseHeaders(transformed.headers));
+              }
+              if (Array.isArray(transformed.uris) && transformed.uris.length) {
+                request.uris = transformed.uris.map(uri => isSecureServiceUrl(uri, 'FairPlay license request URI'));
+              }
+            }
+          }
+        });
+      }
+      if (networking && fairPlayConfig.transformLicenseResponse) {
+        networking.registerResponseFilter(async (type, response, context) => {
+          if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
+          const transformed = await fairPlayConfig.transformLicenseResponse({ response, context, player, shaka });
+          if (transformed === undefined || transformed === null) return;
+          if (!(transformed instanceof ArrayBuffer) && !ArrayBuffer.isView(transformed)) {
+            throw new TypeError('FairPlay license response transform must return binary CKC data.');
+          }
+          response.data = transformed instanceof ArrayBuffer
+            ? new Uint8Array(transformed)
+            : new Uint8Array(transformed.buffer, transformed.byteOffset, transformed.byteLength);
+        });
+      }
+
+      if (fairPlayConfig.contentIdFromSkdUri) {
         player.configure('drm.initDataTransform', (initData, initDataType, drmInfo) => {
           if (initDataType !== 'skd') return initData;
           const skdUri = shaka.util.StringUtils.fromBytesAutoDetect(initData);
-          const contentId = fairPlay.contentIdFromSkdUri(skdUri);
+          const contentId = fairPlayConfig.contentIdFromSkdUri(skdUri);
           return shaka.drm.FairPlay.initDataTransform(initData, contentId, drmInfo?.serverCertificate);
         });
       }
