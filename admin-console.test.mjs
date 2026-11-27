@@ -77,3 +77,22 @@ test('admin UI uses the simplified product-first styling', async () => {
   assert.ok(css.includes('.admin-addon-test'));
   assert.ok(css.includes('.admin-inspector-child-test'));
 });
+
+test('BitConnection renders the admin console in the component that owns its state', async () => {
+  const source = await fs.readFile(path.join(ROOT, 'src', 'BitConnection.jsx'), 'utf8');
+  const accountStart = source.indexOf('function AccountManagementWindow(');
+  const joinWindowStart = source.indexOf('function JoinPublicPartyWindow(', accountStart);
+  const rootStart = source.indexOf('export default function BitConnection()');
+  assert.ok(accountStart >= 0, 'account management component should exist');
+  assert.ok(joinWindowStart > accountStart, 'public join component should follow account management');
+  assert.ok(rootStart > joinWindowStart, 'BitConnection root should follow its window components');
+
+  const accountWindow = source.slice(accountStart, joinWindowStart);
+  const rootComponent = source.slice(rootStart);
+  assert.ok(!accountWindow.includes('adminConsoleOpen'));
+  assert.ok(!accountWindow.includes('<AdminConsole'));
+  assert.ok(rootComponent.includes('const [adminConsoleOpen, setAdminConsoleOpen]'));
+  assert.ok(rootComponent.includes('{adminConsoleOpen && ('));
+  assert.ok(rootComponent.includes('<AdminConsole'));
+  assert.ok(rootComponent.includes("window.addEventListener('bitcider-admin-open', openAdminConsole)"));
+});
