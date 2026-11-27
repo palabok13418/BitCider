@@ -21,8 +21,7 @@ async function clearThisOriginData() {
 export default function AccountDeletionSection({
   status = null,
   csrfToken = '',
-  onDeleted = null,
-  productLabel = 'BitCider'
+  onDeleted = null
 }) {
   const [liveStatus, setLiveStatus] = useState(null);
   const [liveCsrfToken, setLiveCsrfToken] = useState('');
@@ -50,7 +49,7 @@ export default function AccountDeletionSection({
         setLiveStatus(payload);
         setLiveCsrfToken(typeof payload.csrfToken === 'string' ? payload.csrfToken : '');
       } catch {
-        if (active) setLiveStatus({ account: { authenticated: false } });
+        if (active) setLiveStatus(status || { account: { authenticated: false } });
       } finally {
         if (active) setChecking(false);
       }
