@@ -41,7 +41,7 @@ function openAccountWindow() {
   const popup = window.open(
     '/bitconnection/?account=1',
     'bitconnection-account',
-    'popup=yes,width=620,height=760,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
+    'popup=yes,width=860,height=720,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
   );
   if (!popup) window.location.assign('/bitconnection/?account=1');
 }
@@ -806,45 +806,103 @@ function AccountManagementWindow() {
         />
       )}
       {stage === 'manage' && profile && (
-        <section className="bc-window-state bc-account-manage">
-          <UnifiedAccountCenterIdentity currentProduct="bitconnection" profile={profile} createdAt={profile.createdAt} />
-          <div className="bc-account-actions">
-            <button className="bc-secondary-button" type="button" onClick={() => setStage('profile')}>Edit profile</button>
-            <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
-          </div>
-          {identityMode === 'bitconnection' ? (
-            passkeysUnavailable ? (
-              <div className="bc-account-security">
-                <div className="bc-account-section-heading"><strong>Passkeys</strong><small>Temporarily unavailable</small></div>
-                <p>This Deplexo backend has not exposed passkey listing yet. Your account and profile are available; passkey management will appear when the backend is updated.</p>
+        <div className="bc-account-workspace">
+          <header className="bc-account-topbar">
+            <div className="bc-account-brand">
+              <span className="bc-account-brand-mark" aria-hidden="true">BC</span>
+              <div>
+                <span>BITCONNECTION</span>
+                <strong>Account center</strong>
               </div>
-            ) : (
-              <div className="bc-account-security">
-                <div className="bc-account-section-heading"><strong>Passkeys</strong><small>{passkeys.length} / 5 registered</small></div>
-                <p>Use a device passkey to sign in without typing your password.</p>
-                <label className="bc-field-card">
-                  <span className="bc-field-label">ACCOUNT PASSWORD <small>REQUIRED FOR PASSKEY CHANGES</small></span>
-                  <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} autoComplete="current-password" placeholder="Confirm your password" />
-                </label>
-                <button className="bc-primary-button bc-account-add-passkey" type="button" onClick={addPasskey} disabled={busy || passkeys.length >= 5 || !passkeyPassword}>Add a passkey</button>
-                {passkeys.length > 0 ? passkeys.map((passkey, index) => (
-                  <div className="bc-account-passkey" key={passkey.id}>
-                    <span><strong>{passkey.name || 'Passkey ' + (index + 1)}</strong><small>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device passkey'}</small></span>
-                    <button className="bc-secondary-button" type="button" onClick={() => removePasskey(passkey.id)} disabled={busy || !passkeyPassword}>Remove</button>
+            </div>
+            <div className="bc-account-top-actions">
+              <span className="bc-account-protected"><i aria-hidden="true" /> ACCOUNT PROTECTED</span>
+              <button className="bc-secondary-button" type="button" onClick={() => setStage('profile')}>Edit profile</button>
+            </div>
+          </header>
+
+          <div className="bc-account-grid">
+            <aside className="bc-account-profile-panel">
+              <div className="bc-account-panel-kicker">YOUR ACCOUNT</div>
+              <UnifiedAccountCenterIdentity currentProduct="bitconnection" profile={profile} createdAt={profile.createdAt} />
+              <div className="bc-account-profile-note">
+                <span className="bc-account-note-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.2c0 4.6-3 7.7-7 9.3-4-1.6-7-4.7-7-9.3V6l7-2.5Z" /><path d="m9 12 2 2 4-4" /></svg>
+                </span>
+                <span><strong>Profile & connected apps</strong><small>Your identity and product sign-in status.</small></span>
+              </div>
+            </aside>
+
+            <section className="bc-account-security-panel">
+              <div className="bc-account-security-head">
+                <div>
+                  <span className="bc-account-panel-kicker">SIGN-IN & SECURITY</span>
+                  <h2>Passkeys</h2>
+                  <p>Use a device passkey to sign in without typing your password.</p>
+                </div>
+                {identityMode === 'bitconnection' && !passkeysUnavailable && (
+                  <span className="bc-account-count">{passkeys.length} <small>/ 5</small></span>
+                )}
+              </div>
+
+              {identityMode === 'bitconnection' ? (
+                passkeysUnavailable ? (
+                  <div className="bc-account-unavailable">
+                    <strong>Passkey management unavailable</strong>
+                    <p>This Deplexo backend has not exposed passkey listing yet. Your account and profile are still available.</p>
                   </div>
-                )) : <div className="bc-account-empty">No passkeys added yet.</div>}
-              </div>
-            )
-          ) : (
-            <div className="bc-account-security"><p>Your existing BitCider sign-in is being used for this profile. BitConnection will not sign you out of BitCider or change its credentials here.</p></div>
-          )}
-          {error && <div className="bc-form-error" role="alert">{error}</div>}
-          {notice && <div className="bc-account-notice" role="status">{notice}</div>}
-          <div className="bc-window-actions">
-            {identityMode === 'bitconnection' && <button className="bc-secondary-button" type="button" onClick={signOut} disabled={busy}>Sign out</button>}
-            <button className="bc-secondary-button" type="button" onClick={closeWindow} disabled={busy}>Done</button>
+                ) : (
+                  <>
+                    <div className="bc-account-passkey-add">
+                      <label>
+                        <span>Confirm account password</span>
+                        <input type="password" value={passkeyPassword} onChange={event => setPasskeyPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" />
+                      </label>
+                      <button className="bc-primary-button" type="button" onClick={addPasskey} disabled={busy || passkeys.length >= 5 || !passkeyPassword}>
+                        {busy ? 'Working…' : 'Add passkey'}
+                      </button>
+                    </div>
+                    <div className="bc-account-passkey-list" aria-label="Registered passkeys">
+                      {passkeys.length > 0 ? passkeys.map((passkey, index) => (
+                        <div className="bc-account-passkey-row" key={passkey.id}>
+                          <span className="bc-account-key-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><circle cx="8.2" cy="10" r="4.2" /><path d="M12.1 10H21v3h-2v2h-3v-2h-3.1" /></svg>
+                          </span>
+                          <span className="bc-account-passkey-copy">
+                            <strong>{passkey.name || 'Passkey ' + (index + 1)}</strong>
+                            <small>{passkey.deviceType === 'multiDevice' ? 'Synced passkey' : 'Device passkey'}</small>
+                          </span>
+                          <button className="bc-account-remove" type="button" onClick={() => removePasskey(passkey.id)} disabled={busy || !passkeyPassword}>Remove</button>
+                        </div>
+                      )) : (
+                        <div className="bc-account-empty">
+                          <span className="bc-account-empty-icon" aria-hidden="true">⌁</span>
+                          <div><strong>No passkeys yet</strong><small>Add a passkey to make future sign-ins faster and more secure.</small></div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )
+              ) : (
+                <div className="bc-account-unavailable">
+                  <strong>Managed through your BitCider sign-in</strong>
+                  <p>Your existing BitCider sign-in is being used for this profile. BitConnection will not change those credentials here.</p>
+                </div>
+              )}
+            </section>
           </div>
-        </section>
+
+          {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
+          {notice && <div className="bc-account-message is-success" role="status">{notice}</div>}
+
+          <footer className="bc-account-footer">
+            <span>Changes to your profile and passkeys apply to BitConnection.</span>
+            <div>
+              {identityMode === 'bitconnection' && <button className="bc-account-signout" type="button" onClick={signOut} disabled={busy}>Sign out</button>}
+              <button className="bc-primary-button" type="button" onClick={closeWindow} disabled={busy}>Done</button>
+            </div>
+          </footer>
+        </div>
       )}
       {stage === 'signedout' && (
         <section className="bc-window-state">
