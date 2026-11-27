@@ -23,7 +23,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
 | `APPLE_MUSIC_WEB_PLAYER_TOKEN` | Optional web-player Bearer override; leave blank to auto-discover it from `music.apple.com` for private TTML lyrics and personal recommendation shelves |
-| `APPLE_MUSICKIT_DEVELOPER_TOKEN` | Signed Apple MusicKit developer JWT; required for full-song browser playback. MusicKit still performs subscriber authorization and protected playback in Apple's player. |
+| `APPLE_MUSICKIT_DEVELOPER_TOKEN` | Optional signed Apple MusicKit developer JWT for integrated MusicKit controls. Omit it to use Apple’s embedded player for full songs. |
 | `BITCIDER_ADMIN_BOOTSTRAP_CODE` | One-time, high-entropy owner setup code; remove after the first passkey is enrolled |
 | `BITCONNECTION_GIPHY_API_KEY` | Free GIPHY beta API key used only by the Deplexo GIF search proxy; never expose it in frontend variables |
 
@@ -199,7 +199,7 @@ The personal BitCider addon still supports its existing signed-in Cider browser 
 
 BitConnection's Browser can start full catalog songs directly through Apple's MusicKit Web v3 player. The host's MusicKit session handles Apple's subscriber authorization and protected playback; BitCider does not fetch a raw FairPlay media key or cache the protected stream.
 
-Set this optional Deplexo-only environment variable to enable direct browser playback:
+This environment variable is optional. Configure it only when you want integrated MusicKit playback and BitCider-controlled transport; the Apple embedded-player fallback works without it:
 
 ```dotenv
 APPLE_MUSICKIT_DEVELOPER_TOKEN=<signed Apple Music developer JWT>
@@ -210,6 +210,8 @@ This is a signed MusicKit developer JWT, not the user's Music User Token and not
 The Apple Music recommendation Browser exposes a **Play Apple Music** action for catalog song entries. It uses `setQueue({ song: catalogSongId })` and MusicKit's own player controls for play, pause, next, previous and seek. The same track metadata is synchronized to the listening-party room. To let guests hear the host's Apple Music output, the host must also start BitCider tab-audio sharing; audio remains in Apple's authorized playback session and is not relayed by Deplexo.
 
 Catalog search results preserve Apple's `audioVariants` metadata and can be filtered by Dolby Atmos, Lossless, Hi-Res Lossless, or Dolby Audio availability. These badges mean a format is offered for that catalog item; they do not identify the format currently being delivered. MusicKit Web does not expose a documented Atmos/Lossless stream selector or actual active codec/sample-rate telemetry. Apple's player chooses the active format according to the subscriber's Apple Music quality settings, supported output hardware, track availability, and network conditions. The MusicKit Web `HIGH` bitrate target is 256 kbps and is not a Lossless setting. BitCider labels this information as **available formats**, not as the active stream format.
+
+When `APPLE_MUSICKIT_DEVELOPER_TOKEN` is absent, the BitConnection Browser searches songs through Apple’s public iTunes Search endpoint and opens selected Apple Music song links in the official `embed.music.apple.com` player. An Apple Music subscriber who signs in inside that embedded player can hear the full song; users who are not signed in receive previews. The host must share the BitConnection browser tab for guests to hear the embedded audio. The iframe owns its playback controls and playhead, so BitCider does not claim to synchronize embedded play, pause, or seek state. This route does not use the stored Music User Token as a FairPlay credential and does not extract or decrypt Apple Music streams.
 
 The stored Music User Token cannot serve as a FairPlay license or content key. BitCider explicitly rejects attempts to pass `mediaUserToken`/`userMediaToken` into the FairPlay adapter. A separate FairPlay integration remains usable only with a legitimate content provider's HTTPS license endpoint and server certificate; those values are not issued by a Music User Token.
 
