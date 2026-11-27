@@ -40,7 +40,7 @@ test('BitAccount Center exposes BitCider account deletion from both product sett
     fs.readFile(new URL('./server.mjs', import.meta.url), 'utf8')
   ]);
   assert.ok(appSource.includes('<AccountDeletionSection status={status} csrfToken={csrfToken} onDeleted={onDeleted} />'));
-  assert.ok(connectionSource.includes('<AccountDeletionSection productLabel="BitCider" />'));
+  assert.ok(connectionSource.includes('<AccountDeletionSection />'));
   assert.ok(deletionSource.includes("fetch('/api/account/delete'"));
   assert.ok(deletionSource.includes("'X-BitCider-CSRF': token"));
   assert.ok(deletionSource.includes('Your separate BitConnection account is not deleted.'));
