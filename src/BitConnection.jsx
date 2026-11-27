@@ -9,7 +9,8 @@ import {
   musicKitPlaybackSnapshot,
   subscribeAppleMusicPlayback,
   controlAppleMusicPlayback as controlMusicKitPlayback,
-  searchAppleMusicSongs
+  searchAppleMusicSongs,
+  appleMusicEmbedUrl
 } from './bitconnection/musickit-player.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
@@ -1325,7 +1326,14 @@ function CreateRoomWindow() {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(payload.message || 'Direct Apple Music playback is not configured on Deplexo.');
+          if (payload.error === 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED') {
+            if (active) {
+              setAppleMusicPlaybackStatus('embed-ready');
+              setAppleMusicPlaybackError('Apple Music embedded playback is ready. Sign in to Apple Music inside the embedded player for full songs.');
+            }
+            return;
+          }
+          throw new Error(payload.message || 'Direct Apple Music playback is unavailable.');
         }
         const music = await getMusicKitPlayer(payload);
         if (!active) return;
@@ -1373,6 +1381,8 @@ function CreateRoomWindow() {
       artist: snapshot.track.artist,
       album: snapshot.track.album,
       artworkUrl: snapshot.track.artworkUrl,
+      url: snapshot.track.url || snapshot.track.appleMusicUrl || '',
+      playbackMode: snapshot.track.playbackMode,
       durationSeconds: snapshot.durationSeconds,
       audioVariants: snapshot.track.audioVariants
     });
@@ -1388,18 +1398,39 @@ function CreateRoomWindow() {
 
   async function searchAppleMusicCatalog(term) {
     const music = appleMusicPlayerRef.current;
-    if (!music || appleMusicPlaybackStatus !== 'ready') {
-      throw new Error(appleMusicPlaybackError || 'Apple Music catalog search is not configured. Add the MusicKit developer token on Deplexo.');
+    if (music && appleMusicPlaybackStatus === 'ready') {
+      return searchAppleMusicSongs(music, term, 25);
     }
-    return searchAppleMusicSongs(music, term, 25);
+    const query = new URLSearchParams({ term: String(term || '').trim(), storefront: 'us', limit: '25' });
+    const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-search?' + query, {
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || 'Apple Music catalog search failed.');
+    return Array.isArray(payload.tracks) ? payload.tracks : [];
   }
 
   async function playAppleMusicTrack(item) {
+    const track = normalizeAppleCatalogTrack(item);
     const music = appleMusicPlayerRef.current;
     if (!music || appleMusicPlaybackStatus !== 'ready') {
-      throw new Error(appleMusicPlaybackError || 'Direct Apple Music playback is not ready. Check the MusicKit developer token configured on Deplexo.');
+      const embedUrl = appleMusicEmbedUrl(track, item?.storefront || item?.appleMusicStorefront || 'us');
+      const sharedTrack = normalizeAppleCatalogTrack({ ...track, playbackMode: 'embed' });
+      await hostSession.updatePlayback({
+        source: 'apple-music',
+        track: sharedTrack,
+        isPlaying: false,
+        positionSeconds: 0
+      });
+      setRoomState(await hostSession.getState());
+      if (!hostTransportRef.current) {
+        setHostAudioError('After pressing Play in the Apple Music player, share this browser tab to send its audio to party guests.');
+      } else {
+        setHostAudioError('');
+      }
+      return { playbackMode: 'embed', embedUrl };
     }
-    const track = normalizeAppleCatalogTrack(item);
     // authorize() is invoked from the user's Play button gesture. MusicKit
     // owns the subscriber authorization and FairPlay playback session.
     await music.authorize();
