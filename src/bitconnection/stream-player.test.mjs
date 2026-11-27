@@ -32,6 +32,17 @@ test('requires a provider license endpoint and certificate for FairPlay', () => 
   }), /server certificate/);
 });
 
+test('rejects a Music User Token as a FairPlay license credential', () => {
+  assert.throws(() => validateFairPlayConfig({
+    mediaUserToken: 'example-subscriber-token'
+  }), /subscriber authentication, not a FairPlay license/);
+  assert.throws(() => validateFairPlayConfig({
+    userMediaToken: 'example-subscriber-token',
+    licenseServerUri: 'https://license.example.test/fps',
+    serverCertificateUri: 'https://license.example.test/fps.cer'
+  }), /subscriber authentication, not a FairPlay license/);
+});
+
 test('accepts an HTTPS provider certificate and license endpoint', () => {
   const config = validateFairPlayConfig({
     licenseServerUri: 'https://license.example.test/fps',
