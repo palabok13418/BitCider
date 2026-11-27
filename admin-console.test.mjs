@@ -34,6 +34,23 @@ test('BitChord sample test verifies Chicago by Michael Jackson through manifest,
   assert.ok(source.includes("atmos=auto"));
 });
 
+test('BitMono sample checks verify full-file cache, checksum, and delivered quality', async () => {
+  const source = await fs.readFile(path.join(ROOT, 'src', 'AdminConsole.jsx'), 'utf8');
+  assert.ok(source.includes("async function runBitMonoChecks(stage = 'search', query = 'Chicago Michael Jackson')"));
+  assert.ok(source.includes("'/bitmono/manifest.json'"));
+  assert.ok(source.includes("'/bitmono/search?q='"));
+  assert.ok(source.includes("'/bitmono/stream/'"));
+  assert.ok(source.includes('stream.cacheReady === true'));
+  assert.ok(source.includes('stream.buffered === true'));
+  assert.ok(source.includes('stream.sha256'));
+  assert.ok(source.includes("record(\n      'mono-cache'"));
+  assert.ok(source.includes("'mono-stream': 'stream'"));
+  assert.ok(source.includes("'mono-cache': 'stream'"));
+  assert.ok(source.includes("'mono-lossless': 'quality'"));
+  assert.ok(source.includes("'mono-hires-atmos': 'quality'"));
+  assert.ok(source.includes('downloads the complete sample track'));
+});
+
 test('stream and rendition tests disclose Cider queue side effects before resolving', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src', 'AdminConsole.jsx'), 'utf8');
   assert.ok(source.includes('window.confirm('));
