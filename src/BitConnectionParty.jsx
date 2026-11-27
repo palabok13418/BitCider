@@ -105,7 +105,10 @@ function PartyRoomExperience({
   onStartHostAudio = () => {},
   onStopHostAudio = () => {},
   audioBlocked = false,
-  onResumeAudio = () => {}
+  onResumeAudio = () => {},
+  onPlayBitMonoTrack = async () => {},
+  onControlBitMono = async () => {},
+  onSeekBitMono = async () => {}
 }) {
   const [activeTab, setActiveTab] = useState('lyrics');
   const [volume, setVolume] = useState(1);
@@ -126,6 +129,12 @@ function PartyRoomExperience({
   const [browserAppleConnected, setBrowserAppleConnected] = useState(false);
   const [bitMonoSearches, setBitMonoSearches] = useState({});
   const [bitMonoLoading, setBitMonoLoading] = useState({});
+  const [browserQuery, setBrowserQuery] = useState('');
+  const [browserSearchResults, setBrowserSearchResults] = useState([]);
+  const [browserSearchBusy, setBrowserSearchBusy] = useState(false);
+  const [browserSearchError, setBrowserSearchError] = useState('');
+  const [bitMonoPrepared, setBitMonoPrepared] = useState({});
+  const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
   const [queueBusy, setQueueBusy] = useState(false);
   const [memberBusy, setMemberBusy] = useState('');
   const [playbackMessage, setPlaybackMessage] = useState('');
@@ -481,6 +490,110 @@ function PartyRoomExperience({
       setBrowserError(error.message || 'Could not load Apple Music recommendations.');
     } finally {
       setBrowserLoading(false);
+    }
+  }
+
+
+  async function searchBitMonoCatalog(event) {
+    event?.preventDefault?.();
+    const query = browserQuery.trim();
+    if (!query || browserSearchBusy) return;
+    setBrowserSearchBusy(true);
+    setBrowserSearchError('');
+    setBrowserSearchResults([]);
+    try {
+      const response = await fetch('/bitmono/search?' + new URLSearchParams({ q: query }), {
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
+      setBrowserSearchResults(Array.isArray(payload.tracks) ? payload.tracks.slice(0, 30) : []);
+      if (!payload.tracks?.length) setBrowserSearchError('No Bit Mono matches were found for that search.');
+    } catch (error) {
+      setBrowserSearchError(error.message || 'Could not search Bit Mono.');
+    } finally {
+      setBrowserSearchBusy(false);
+    }
+  }
+
+  async function prepareBitMonoTrack(track) {
+    const id = String(track?.id || '');
+    if (!/^(?:mono_|dzr_)[A-Za-z0-9_-]{1,128}$/.test(id)) return;
+    setBitMonoPrepareBusy(previous => ({ ...previous, [id]: true }));
+    setPlaybackMessage('');
+    try {
+      const response = await fetch('/bitmono/stream/' + encodeURIComponent(id) + '?quality=auto', {
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || payload.error || 'Bit Mono could not prepare this track.');
+      const resolved = new URL(payload.url || '', window.location.origin);
+      if (resolved.origin !== window.location.origin || !resolved.pathname.startsWith('/bitmono/audio/')) {
+        throw new Error('Bit Mono returned an audio URL outside this service.');
+      }
+      const stream = {
+        url: resolved.pathname + resolved.search,
+        track: {
+          trackId: id,
+          title: String(track.title || '').slice(0, 180),
+          artist: String(track.artist || '').slice(0, 180),
+          durationSeconds: Number(track.duration || track.durationSeconds || 0),
+          thumbnailUrl: String(track.artworkURL || track.thumbnailUrl || track.artwork || ''),
+          audioQuality: String(payload.audioQuality || track.audioQuality || 'LOSSLESS')
+        },
+        format: String(payload.format || track.format || ''),
+        quality: String(payload.audioQuality || track.audioQuality || ''),
+        mimeType: String(payload.mimeType || '')
+      };
+      if (!stream.track.title || !stream.track.artist || !Number.isFinite(stream.track.durationSeconds) || stream.track.durationSeconds <= 0) {
+        throw new Error('Bit Mono returned incomplete track metadata.');
+      }
+      setBitMonoPrepared(previous => ({ ...previous, [id]: stream }));
+      setPlaybackMessage('Bit Mono audio is prepared and ready for the host.');
+    } catch (error) {
+      setPlaybackMessage(error.message || 'Could not prepare this Bit Mono track.');
+    } finally {
+      setBitMonoPrepareBusy(previous => ({ ...previous, [id]: false }));
+    }
+  }
+
+  async function addBitMonoTrackToQueue(track) {
+    const durationSeconds = Number(track.duration || track.durationSeconds || 0);
+    try {
+      await session.updateQueue({
+        action: 'add',
+        track: {
+          source: 'bitmono',
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          durationSeconds,
+          artworkURL: track.artworkURL || track.thumbnailUrl || '',
+          audioQuality: track.audioQuality || track.quality || ''
+        }
+      });
+      await refreshState();
+      setPlaybackMessage('Added to the shared queue.');
+    } catch (error) {
+      setPlaybackMessage(error.message || 'Could not add that Bit Mono track to the queue.');
+    }
+  }
+
+  async function startPreparedBitMonoTrack(track) {
+    const prepared = bitMonoPrepared[String(track.id || '')];
+    if (!prepared) return;
+    if (!isHost) {
+      setPlaybackMessage('Only the host can start a Bit Mono stream for everyone.');
+      return;
+    }
+    try {
+      setQueueBusy(true);
+      await onPlayBitMonoTrack(prepared.track, prepared.url);
+      setPlaybackMessage('Bit Mono is now playing for the party.');
+    } catch (error) {
+      setPlaybackMessage(error.message || 'Could not start Bit Mono playback.');
+    } finally {
+      setQueueBusy(false);
     }
   }
 
