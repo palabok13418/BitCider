@@ -862,7 +862,7 @@ export function createBitConnectionRouter({
     return typeof value === 'string'
       && value.length >= 20
       && value.length <= 4096
-      && !/[\\u0000-\\u0020\\u007f]/u.test(value);
+      && !/[\u0000-\u0020\u007f]/u.test(value);
   }
 
   function appleMusicError(status, message) {
@@ -920,7 +920,7 @@ export function createBitConnectionRouter({
     let safeUrl = '';
     try {
       const parsed = new URL(url);
-      if (parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)) safeUrl = parsed.toString();
+      if (parsed.protocol === 'https:' && /(^|\.)music\.apple\.com$/i.test(parsed.hostname)) safeUrl = parsed.toString();
     } catch { /* Apple content without a public URL can still be shown. */ }
     return {
       id: String(item.id || '').slice(0, 160),
@@ -1107,7 +1107,7 @@ export function createBitConnectionRouter({
         try {
           const url = String(attributes.url || '');
           const parsed = new URL(url);
-          if (parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)) {
+          if (parsed.protocol === 'https:' && /(^|\.)music\.apple\.com$/i.test(parsed.hostname)) {
             recommendation.url = parsed.toString();
           }
         } catch { /* Some recommendation containers do not have a public URL. */ }
