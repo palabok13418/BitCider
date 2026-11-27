@@ -1178,15 +1178,6 @@ function JoinPublicPartyWindow({ roomId }) {
     const transport = transportRef.current;
     transportRef.current = null;
     if (transport) await transport.stop({ leave: false });
-    const player = hostPlayerRef.current;
-    if (player) {
-      const positionSeconds = Number(player.currentTime || 0);
-      player.pause();
-      player.removeAttribute('src');
-      player.load();
-      await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds }).catch(() => {});
-    }
-    hostAudioModeRef.current = 'tab';
     setHostAudioState('idle');
   }
 
