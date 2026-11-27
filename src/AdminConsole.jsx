@@ -1536,21 +1536,21 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     const monoNodeIds = new Set(['mono-manifest', 'mono-search', 'mono-primary', 'mono-fallback', 'mono-stream', 'mono-cache', 'mono-lossless', 'mono-hires-atmos']);
     const results = {};
     try {
+      if (node.type === 'page') {
+        const site = SITE_DEFINITIONS.find(item => item.id === node.id.replace('site-', ''));
+        if (site) await runTest(site);
+      }
       if (needsCiderResolve && !window.confirm(
         'This test asks Cider to resolve the sample track “Chicago” by Michael Jackson. Cider temporarily selects the track in its queue and pauses after resolving the media URL. It does not play or download the song. Continue?'
       )) {
-        setNotice('Test cancelled. No Cider playback or queue request was made.');
+        setNotice('Track test cancelled. The page/API check still ran; no Cider queue request was made.');
         return;
       }
       if (needsBitMonoCache && !window.confirm(
         'This BitMono test downloads the complete sample track “Chicago” by Michael Jackson into the Deplexo audio cache before verifying the stream. This uses network bandwidth and persistent cache storage. Continue?'
       )) {
-        setNotice('Test cancelled. No BitMono audio file was downloaded or cached.');
+        setNotice('Track test cancelled. The page/API check still ran; no BitMono audio file was downloaded or cached.');
         return;
-      }
-      if (node.type === 'page') {
-        const site = SITE_DEFINITIONS.find(item => item.id === node.id.replace('site-', ''));
-        if (site) await runTest(site);
       }
       if (!targets.length && node.type !== 'page') {
         setNotice(node.title + ' has no independently testable child endpoints.');
@@ -1604,14 +1604,19 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
             detail = state === 'operational' ? 'The current browser session has an authenticated BitCider account.' : state === 'idle' ? 'The anonymous browser session is active; no BitCider account is signed in.' : detail;
           } else if (target.id === 'bc-passkeys') {
             const count = Number(payload?.passkeyCount);
-            state = response.ok && payload?.account?.authenticated === true && Number.isFinite(count) ? 'operational' : response.ok ? 'idle' : state;
-            label = state === 'operational' ? count + ' REGISTERED' : state === 'idle' ? 'SIGN-IN REQUIRED' : label;
-            detail = state === 'operational' ? 'The account status response returned the account passkey inventory.' : state === 'idle' ? 'Passkey inventory is available only after signing into a BitCider account.' : detail;
+            state = !response.ok ? state
+              : payload?.account?.authenticated !== true ? 'idle'
+                : Number.isFinite(count) ? 'operational' : 'unverified';
+            label = state === 'operational' ? count + ' REGISTERED' : state === 'idle' ? 'SIGN-IN REQUIRED' : state === 'unverified' ? 'INVENTORY NOT EXPOSED' : label;
+            detail = state === 'operational' ? 'The account status response returned the account passkey inventory.' : state === 'idle' ? 'Passkey inventory is available only after signing into a BitCider account.' : state === 'unverified' ? 'The signed-in account is valid, but its passkey count was not returned by the status endpoint.' : detail;
           } else if (target.id === 'bc-recovery') {
             const count = Number(payload?.account?.recoveryCodeCount);
-            state = response.ok && payload?.account?.authenticated === true && Number.isFinite(count) && count > 0 ? 'operational' : response.ok && payload?.account?.authenticated !== true ? 'idle' : 'degraded';
-            label = state === 'operational' ? count + ' UNUSED' : state === 'idle' ? 'SIGN-IN REQUIRED' : 'NO UNUSED CODES';
-            detail = state === 'operational' ? 'The account status response reports unused recovery codes.' : state === 'idle' ? 'Sign in to inspect the recovery-code inventory.' : 'The signed-in account has no unused recovery codes.';
+            state = !response.ok ? state
+              : payload?.account?.authenticated !== true ? 'idle'
+                : !Number.isFinite(count) ? 'unverified'
+                  : count > 0 ? 'operational' : 'degraded';
+            label = state === 'operational' ? count + ' UNUSED' : state === 'idle' ? 'SIGN-IN REQUIRED' : state === 'unverified' ? 'INVENTORY NOT EXPOSED' : 'NO UNUSED CODES';
+            detail = state === 'operational' ? 'The account status response reports unused recovery codes.' : state === 'idle' ? 'Sign in to inspect the recovery-code inventory.' : state === 'unverified' ? 'The signed-in account is valid, but the recovery-code count was not returned by the status endpoint.' : 'The signed-in account has no unused recovery codes.';
           } else if (target.id === 'bc-encryption') {
             state = response.ok && payload?.tokenEncryptionConfigured === true ? 'operational' : response.ok ? 'degraded' : state;
             label = state === 'operational' ? 'DEDICATED KEY READY' : state === 'degraded' ? 'VOLUME KEY' : label;
