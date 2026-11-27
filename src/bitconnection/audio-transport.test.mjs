@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   captureBitChordTabAudio,
   startBitConnectionHostTransport,
+  startBitConnectionHostMediaTransport,
   startBitConnectionGuestTransport
 } from './audio-transport.mjs';
 
@@ -154,4 +155,52 @@ test('guest transport attaches remote stream to the audio element and exposes ge
   await transport.stop();
   assert.equal(audioElement.srcObject, null);
   assert.equal(audioElement.paused, true);
+});
+
+
+test('host media transport publishes the captured audio-element track to guests', async () => {
+  const audio = new FakeTrack('audio');
+  const captured = new FakeMediaStream([audio]);
+  const audioElement = {
+    captureStreamCalls: 0,
+    captureStream() { this.captureStreamCalls += 1; return captured; }
+  };
+  const calls = [];
+  const session = {
+    role: 'host',
+    async getIceConfiguration() {
+      calls.push('ice');
+      return { iceServers: [{ urls: 'stun:stun.example.test:3478' }], iceTransportPolicy: 'all' };
+    }
+  };
+  let runtimeOptions;
+  const transport = await startBitConnectionHostMediaTransport({
+    session,
+    audioElement,
+    MediaStreamCtor: FakeMediaStream,
+    runtimeFactory: options => {
+      runtimeOptions = options;
+      return { start() { calls.push('start'); }, async stop() { calls.push('stop'); } };
+    }
+  });
+  assert.equal(audioElement.captureStreamCalls, 1);
+  assert.deepEqual(calls, ['ice', 'start']);
+  assert.deepEqual(runtimeOptions.localStream.getAudioTracks(), [audio]);
+  assert.deepEqual(runtimeOptions.localStream.getVideoTracks(), []);
+  await transport.stop();
+  assert.equal(audio.stopped, true);
+  assert.ok(calls.includes('stop'));
+});
+
+test('host media transport rejects non-host sessions and missing audio output', async () => {
+  await assert.rejects(startBitConnectionHostMediaTransport({
+    session: { role: 'guest', async getIceConfiguration() { return {}; } },
+    audioElement: { captureStream() { return new FakeMediaStream([new FakeTrack('audio')]); } },
+    MediaStreamCtor: FakeMediaStream
+  }), /authenticated BitConnection host/);
+  await assert.rejects(startBitConnectionHostMediaTransport({
+    session: { role: 'host', async getIceConfiguration() { return {}; } },
+    audioElement: { captureStream() { return new FakeMediaStream([]); } },
+    MediaStreamCtor: FakeMediaStream
+  }), /no audio track/);
 });
