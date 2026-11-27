@@ -774,3 +774,29 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   });
   assert.equal(newHostClose.status, 200);
 });
+
+
+test('BitConnection publishes its Listening Party service descriptor for BitChord discovery', async t => {
+  const client = await harness(t);
+  const response = await client.request('/party-service', {
+    headers: { Origin: 'https://bitchord.example.test' }
+  });
+  const manifest = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(manifest.service, 'BitConnection Listening Party');
+  assert.equal(manifest.protocolVersion, 1);
+  assert.match(manifest.serviceUrl, /\/api\/bitconnection\/party-service$/);
+  assert.equal(manifest.capabilities.roomCreation, true);
+  assert.equal(manifest.capabilities.privateRooms, true);
+  assert.equal(manifest.capabilities.partyChat, true);
+  assert.equal(manifest.capabilities.memberModeration, true);
+  assert.equal(manifest.capabilities.sourcePlaybackCommands, false);
+  assert.equal(manifest.capabilities.synchronizedLyrics, false);
+  assert.equal(manifest.capabilities.serverSideOnnxAutoMix, false);
+  assert.equal(manifest.partyRules.maximumParticipants, 4);
+
+  const preflight = await client.request('/party-service', { method: 'OPTIONS' });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, OPTIONS');
+});
