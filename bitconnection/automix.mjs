@@ -551,7 +551,7 @@ export function createAutoMixService({ directory }) {
     }
     return {
       engine: 'BitConnection AutoMix',
-      state: sessions ? 'ready-for-analysis' : lastError ? 'load-failed' : Object.values(availability).every(Boolean) ? 'models-present-runtime-not-loaded' : 'models-not-downloaded',
+      state: sessions ? 'ready-for-analysis' : loadPromise ? 'loading' : lastError ? 'load-failed' : Object.values(availability).every(Boolean) ? 'models-present-runtime-not-loaded' : 'models-not-downloaded',
       runtime: 'onnxruntime-node',
       runtimeLoaded: Boolean(runtime),
       modelFamily: AUTOMIX_MODEL_MANIFEST.family,
