@@ -613,6 +613,7 @@ export function createBitConnectionRouter({
       title,
       artist,
       durationSeconds,
+      playbackMode: value.playbackMode === 'embed' ? 'embed' : 'musickit',
       ...(thumbnailUrl ? { thumbnailUrl } : {}),
       ...(audioVariants.length ? { audioVariants } : {}),
       ...( /^[a-z]{2}$/.test(storefront) ? { appleMusicStorefront: storefront } : {}),
