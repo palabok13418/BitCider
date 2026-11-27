@@ -115,8 +115,8 @@ export function musicKitPlaybackSnapshot(music) {
       album: cleanString(item.albumName || item.attributes?.albumName, 180),
       artworkUrl: cleanString(item.artwork?.url || item.attributes?.artwork?.url, 1000)
         .replace('{w}', '600').replace('{h}', '600'),
-      ...(normalizeAppleAudioVariants(item.attributes?.audioTraits || item.attributes?.audioVariants || item.audioTraits).length
-        ? { audioVariants: normalizeAppleAudioVariants(item.attributes?.audioTraits || item.attributes?.audioVariants || item.audioTraits) }
+      ...(normalizeAppleAudioVariants(item.attributes?.audioVariants || item.attributes?.audioTraits || item.audioVariants || item.audioTraits).length
+        ? { audioVariants: normalizeAppleAudioVariants(item.attributes?.audioVariants || item.attributes?.audioTraits || item.audioVariants || item.audioTraits) }
         : {})
     } : null
   };
