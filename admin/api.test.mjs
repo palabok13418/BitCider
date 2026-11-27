@@ -150,17 +150,17 @@ test('separate admin workers preserve concurrent WebAuthn challenges in shared p
   assert.ok(secondCookie);
   assert.notEqual(firstCookie, secondCookie);
 
-  const verifyInvalidRegistration = origin => fetch(origin + '/api/admin/bootstrap/verify', {
+  const verifyInvalidRegistration = (origin, cookie) => fetch(origin + '/api/admin/bootstrap/verify', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: 'bitcider_admin_challenge=' + origin.cookie
+      Cookie: 'bitcider_admin_challenge=' + cookie
     },
     body: JSON.stringify({})
   });
   const [firstVerify, secondVerify] = await Promise.all([
-    verifyInvalidRegistration({ toString: () => firstWorker, cookie: firstCookie }),
-    verifyInvalidRegistration({ toString: () => secondWorker, cookie: secondCookie })
+    verifyInvalidRegistration(firstWorker, firstCookie),
+    verifyInvalidRegistration(secondWorker, secondCookie)
   ]);
   const results = await Promise.all([firstVerify.json(), secondVerify.json()]);
   assert.notEqual(results[0].error, 'ADMIN_CHALLENGE_EXPIRED');
