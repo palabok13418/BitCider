@@ -446,6 +446,30 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   assert.equal(hostPlayback.status, 200);
 
+  const appleMusicPlayback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({
+      source: 'apple-music',
+      track: {
+        id: '1234567890',
+        title: 'Apple Full-Length Track',
+        artist: 'Apple Artist',
+        durationSeconds: 204,
+        artworkUrl: 'https://is1-ssl.mzstatic.com/image/600x600bb.jpg',
+        url: 'https://music.apple.com/us/song/example/1234567890',
+        appleMusicStorefront: 'us'
+      },
+      isPlaying: true,
+      positionSeconds: 0
+    })
+  });
+  assert.equal(appleMusicPlayback.status, 200);
+  const appleMusicPayload = await appleMusicPlayback.json();
+  assert.equal(appleMusicPayload.playbackState.source, 'apple-music');
+  assert.equal(appleMusicPayload.playbackState.track.appleMusicSongId, '1234567890');
+  assert.equal(appleMusicPayload.playbackState.track.source, 'apple-music');
+
   const deniedVolume = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/volume', {
     method: 'POST',
     headers: guestHeaders,
@@ -483,8 +507,8 @@ test('live rooms support temporary guests, proximity admission, playback permiss
   });
   const roomState = await state.json();
   assert.equal(state.status, 200);
-  assert.equal(roomState.playbackState.source, 'youtube-music');
-  assert.equal(roomState.playbackState.track.videoId, 'abcdefghijk');
+  assert.equal(roomState.playbackState.source, 'apple-music');
+  assert.equal(roomState.playbackState.track.appleMusicSongId, '1234567890');
   assert.equal(roomState.playbackState.isPlaying, true);
   assert.equal(roomState.queue.length, 1);
   assert.equal(roomState.queue[0].queueItemId, hostQueueItemId);
