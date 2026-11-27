@@ -22,6 +22,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_PROXY_SECRET` | A long random secret, shared only with the Netlify and Cloudflare gateways |
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
+| `APPLE_MUSIC_DEVELOPER_TOKEN` | Apple Music API developer JWT, configured as a Deplexo-only secret |
 | `BITCIDER_ADMIN_BOOTSTRAP_CODE` | One-time, high-entropy owner setup code; remove after the first passkey is enrolled |
 | `BITCONNECTION_GIPHY_API_KEY` | Free GIPHY beta API key used only by the Deplexo GIF search proxy; never expose it in frontend variables |
 
@@ -77,7 +78,7 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 The current BitCider backend should report these API versions after deploying the latest `main` branch:
 
 - `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-24-account-center-v13"` and `"browserCiderBridgeSupported":true`.
-- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-26-listening-party-workspace-v1"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
+- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-26-listening-party-workspace-v2"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
 - The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
 
 A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still running an older build without the current passkey-listing route. Redeploy the latest `main` branch on Deplexo.
@@ -156,6 +157,10 @@ Security controls:
 - State-changing account, connect, and disconnect requests require the session-bound `X-BitCider-CSRF` HMAC token returned by `GET /api/status`.
 - Account Key sign-in, passkey sign-in, and recovery are independently rate-limited and protected by session-bound CSRF. Cider connection matching is a separate flow. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
 - Cider app tokens are encrypted with AES-256-GCM using the dedicated Deplexo `BITCIDER_ENCRYPTION_KEY`, separate from the persistent data volume. The key must be backed up securely and never committed. The `connection.json` store and legacy `encryption.key` remain under `/data/bitcider` with restrictive file permissions. Protect and back up the full volume as well; runtime/server compromise can still expose decrypted credentials.
+
+## Apple Music account connection
+
+Set `APPLE_MUSIC_DEVELOPER_TOKEN` on Deplexo only. It is an Apple Music API developer JWT and must never be added to a frontend build variable. Users add their own Apple Music Music User Token (also referred to in the account UI as a User Media Token) in BitAccount Center. The backend validates that token against Apple Music's personalized-recommendations endpoint and stores it encrypted with the same dedicated `BITCIDER_ENCRYPTION_KEY`; the plaintext token is never returned to the browser or written to logs. The Browser panel retrieves recommendations through the authenticated BitConnection API. A valid Apple Music developer token and the Deplexo encryption key are both required before a user can connect.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
 
 ## BitMono complete-audio cache
