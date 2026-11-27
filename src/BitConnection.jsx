@@ -2,6 +2,14 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
 import { startBitConnectionGuestTransport, startBitConnectionHostTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
 import { attachBitCiderStream } from './bitconnection/stream-player.mjs';
+import {
+  getMusicKitPlayer,
+  musicKitQueueDescriptor,
+  normalizeAppleCatalogTrack,
+  musicKitPlaybackSnapshot,
+  subscribeAppleMusicPlayback,
+  controlAppleMusicPlayback as controlMusicKitPlayback
+} from './bitconnection/musickit-player.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
@@ -1269,6 +1277,11 @@ function CreateRoomWindow() {
   const hostPlayerRef = useRef(null);
   const hostStreamEngineRef = useRef(null);
   const hostAudioModeRef = useRef('tab');
+  const appleMusicPlayerRef = useRef(null);
+  const appleMusicUnsubscribeRef = useRef(null);
+  const [appleMusicPlaybackStatus, setAppleMusicPlaybackStatus] = useState('checking');
+  const [appleMusicPlaybackError, setAppleMusicPlaybackError] = useState('');
+  const [appleMusicPlayback, setAppleMusicPlayback] = useState(null);
 
   useEffect(() => () => {
     const transport = hostTransportRef.current;
@@ -1290,6 +1303,53 @@ function CreateRoomWindow() {
   }, [roomState?.participant?.role]);
 
   useEffect(() => {
+    let active = true;
+    appleMusicPlayerRef.current = null;
+    appleMusicUnsubscribeRef.current?.();
+    appleMusicUnsubscribeRef.current = null;
+    setAppleMusicPlaybackStatus('checking');
+    setAppleMusicPlaybackError('');
+
+    async function prepareMusicKit() {
+      if (!account?.authenticated) {
+        setAppleMusicPlaybackStatus('unavailable');
+        setAppleMusicPlaybackError('Sign in to BitAccount Center to initialize direct Apple Music playback.');
+        return;
+      }
+      try {
+        const response = await fetch('/api/bitconnection/account/providers/apple-music/playback-config', {
+          headers: identityHeaders(identityMode, account),
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.message || 'Direct Apple Music playback is not configured on Deplexo.');
+        }
+        const music = await getMusicKitPlayer(payload);
+        if (!active) return;
+        appleMusicPlayerRef.current = music;
+        appleMusicUnsubscribeRef.current = subscribeAppleMusicPlayback(music, () => {
+          setAppleMusicPlayback(musicKitPlaybackSnapshot(music));
+        });
+        setAppleMusicPlaybackStatus('ready');
+      } catch (error) {
+        if (!active) return;
+        setAppleMusicPlaybackStatus('unavailable');
+        setAppleMusicPlaybackError(error.message || 'Could not initialize Apple MusicKit.');
+      }
+    }
+
+    void prepareMusicKit();
+    return () => {
+      active = false;
+      appleMusicUnsubscribeRef.current?.();
+      appleMusicUnsubscribeRef.current = null;
+      appleMusicPlayerRef.current = null;
+    };
+  }, [account?.authenticated, account?.csrfToken, identityMode]);
+
+  useEffect(() => {
     const player = hostPlayerRef.current;
     if (!player || !hostSession) return undefined;
     const handleEnded = async () => {
@@ -1303,6 +1363,78 @@ function CreateRoomWindow() {
     player.addEventListener('ended', handleEnded);
     return () => player.removeEventListener('ended', handleEnded);
   }, [hostSession, stage]);
+
+  async function publishAppleMusicPlayback(snapshot) {
+    if (!hostSession || hostSession.role !== 'host' || !snapshot?.track?.id) return null;
+    const track = normalizeAppleCatalogTrack({
+      id: snapshot.track.id,
+      title: snapshot.track.title,
+      artist: snapshot.track.artist,
+      album: snapshot.track.album,
+      artworkUrl: snapshot.track.artworkUrl,
+      durationSeconds: snapshot.durationSeconds
+    });
+    const result = await hostSession.updatePlayback({
+      source: 'apple-music',
+      track,
+      isPlaying: Boolean(snapshot.isPlaying),
+      positionSeconds: Math.max(0, Number(snapshot.positionSeconds) || 0)
+    });
+    setRoomState(await hostSession.getState());
+    return result;
+  }
+
+  async function playAppleMusicTrack(item) {
+    const music = appleMusicPlayerRef.current;
+    if (!music || appleMusicPlaybackStatus !== 'ready') {
+      throw new Error(appleMusicPlaybackError || 'Direct Apple Music playback is not ready. Check the MusicKit developer token configured on Deplexo.');
+    }
+    const track = normalizeAppleCatalogTrack(item);
+    // authorize() is invoked from the user's Play button gesture. MusicKit
+    // owns the subscriber authorization and FairPlay playback session.
+    await music.authorize();
+    await music.setQueue(musicKitQueueDescriptor(track));
+    await music.play();
+    const snapshot = musicKitPlaybackSnapshot(music);
+    setAppleMusicPlayback(snapshot);
+    await publishAppleMusicPlayback({
+      ...snapshot,
+      track: snapshot.track || {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        artworkUrl: track.artworkUrl
+      },
+      durationSeconds: snapshot.durationSeconds || track.durationSeconds
+    });
+    if (!hostTransportRef.current) {
+      setHostAudioError('Apple Music is playing on this device. Start tab-audio sharing to send it to party guests.');
+    } else {
+      setHostAudioError('');
+    }
+    return snapshot;
+  }
+
+  async function controlAppleMusic(action) {
+    const music = appleMusicPlayerRef.current;
+    if (!music) throw new Error('Apple Music playback has not been initialized.');
+    const snapshot = musicKitPlaybackSnapshot(music);
+    const actualAction = action === 'toggle' ? (snapshot.isPlaying ? 'pause' : 'play') : action;
+    const next = await controlMusicKitPlayback(music, actualAction);
+    setAppleMusicPlayback(next);
+    await publishAppleMusicPlayback(next);
+    return next;
+  }
+
+  async function seekAppleMusic(positionSeconds) {
+    const music = appleMusicPlayerRef.current;
+    if (!music) throw new Error('Apple Music playback has not been initialized.');
+    const next = await controlMusicKitPlayback(music, 'seek', positionSeconds);
+    setAppleMusicPlayback(next);
+    await publishAppleMusicPlayback(next);
+    return next;
+  }
 
   async function loadAccount(mode = 'bitconnection') {
     const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
@@ -1747,6 +1879,9 @@ function CreateRoomWindow() {
           onPlayBitMonoTrack={playBitMonoTrack}
           onControlBitMono={controlBitMonoPlayback}
           onSeekBitMono={seekBitMonoPlayback}
+          onPlayAppleMusicTrack={playAppleMusicTrack}
+          onControlAppleMusic={controlAppleMusic}
+          onSeekAppleMusic={seekAppleMusic}
         />
         </>
       )}
