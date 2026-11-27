@@ -1544,6 +1544,9 @@ function CreateRoomWindow() {
         await failedTransport.stop({ leave: false }).catch(() => {});
       }
       if (startedNewTransport) hostAudioModeRef.current = 'tab';
+      const failedStreamEngine = hostStreamEngineRef.current;
+      hostStreamEngineRef.current = null;
+      if (failedStreamEngine) await failedStreamEngine.destroy().catch(() => {});
       player.pause();
       setHostAudioState('idle');
       setHostAudioError(error.message || 'Could not start Bit Mono audio for the party.');
@@ -1583,9 +1586,9 @@ function CreateRoomWindow() {
     if (transport) await transport.stop({ leave: false });
     const player = hostPlayerRef.current;
     if (player) {
+      const positionSeconds = Number(player.currentTime || 0);
       await hostStreamEngineRef.current?.destroy?.();
       hostStreamEngineRef.current = null;
-      const positionSeconds = Number(player.currentTime || 0);
       player.pause();
       player.removeAttribute('src');
       player.load();
