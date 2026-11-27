@@ -62,6 +62,37 @@ export function normalizeAppleCatalogTrack(track = {}) {
   };
 }
 
+export function appleMusicEmbedUrl(track = {}, storefront = 'us') {
+  const songId = cleanString(track.id || track.appleMusicSongId || track.trackId, 40);
+  const store = /^[a-z]{2}$/i.test(String(storefront || '')) ? String(storefront).toLowerCase() : 'us';
+  const candidate = cleanString(track.url || track.appleMusicUrl || track.trackViewUrl, 2048);
+  if (candidate) {
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'music.apple.com'
+        || !/^\\/[a-z]{2}\\/(?:song|album)\\//i.test(url.pathname)) {
+        throw new TypeError('The Apple Music embed requires an official song or album URL.');
+      }
+      url.hostname = 'embed.music.apple.com';
+      url.hash = '';
+      return url.href;
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes('embed requires')) throw error;
+    }
+  }
+  if (!/^[0-9]{1,20}$/.test(songId)) {
+    throw new TypeError('A valid Apple Music song URL or catalog ID is required for embedded playback.');
+  }
+  const slug = cleanString(track.title, 180)
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'song';
+  return 'https://embed.music.apple.com/' + store + '/song/' + slug + '/' + songId;
+}
+
 export async function searchAppleMusicSongs(music, term, limit = 25) {
   const query = cleanString(term, 160);
   if (!query) return [];
