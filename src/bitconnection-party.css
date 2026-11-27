@@ -1473,3 +1473,61 @@ audio.bc-party-audio-output { display: none !important; }
   }
   .bc-party-browser-format-filter small { grid-column: 1; }
 }
+
+.bc-party-apple-embed {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  background: rgba(255,255,255,.045);
+}
+.bc-party-apple-embed > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bc-party-apple-embed > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.bc-party-apple-embed > header strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bc-party-apple-embed > header small {
+  color: rgba(255,255,255,.58);
+  font-size: 11px;
+}
+.bc-party-apple-embed > header button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(255,255,255,.8);
+  background: rgba(255,255,255,.08);
+  cursor: pointer;
+}
+.bc-party-apple-embed iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+}
+.bc-party-apple-embed > p {
+  margin: 0;
+  color: rgba(255,255,255,.6);
+  font-size: 11px;
+  line-height: 1.5;
+}
