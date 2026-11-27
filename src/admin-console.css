@@ -219,6 +219,7 @@
 .admin-console-error button, .admin-console-notice button { border: 0; color: inherit; background: transparent; font-size: 17px; cursor: pointer; }
 .admin-console-global-message { position: sticky; z-index: 8; bottom: 10px; max-width: 850px; box-shadow: 0 8px 30px rgba(0,0,0,.28); }
 .admin-dashboard-dismiss { margin-top: 8px; border: 0; color: #aeb9c1; background: transparent; font-size: 9px; letter-spacing: .1em; cursor: pointer; }
+.admin-auth-card > .admin-console-close { position: absolute; top: 15px; right: 15px; }
 .admin-auth-card { position: relative; width: min(450px,calc(100vw - 32px)); padding: 32px; border: 1px solid #36434d; border-radius: 18px; background: #151d24; box-shadow: 0 25px 90px rgba(0,0,0,.45); }
 .admin-auth-card > p { color: #a0abb3; font-size: 11px; line-height: 1.6; }
 .admin-auth-card h1 { margin: 9px 0; color: #f1f4f5; font-size: 27px; letter-spacing: -.05em; }
