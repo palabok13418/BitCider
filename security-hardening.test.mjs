@@ -15,7 +15,7 @@ test('security policy permits only required first-party and local Cider connecti
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
-  assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'none'/);
+  assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);\n  assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);\n  assert.doesNotMatch(CONTENT_SECURITY_POLICY, /frame-src[^;]*https?:/);
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /script-src[^;]*'unsafe-eval'/);
 });
 
@@ -25,7 +25,7 @@ test('HTTPS security headers include HSTS but local HTTP does not', () => {
   assert.equal(httpHeaders['Strict-Transport-Security'], undefined);
   assert.equal(httpsHeaders['Strict-Transport-Security'], 'max-age=31536000');
   assert.equal(httpsHeaders['X-Content-Type-Options'], 'nosniff');
-  assert.equal(httpsHeaders['X-Frame-Options'], 'DENY');
+  assert.equal(httpsHeaders['X-Frame-Options'], 'SAMEORIGIN');\n  assert.match(httpsHeaders['Content-Security-Policy'], /frame-ancestors 'self'/);
   assert.equal(httpsHeaders['Referrer-Policy'], 'strict-origin-when-cross-origin');
 });
 
@@ -34,7 +34,7 @@ test('secureResponse preserves the response body and existing headers', async ()
   const secured = secureResponse(response, { isHttps: true });
   assert.equal(secured.status, 201);
   assert.equal(secured.headers.get('X-Upstream'), 'preserved');
-  assert.equal(secured.headers.get('X-Frame-Options'), 'DENY');
+  assert.equal(secured.headers.get('X-Frame-Options'), 'SAMEORIGIN');\n  assert.match(secured.headers.get('Content-Security-Policy') || '', /frame-src 'self'/);
   assert.equal(secured.headers.get('Strict-Transport-Security'), 'max-age=31536000');
   assert.equal(await secured.text(), 'ok');
 });
