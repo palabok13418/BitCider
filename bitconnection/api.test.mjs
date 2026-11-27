@@ -1203,7 +1203,8 @@ test('Apple Music TTML lyrics work without a developer token by discovering the 
   const statusPayload = await status.json();
   assert.equal(status.status, 200);
   assert.equal(statusPayload.connected, true);
-  assert.equal(statusPayload.recommendationsConfigured, false);
+  assert.equal(statusPayload.recommendationsConfigured, true);
+  assert.equal(statusPayload.recommendationsAuthentication, 'automatic-web-player-bearer-plus-user-media-token-private-endpoint-experimental');
   assert.equal(statusPayload.lyricsAuthentication, 'automatic-web-player-bearer-plus-user-media-token');
 
   const lyrics = await client.request('/account/providers/apple-music/lyrics?songId=123456789&storefront=us', {
