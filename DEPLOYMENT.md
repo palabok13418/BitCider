@@ -76,7 +76,7 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 The current BitCider backend should report these API versions after deploying the latest `main` branch:
 
 - `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-24-account-center-v13"` and `"browserCiderBridgeSupported":true`.
-- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-25-account-center-passkey-listing-02"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
+- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-26-listening-party-workspace-v1"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
 - The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
 
 A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still running an older build without the current passkey-listing route. Redeploy the latest `main` branch on Deplexo.
@@ -84,6 +84,14 @@ A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still runn
 - If BitCider reports that its Deplexo backend is older, redeploy the latest `main` commit on Deplexo before trying to link.
 
 Opening `/api/connect` directly in the address bar does not test linking. The address bar sends `GET`, while linking requires a `POST` containing the token returned by Cider's `POST /api/v2/auth/request` response.
+
+## BitChord Listening Party service URL
+
+The BitConnection home page displays an environment-specific URL above **Live Discovery**. It resolves to `GET /api/bitconnection/party-service`, a public JSON service descriptor for BitChord clients. The descriptor advertises the current API base, room endpoints, participant limits, private-room admission policy, queue/chat features, moderation actions, and explicit capability flags.
+
+The service descriptor is not a Cider addon manifest. BitChord must implement a client adapter for the listed BitConnection API routes. State-changing requests still require the documented BitConnection/BitCider account authentication and CSRF checks, or a room-scoped guest bearer credential. Do not treat the descriptor URL itself as a room invitation or as a substitute for authentication.
+
+The descriptor currently reports source playback commands, synchronized lyrics, and server-side ONNX AutoMix as unavailable. The existing room transport captures BitChord Web tab audio and sends it directly over WebRTC; it does not send audio through the Deplexo server.
 
 ## Listening Party GIF search
 
