@@ -1630,6 +1630,9 @@ export function createBitConnectionRouter({
           message: 'Send mono Float32 PCM in little-endian byte order using application/vnd.bitconnection.pcm-f32le.'
         });
       }
+      if (String(req.get('x-audio-sample-rate') || '') !== '22050') {
+        return res.status(400).json({ error: 'AUTOMIX_SAMPLE_RATE_REQUIRED', message: 'AutoMix analysis requires 22050 Hz mono PCM.' });
+      }
       const queueItemId = String(req.params.queueItemId || '');
       const queued = (room.queue || []).find(item => item.queueItemId === queueItemId);
       if (!queued) return res.status(404).json({ error: 'QUEUE_ITEM_NOT_FOUND' });
