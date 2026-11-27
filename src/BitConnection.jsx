@@ -1478,7 +1478,9 @@ function CreateRoomWindow() {
       artist: String(track.artist || '').slice(0, 180),
       durationSeconds: Number(track.durationSeconds || 0),
       ...(track.thumbnailUrl ? { thumbnailUrl: String(track.thumbnailUrl) } : {}),
-      ...(track.audioQuality ? { audioQuality: String(track.audioQuality).slice(0, 40) } : {})
+      ...(track.audioQuality ? { audioQuality: String(track.audioQuality).slice(0, 40) } : {}),
+      ...( /^[0-9]{1,20}$/.test(String(track.appleMusicSongId || '')) ? { appleMusicSongId: String(track.appleMusicSongId) } : {}),
+      ...( /^[a-z]{2}$/.test(String(track.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(track.appleMusicStorefront).toLowerCase() } : {})
     };
     if (!cleanTrack.title || !cleanTrack.artist || !Number.isFinite(cleanTrack.durationSeconds) || cleanTrack.durationSeconds <= 0) {
       throw new Error('The Bit Mono result is missing valid track metadata.');
