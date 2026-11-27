@@ -552,8 +552,8 @@ export function createBitConnectionRouter({
       } catch { /* Untrusted artwork is omitted. */ }
     }
     const qualityCandidate = String(value.audioQuality || value.quality || '').trim().slice(0, 40);
-    const quality = /dolby\\s*atmos|\\bjoc\\b/i.test(qualityCandidate) ? 'Dolby Atmos'
-      : /hi[\\s-]?res/i.test(qualityCandidate) ? 'Hi-Res Lossless'
+    const quality = /dolby\s*atmos|\bjoc\b/i.test(qualityCandidate) ? 'Dolby Atmos'
+      : /hi[\s-]?res/i.test(qualityCandidate) ? 'Hi-Res Lossless'
         : /lossless/i.test(qualityCandidate) ? 'Lossless'
           : /high|320|256/i.test(qualityCandidate) ? 'High Quality' : '';
     return {
