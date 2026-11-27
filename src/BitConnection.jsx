@@ -969,7 +969,7 @@ function AccountManagementWindow() {
               <div>
                 <span className="bc-account-panel-kicker">CONNECTED MUSIC SERVICES</span>
                 <h2>Apple Music</h2>
-                <p>Connect your Apple Music User Media Token for subscriber-backed TTML lyrics. The Apple web-player Bearer token is discovered automatically, so no Apple Developer token is needed for lyrics.</p>
+                <p>Connect your Apple Music User Media Token for subscriber-backed TTML lyrics and personal recommendation shelves. Deplexo discovers Apple's web-player Bearer automatically, so no separate Apple Developer token is needed.</p>
               </div>
               <span className={'bc-account-provider-state' + (appleMusicStatus?.connected ? ' is-connected' : '')}>
                 <i />{appleMusicStatus?.connected ? 'CONNECTED' : 'NOT CONNECTED'}
@@ -979,12 +979,6 @@ function AccountManagementWindow() {
               <div className="bc-account-unavailable">
                 <strong>Encrypted provider storage is unavailable</strong>
                 <p>Configure the dedicated Deplexo BITCIDER_ENCRYPTION_KEY before saving an Apple Music token.</p>
-              </div>
-            )}
-            {appleMusicStatus?.secureStorageConfigured && appleMusicStatus.recommendationsConfigured === false && (
-              <div className="bc-account-unavailable">
-                <strong>Personalized recommendation feed is separate</strong>
-                <p>Apple Music TTML lyrics work without an Apple Developer token. The optional official personalized-recommendations feed is not configured.</p>
               </div>
             )}
             {appleMusicStatus?.connected && (
@@ -1012,7 +1006,7 @@ function AccountManagementWindow() {
                 {appleMusicBusy ? 'Saving…' : appleMusicStatus?.connected ? 'Update connection' : 'Connect Apple Music'}
               </button>
             </form>
-            <small className="bc-account-provider-footnote">Your token is encrypted on Deplexo and never shown again or stored in browser storage. Apple validates subscriber access when TTML lyrics are first requested. Only connect an account you own.</small>
+            <small className="bc-account-provider-footnote">Your token is encrypted on Deplexo and never shown again or stored in browser storage. It is paired with Apple's automatically discovered web-player Bearer for subscriber-only lyrics and recommendation requests. Only connect an account you own.</small>
           </section>
 
           {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
