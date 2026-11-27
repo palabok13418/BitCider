@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {} } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -21,6 +21,8 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     dataFile,
     maxPartySize,
     iceConfig,
+    giphyApiKey,
+    fetchImpl,
     getUserSession: () => ciderAccount ? { authenticated: true, accountId: 'existing-cider-account', sessionId: 'cider-session-123' } : { authenticated: false },
     requireCiderCsrf: (_req, _res, next) => next(),
     csrfTokenForCiderSession: () => 'cider-test-csrf',
@@ -826,4 +828,47 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
   const preflight = await client.request('/party-service', { method: 'OPTIONS' });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, OPTIONS');
+});
+
+
+test('GIF search proxies through Deplexo and never returns the API key to the browser', async t => {
+  const calls = [];
+  const client = await harness(t, {
+    giphyApiKey: 'server-only-test-key',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({
+        data: [{
+          id: 'giphy-1',
+          title: 'Music reaction',
+          images: {
+            fixed_width_small: { webp: 'https://media.giphy.com/media/giphy-1/200w.webp' },
+            original: { url: 'https://media.giphy.com/media/giphy-1/giphy.gif' }
+          }
+        }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+  const response = await client.request('/gifs/search?q=music%20reaction');
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  const providerUrl = new URL(calls[0].url);
+  assert.equal(providerUrl.origin, 'https://api.giphy.com');
+  assert.equal(providerUrl.pathname, '/v1/gifs/search');
+  assert.equal(providerUrl.searchParams.get('api_key'), 'server-only-test-key');
+  assert.equal(providerUrl.searchParams.get('q'), 'music reaction');
+  assert.equal(payload.gifs.length, 1);
+  assert.equal(payload.gifs[0].url, 'https://media.giphy.com/media/giphy-1/giphy.gif');
+  assert.equal(payload.gifs[0].preview, 'https://media.giphy.com/media/giphy-1/200w.webp');
+  assert.equal(JSON.stringify(payload).includes('server-only-test-key'), false);
+  assert.equal(payload.attribution, 'Powered by GIPHY');
+});
+
+test('GIF search returns a clear configuration response when the Deplexo key is absent', async t => {
+  const client = await harness(t);
+  const response = await client.request('/gifs/search?q=music');
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error, 'GIF_SEARCH_NOT_CONFIGURED');
 });
