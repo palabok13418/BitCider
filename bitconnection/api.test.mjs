@@ -833,7 +833,7 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
   assert.equal(manifest.service, 'BitConnection Listening Party');
   assert.equal(manifest.protocolVersion, 1);
-    assert.match(manifest.serviceUrl, /\\/party$/);
+    assert.match(manifest.serviceUrl, /\/party$/);
   assert.equal(manifest.capabilities.roomCreation, true);
   assert.equal(manifest.capabilities.privateRooms, true);
   assert.equal(manifest.capabilities.partyChat, true);
