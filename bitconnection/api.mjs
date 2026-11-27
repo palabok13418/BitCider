@@ -1393,6 +1393,83 @@ export function createBitConnectionRouter({
     }
   });
 
+  router.get('/account/providers/apple-music/catalog-search', rateAppleMusic, async (req, res) => {
+    const term = String(req.query.term || '').trim().slice(0, 160);
+    const storefrontValue = String(req.query.storefront || 'us').trim().toLowerCase();
+    const storefront = /^[a-z]{2}$/.test(storefrontValue) ? storefrontValue : 'us';
+    const limitValue = Number(req.query.limit || 25);
+    const limit = Number.isSafeInteger(limitValue) ? Math.max(1, Math.min(25, limitValue)) : 25;
+    if (!term) {
+      return res.status(400).json({
+        error: 'APPLE_MUSIC_SEARCH_TERM_REQUIRED',
+        message: 'Enter an artist, song, or album to search Apple Music.'
+      });
+    }
+    if (typeof fetchImpl !== 'function') {
+      return res.status(503).json({
+        error: 'APPLE_MUSIC_SEARCH_UNAVAILABLE',
+        message: 'Apple Music catalog search is unavailable on this backend.'
+      });
+    }
+
+    const params = new URLSearchParams({
+      term,
+      entity: 'song',
+      country: storefront,
+      limit: String(limit)
+    });
+    try {
+      const response = await fetchImpl('https://itunes.apple.com/search?' + params.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(payload?.results)) {
+        return res.status(502).json({
+          error: 'APPLE_MUSIC_SEARCH_PROVIDER_ERROR',
+          message: 'Apple’s public music search is temporarily unavailable. Try again shortly.'
+        });
+      }
+      const tracks = payload.results.map(item => {
+        const id = String(item?.trackId || '').trim();
+        const title = String(item?.trackName || '').trim().slice(0, 180);
+        const artist = String(item?.artistName || '').trim().slice(0, 180);
+        if (!/^[0-9]{1,20}$/.test(id) || !title || !artist) return null;
+        let url = '';
+        try {
+          const parsed = new URL(String(item?.trackViewUrl || ''));
+          if (parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'music.apple.com'
+            && /^\/[a-z]{2}\/(?:song|album)\//i.test(parsed.pathname)) {
+            url = parsed.toString();
+          }
+        } catch { /* Items without an Apple Music page are omitted from embed metadata. */ }
+        return {
+          id,
+          type: 'songs',
+          title,
+          artist,
+          album: String(item?.collectionName || '').trim().slice(0, 180),
+          artworkUrl: normalizeAppleArtwork(item?.artworkUrl100 || item?.artworkUrl60 || ''),
+          url,
+          durationSeconds: Number.isFinite(Number(item?.trackTimeMillis))
+            ? Math.max(0, Number(item.trackTimeMillis) / 1000)
+            : 0,
+          storefront
+        };
+      }).filter(Boolean);
+      res.set('Cache-Control', 'private, max-age=60');
+      return res.json({ provider: 'apple-itunes-search', developerTokenRequired: false, tracks });
+    } catch {
+      return res.status(502).json({
+        error: 'APPLE_MUSIC_SEARCH_PROVIDER_ERROR',
+        message: 'Apple’s public music search could not be reached. Try again shortly.'
+      });
+    }
+  });
+
   function safePrivateAppleMusicRelationshipUrl(value) {
     try {
       const parsed = new URL(String(value || ''), 'https://amp-api-edge.music.apple.com/');
