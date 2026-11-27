@@ -15,12 +15,12 @@ test('security policy permits the required app, local Cider, and Apple MusicKit 
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/js-cdn\.music\.apple\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
-  assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\\*\.apple\.com/);
-  assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\\*\.mzstatic\.com/);
+  assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\*\.apple\.com/);
+  assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\*\.mzstatic\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);
-  assert.match(CONTENT_SECURITY_POLICY, /frame-src[^;]*https:\/\/\\*\.apple\.com/);
+  assert.match(CONTENT_SECURITY_POLICY, /frame-src[^;]*https:\/\/\*\.apple\.com/);
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /script-src[^;]*'unsafe-eval'/);
 });
 
