@@ -54,6 +54,7 @@ export function normalizeAppleCatalogTrack(track = {}) {
     album: cleanString(track.album || track.albumName, 180),
     artworkUrl: cleanString(track.artworkUrl || track.artworkURL, 1000),
     url: cleanString(track.url, 1000),
+    ...(track.playbackMode === 'embed' ? { playbackMode: 'embed' } : {}),
     durationSeconds: Number.isFinite(Number(track.durationSeconds))
       ? Math.max(0, Number(track.durationSeconds))
       : Number.isFinite(Number(track.durationMillis))
