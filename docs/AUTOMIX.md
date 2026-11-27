@@ -31,7 +31,7 @@ The key and section estimates in this initial version are heuristic DSP, not add
 3. Host submits each queued track for analysis with POST /rooms/{roomId}/automix/analyze/{queueItemId}.
 4. After at least two queue entries have been analyzed, host calls POST /rooms/{roomId}/automix/plan.
 
-Analysis uploads use Content-Type: application/vnd.bitconnection.pcm-f32le. Include mono Float32 PCM in little-endian byte order at exactly 22,050 Hz. The endpoint is host-only, requires the existing BitConnection/BitCider session and CSRF rules, and does not store the raw PCM. Only analysis metadata is attached to the queue item.
+Analysis uploads use Content-Type: application/vnd.bitconnection.pcm-f32le and the X-Audio-Sample-Rate: 22050 header. Include mono Float32 PCM in little-endian byte order at exactly 22,050 Hz. The endpoint is host-only, requires the existing BitConnection/BitCider session and CSRF rules, and does not store the raw PCM. Only analysis metadata is attached to the queue item.
 
 The current browser-to-browser party music stream remains direct WebRTC. Audio sent to the analysis endpoint is a separate upload to Deplexo for inference; Deplexo is not turned into an audio relay.
 
@@ -43,8 +43,8 @@ To complete live mixing, BitChord needs a controlled player adapter with at leas
 
 ## Next model stages
 
-- Structure and richer cue points: add a dedicated music-structure model or a validated All-In-One model for intro/verse/build/drop/break/outro labels. The current section detector is a coarse energy heuristic.
-- Vocal/instrumental awareness: evaluate HTDemucs FT for four stems, or Mel-Band RoFormer for vocal separation. These are much larger models and should be opt-in downloads on Deplexo with explicit CPU/RAM/disk requirements. They are not installed by the current implementation.
+- Structure and richer cue points: evaluate [All-In-One Music Structure Analyzer](https://github.com/mir-aidj/all-in-one). It predicts BPM, beats, downbeats, segment boundaries and semantic labels such as intro, verse, chorus, bridge and outro under an MIT-licensed project. The published implementation depends on PyTorch and NATTEN, however, and no verified compatible ONNX export is currently wired into this Node service. Keep it as the leading structure-model candidate until an ONNX conversion is validated. The current section detector is a coarse energy heuristic.
+- Vocal/instrumental awareness: evaluate [HTDemucs FT ONNX](https://github.com/StemSplit/demucs-onnx) for four stems (its full specialist bag is about 1.26 GB FP32 or 660 MB in the published FP16-weight distribution), with a single HTDemucs model as the lighter alternative. This is useful for vocal-aware blends, bass swaps and drum transitions, but it is offline/background work rather than an audio-callback model. These large models should be opt-in downloads with explicit CPU/RAM/disk requirements. They are not installed by the current implementation.
 - Loudness matching: replace the basic RMS estimate with EBU R128 integrated loudness and true-peak measurement.
 - Key accuracy: evaluate trained key-estimation weights only after their redistribution licenses are verified. The current implementation intentionally avoids depending on weights with unclear commercial terms.
 - Quality gates: build an offline test set and compare beat/downbeat timing, BPM, key, cue usefulness and transition quality against human-labelled mixes before turning on automatic playback.
