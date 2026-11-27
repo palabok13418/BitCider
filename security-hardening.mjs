@@ -7,7 +7,7 @@ export const CONTENT_SECURITY_POLICY = [
   "frame-src 'self' https://*.apple.com",
   "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com https://js-cdn.music.apple.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://*.apple.com https://*.mzstatic.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' http://127.0.0.1:10767 http://localhost:10767 https://*.apple.com https://*.itunes.apple.com",
   "media-src 'self' blob: data: https://*.apple.com https://*.itunes.apple.com https://*.mzstatic.com",
