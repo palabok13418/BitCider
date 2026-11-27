@@ -593,6 +593,9 @@ function AccountManagementWindow() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [appleMusicStatus, setAppleMusicStatus] = useState(null);
+  const [appleMusicUserToken, setAppleMusicUserToken] = useState('');
+  const [appleMusicBusy, setAppleMusicBusy] = useState(false);
 
   async function loadAccount(mode = 'auto') {
     const selectedMode = mode === 'auto' ? 'bitconnection' : mode;
@@ -606,6 +609,16 @@ function AccountManagementWindow() {
     setAccount(payload);
     setIdentityMode(selectedMode);
     setProfile(payload.profile || null);
+    if (payload.authenticated) {
+      const providerHeaders = selectedMode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
+      const providerResponse = await fetch('/api/bitconnection/account/providers/apple-music', {
+        headers: providerHeaders, cache: 'no-store', credentials: 'same-origin'
+      });
+      const providerPayload = providerResponse.ok ? await providerResponse.json().catch(() => null) : null;
+      setAppleMusicStatus(providerPayload);
+    } else {
+      setAppleMusicStatus(null);
+    }
     if (payload.authenticated && selectedMode === 'bitconnection') {
       const passkeyResponse = await fetch('/api/bitconnection/passkeys', {
         cache: 'no-store', credentials: 'same-origin'
@@ -742,6 +755,64 @@ function AccountManagementWindow() {
       setError(removeError.message || 'Could not remove this passkey.');
     } finally {
       setBusy(false);
+    }
+  }
+
+
+
+  async function saveAppleMusicToken(event) {
+    event.preventDefault();
+    if (!account?.authenticated || !appleMusicUserToken.trim() || appleMusicBusy) return;
+    setAppleMusicBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/bitconnection/account/providers/apple-music', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...identityHeaders(identityMode, account)
+        },
+        body: JSON.stringify({ userMediaToken: appleMusicUserToken.trim() })
+      });
+      const payload = await readResponse(response, 'Could not connect Apple Music.');
+      setAppleMusicUserToken('');
+      setAppleMusicStatus(previous => ({
+        ...(previous || {}),
+        provider: 'Apple Music',
+        connected: true,
+        connectedAt: payload.connectedAt || new Date().toISOString(),
+        developerTokenConfigured: true,
+        secureStorageConfigured: true
+      }));
+      setNotice('Apple Music is connected to this BitAccount.');
+    } catch (connectError) {
+      setError(connectError.message || 'Could not connect Apple Music.');
+    } finally {
+      setAppleMusicBusy(false);
+    }
+  }
+
+  async function disconnectAppleMusic() {
+    if (!account?.authenticated || appleMusicBusy) return;
+    setAppleMusicBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/bitconnection/account/providers/apple-music', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: identityHeaders(identityMode, account)
+      });
+      await readResponse(response, 'Could not disconnect Apple Music.');
+      setAppleMusicStatus(previous => ({ ...(previous || {}), connected: false, connectedAt: null }));
+      setAppleMusicUserToken('');
+      setNotice('Apple Music has been disconnected.');
+    } catch (disconnectError) {
+      setError(disconnectError.message || 'Could not disconnect Apple Music.');
+    } finally {
+      setAppleMusicBusy(false);
     }
   }
 
@@ -892,6 +963,58 @@ function AccountManagementWindow() {
               )}
             </section>
           </div>
+
+
+          <section className="bc-account-provider-panel" aria-label="Connected music services">
+            <div className="bc-account-provider-heading">
+              <div>
+                <span className="bc-account-panel-kicker">CONNECTED MUSIC SERVICES</span>
+                <h2>Apple Music</h2>
+                <p>Connect your Apple Music User Media Token to enable personalized recommendations and subscriber-backed lyrics.</p>
+              </div>
+              <span className={'bc-account-provider-state' + (appleMusicStatus?.connected ? ' is-connected' : '')}>
+                <i />{appleMusicStatus?.connected ? 'CONNECTED' : 'NOT CONNECTED'}
+              </span>
+            </div>
+            {!appleMusicStatus?.developerTokenConfigured && (
+              <div className="bc-account-unavailable">
+                <strong>Apple Music backend setup is incomplete</strong>
+                <p>The Deplexo backend needs its Apple Music developer token before user connections can be validated. Your personal token is not submitted until this is configured.</p>
+              </div>
+            )}
+            {!appleMusicStatus?.secureStorageConfigured && (
+              <div className="bc-account-unavailable">
+                <strong>Encrypted provider storage is unavailable</strong>
+                <p>Configure the dedicated Deplexo BITCIDER_ENCRYPTION_KEY before saving an Apple Music token.</p>
+              </div>
+            )}
+            {appleMusicStatus?.connected && (
+              <div className="bc-account-provider-connected">
+                <span className="bc-account-provider-check" aria-hidden="true">✓</span>
+                <div><strong>Apple Music account linked</strong><small>{appleMusicStatus.connectedAt ? 'Connected ' + new Date(appleMusicStatus.connectedAt).toLocaleDateString() : 'Your token is stored securely.'} · Token hidden</small></div>
+                <button className="bc-account-remove" type="button" onClick={disconnectAppleMusic} disabled={appleMusicBusy}>Disconnect</button>
+              </div>
+            )}
+            <form className="bc-account-provider-form" onSubmit={saveAppleMusicToken}>
+              <label>
+                <span>{appleMusicStatus?.connected ? 'REPLACE USER MEDIA TOKEN' : 'APPLE MUSIC USER MEDIA TOKEN'}</span>
+                <input
+                  type="password"
+                  value={appleMusicUserToken}
+                  onChange={event => setAppleMusicUserToken(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="Paste your Apple Music User Media Token"
+                  aria-label="Apple Music User Media Token"
+                  disabled={!appleMusicStatus?.developerTokenConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
+                />
+              </label>
+              <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.developerTokenConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
+                {appleMusicBusy ? 'Checking…' : appleMusicStatus?.connected ? 'Update connection' : 'Connect Apple Music'}
+              </button>
+            </form>
+            <small className="bc-account-provider-footnote">Your token is validated with Apple Music, encrypted on Deplexo, and never shown again or stored in browser storage. Only connect an account you own.</small>
+          </section>
 
           {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
           {notice && <div className="bc-account-message is-success" role="status">{notice}</div>}
