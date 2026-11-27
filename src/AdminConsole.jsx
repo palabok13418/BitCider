@@ -1073,13 +1073,87 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
   }
 
   async function runNodeTest(node) {
-    setNotice('Running live checks for ' + node.title + ' and its connected branch…');
+    setTopologyBusy(true);
     setError('');
+    setNotice('Testing ' + node.title + '…');
+    const descendants = TOPOLOGY_NODES.filter(candidate => {
+      let parentId = candidate.parentId;
+      while (parentId) {
+        if (parentId === node.id) return true;
+        parentId = TOPOLOGY_NODES.find(item => item.id === parentId)?.parentId;
+      }
+      return false;
+    });
+    const targets = node.type === 'check'
+      ? [node]
+      : descendants.filter(candidate => candidate.type === 'check');
+    const results = {};
     try {
-      await refreshTopology();
-      setNotice(node.title + ' test finished. Review the selected node and its child checks for the live results.');
+      if (node.type === 'page') {
+        const site = SITE_DEFINITIONS.find(item => item.id === node.id.replace('site-', ''));
+        if (site) await runTest(site);
+      }
+      if (!targets.length && node.type !== 'page') {
+        setNotice(node.title + ' has no independently testable child endpoints.');
+        return;
+      }
+      await Promise.all(targets.map(async target => {
+        const previous = topologyStatuses[target.id] || {};
+        const endpoint = previous.endpoint;
+        if (!endpoint || !endpoint.startsWith('/') || endpoint.includes('<personal-key>')) {
+          results[target.id] = {
+            ...previous,
+            checkedAt: new Date().toISOString(),
+            detail: (previous.detail || 'No independent HTTP endpoint is available.') + ' This check needs its real user session, track, or active room before it can be exercised safely.'
+          };
+          return;
+        }
+        const startedAt = performance.now();
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 9000);
+        try {
+          const response = await fetch(endpoint, {
+            method: target.id.startsWith('site-') ? 'HEAD' : 'GET',
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal
+          });
+          const payload = target.id.startsWith('site-') ? null : await response.json().catch(() => null);
+          const durationMs = Math.round(performance.now() - startedAt);
+          const gated = ['idle', 'advertised', 'unverified'].includes(previous.state);
+          results[target.id] = {
+            ...previous,
+            state: response.ok ? (gated ? previous.state : 'operational') : response.status === 401 ? 'idle' : response.status >= 500 || response.status === 404 ? 'offline' : 'degraded',
+            label: response.ok ? (gated ? previous.label || 'SESSION / LIVE TEST REQUIRED' : 'OPERATIONAL') : 'HTTP ' + response.status,
+            httpStatus: response.status,
+            durationMs,
+            checkedAt: new Date().toISOString(),
+            detail: response.ok
+              ? (gated ? (previous.detail || 'This feature is gated.') + ' Its backing endpoint responded successfully, but the feature itself still needs its required session or real resource.' : 'The feature endpoint responded successfully to a live test.')
+              : payload?.message || payload?.error || 'The feature endpoint returned HTTP ' + response.status + '.'
+          };
+        } catch (testError) {
+          results[target.id] = {
+            ...previous,
+            state: 'offline',
+            label: 'TEST FAILED',
+            durationMs: Math.round(performance.now() - startedAt),
+            checkedAt: new Date().toISOString(),
+            detail: testError?.name === 'AbortError' ? 'The endpoint timed out after 9 seconds.' : testError.message || 'The endpoint could not be reached.'
+          };
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }));
+      setTopologyStatuses(current => buildTopologyStatuses({ ...current, ...results }));
+      const tested = Object.keys(results).length;
+      const blocked = Object.values(results).filter(result => result.label === 'SESSION / LIVE TEST REQUIRED' || result.state === 'idle' || result.state === 'advertised' || result.state === 'unverified').length;
+      setNotice(node.title + ': ' + tested + ' check(s) run. ' + blocked + ' still require a real session, track, or active room.');
     } catch (testError) {
       setError(node.title + ': ' + (testError.message || 'Feature test failed.'));
+    } finally {
+      setTopologyBusy(false);
     }
   }
 
