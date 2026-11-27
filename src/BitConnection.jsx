@@ -1085,6 +1085,7 @@ function JoinPublicPartyWindow({ roomId }) {
           variation={28} interactive stir={0.7} clickSwirl intro lightMode={false} dpr={1.2}
         />
       </Suspense>
+      <audio ref={audioRef} autoPlay playsInline className="bc-party-audio-output" />
       {stage === 'connected' && room && roomState && sessionRef.current && (
         <PartyRoomExperience
           room={room}
