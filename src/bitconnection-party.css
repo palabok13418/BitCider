@@ -755,3 +755,122 @@
   object-fit: contain;
   object-position: center;
 }
+
+
+/* The Grainient page background is the canvas; the player is not an outer card. */
+.bc-party-room {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 0;
+  margin: 0;
+  padding: clamp(18px, 2.5vw, 38px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.bc-party-room-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin: 15px 0 12px;
+  padding: 15px 17px;
+  border: 1px solid rgba(255, 219, 231, .13);
+  border-radius: 16px;
+  background: linear-gradient(110deg, rgba(30, 9, 19, .42), rgba(15, 7, 12, .2));
+  box-shadow: inset 0 1px rgba(255,255,255,.035);
+}
+.bc-party-room-code-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+.bc-party-room-code-label,
+.bc-party-room-qr-wrap > span {
+  color: rgba(255, 211, 225, .57);
+  font: 9px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .17em;
+}
+.bc-party-room-code-row {
+  display: flex;
+  max-width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 13px;
+}
+.bc-party-room-code-value {
+  color: #fff3f7;
+  font: 750 clamp(29px, 4vw, 43px)/1 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .16em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 26px rgba(236, 111, 153, .16);
+}
+.bc-party-room-code-copy > small {
+  color: rgba(255, 228, 237, .48);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.bc-party-room-qr-wrap {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.bc-party-room-qr {
+  display: block;
+  width: clamp(88px, 10vw, 112px);
+  height: clamp(88px, 10vw, 112px);
+  padding: 6px;
+  border-radius: 9px;
+  background: white;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .23);
+}
+.bc-party-room-qr-placeholder {
+  width: clamp(88px, 10vw, 112px);
+  aspect-ratio: 1;
+  border-radius: 9px;
+  background: rgba(255,255,255,.08);
+}
+.bc-party-room .bc-party-copy-code { min-height: 32px; }
+@media (max-width: 900px) {
+  .bc-party-room {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    margin: 0;
+    padding: 16px;
+    border: 0;
+    border-radius: 0;
+  }
+}
+@media (max-width: 680px) {
+  .bc-party-room {
+    width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 14px;
+    border-radius: 0;
+  }
+  .bc-party-room-share { gap: 10px; margin-top: 12px; padding: 12px; }
+  .bc-party-room-code-row { gap: 8px; }
+  .bc-party-room-code-value { font-size: clamp(25px, 7vw, 34px); letter-spacing: .11em; }
+  .bc-party-room-code-copy > small { max-width: 260px; }
+  .bc-party-room-qr { width: 82px; height: 82px; padding: 5px; }
+  .bc-party-room-qr-placeholder { width: 82px; }
+}
+@media (max-width: 380px) {
+  .bc-party-room-share { grid-template-columns: minmax(0,1fr) 72px; gap: 7px; }
+  .bc-party-room-code-value { font-size: 23px; letter-spacing: .08em; }
+  .bc-party-room .bc-party-copy-code { min-height: 28px; padding: 5px 7px; font-size: 8px; }
+  .bc-party-room-qr { width: 72px; height: 72px; }
+  .bc-party-room-qr-placeholder { width: 72px; }
+}
