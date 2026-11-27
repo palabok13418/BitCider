@@ -261,6 +261,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       playbackSourceBridge: 'not-connected',
       appleMusicRecommendations: 'encrypted-user-token-and-developer-token-required',
       appleMusicTtmlLyrics: 'subscriber-token-private-endpoint-experimental',
+      appleMusicWebPlayerToken: 'optional-server-side-override',
       synchronizedLyrics: 'not-connected',
       serverSideAutoMix: 'onnx-analysis-and-dj-planning-ready-player-bridge-required',
       serverSideAudioAnalysis: 'host-uploaded-to-deplexo-not-relayed',
@@ -287,6 +288,7 @@ export function createBitConnectionRouter({
   giphyApiKey = process.env.BITCONNECTION_GIPHY_API_KEY || '',
   fetchImpl = globalThis.fetch,
   appleMusicDeveloperToken = process.env.APPLE_MUSIC_DEVELOPER_TOKEN || '',
+  appleMusicWebPlayerToken = process.env.APPLE_MUSIC_WEB_PLAYER_TOKEN || '',
   encryptProviderCredential = null,
   decryptProviderCredential = null,
   providerCredentialEncryptionConfigured = () => false,
@@ -994,6 +996,7 @@ export function createBitConnectionRouter({
       connected: Boolean(connection?.userMediaTokenEncrypted),
       connectedAt: connection?.connectedAt || null,
       developerTokenConfigured: Boolean(String(appleMusicDeveloperToken || '').trim()),
+      webPlayerTokenConfigured: Boolean(String(appleMusicWebPlayerToken || appleMusicDeveloperToken || '').trim()),
       secureStorageConfigured: Boolean(providerCredentialEncryptionConfigured())
     });
   });
@@ -1202,7 +1205,7 @@ export function createBitConnectionRouter({
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          Authorization: 'Bearer ' + String(appleMusicDeveloperToken || '').trim(),
+          Authorization: 'Bearer ' + String(appleMusicWebPlayerToken || appleMusicDeveloperToken || '').trim(),
           Origin: 'https://music.apple.com',
           'Media-User-Token': userMediaToken
         },
