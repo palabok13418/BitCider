@@ -721,7 +721,7 @@ function PartyRoomExperience({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
       const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
-      const appleMusicSongId = /^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '';
+      const appleMusicSongId = item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '';
       let appleMusicStorefront = 'us';
       try {
         const segments = new URL(item.url).pathname.split('/').filter(Boolean);
