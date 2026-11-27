@@ -1531,3 +1531,10 @@ audio.bc-party-audio-output { display: none !important; }
   font-size: 11px;
   line-height: 1.5;
 }
+
+.bc-party-apple-embed > p a {
+  margin-left: 4px;
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
