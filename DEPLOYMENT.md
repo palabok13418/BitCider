@@ -92,7 +92,11 @@ The BitConnection home page displays an environment-specific URL above **Live Di
 
 The service descriptor is not a Cider addon manifest. BitChord must implement a client adapter for the listed BitConnection API routes. State-changing requests still require the documented BitConnection/BitCider account authentication and CSRF checks, or a room-scoped guest bearer credential. Do not treat the descriptor URL itself as a room invitation or as a substitute for authentication.
 
-The descriptor currently reports source playback commands, synchronized lyrics, and server-side ONNX AutoMix as unavailable. The existing room transport captures BitChord Web tab audio and sends it directly over WebRTC; it does not send audio through the Deplexo server.
+The descriptor reports server-side ONNX analysis as available and live AutoMix execution as unavailable until the BitChord player-control bridge is connected. BitConnection uses Beat This! final0 ONNX plus an ONNX log-mel frontend for beat/downbeat analysis, then builds a harmonic, phrase-aligned transition plan. See [AutoMix architecture and model notes](docs/AUTOMIX.md). The existing room transport still sends party audio directly over WebRTC; only separate host-authorized analysis uploads go to Deplexo.
+
+## Server-side AutoMix model
+
+The Deplexo service installs `onnxruntime-node` as a server dependency. On the first host request to `POST /api/bitconnection/rooms/{roomId}/automix/prepare`, it downloads the two pinned ONNX artifacts into `${BITCIDER_DATA_DIR}/bitconnection-automix/models` (or the default Deplexo data directory), verifies byte counts and SHA-256 digests, then initializes the CPU inference sessions. Set `BITCONNECTION_AUTOMIX_THREADS` on Deplexo to tune CPU parallelism; the default is 2. The host must submit each track's mono Float32 little-endian PCM at 22,050 Hz to the analysis endpoint before a DJ plan can be generated. The room's AutoMix switch deliberately remains unavailable until the BitChord player-control bridge can execute deck, tempo, EQ, filter, crossfader, and effect automation.
 
 ## Listening Party GIF search
 
