@@ -545,7 +545,9 @@ function PartyRoomExperience({
           artist: String(track.artist || '').slice(0, 180),
           durationSeconds: Number(track.duration || track.durationSeconds || 0),
           thumbnailUrl: String(track.artworkURL || track.thumbnailUrl || track.artwork || ''),
-          audioQuality: String(payload.audioQuality || track.audioQuality || 'LOSSLESS')
+          audioQuality: String(payload.audioQuality || track.audioQuality || 'LOSSLESS'),
+          ...( /^[0-9]{1,20}$/.test(String(track.appleMusicSongId || '')) ? { appleMusicSongId: String(track.appleMusicSongId) } : {}),
+          ...( /^[a-z]{2}$/.test(String(track.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(track.appleMusicStorefront).toLowerCase() } : {})
         },
         format: String(payload.format || track.format || ''),
         quality: String(payload.audioQuality || track.audioQuality || ''),
@@ -575,7 +577,9 @@ function PartyRoomExperience({
           artist: track.artist,
           durationSeconds,
           artworkURL: track.artworkURL || track.thumbnailUrl || '',
-          audioQuality: track.audioQuality || track.quality || ''
+          audioQuality: track.audioQuality || track.quality || '',
+          ...( /^[0-9]{1,20}$/.test(String(track.appleMusicSongId || '')) ? { appleMusicSongId: String(track.appleMusicSongId) } : {}),
+          ...( /^[a-z]{2}$/.test(String(track.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(track.appleMusicStorefront).toLowerCase() } : {})
         }
       });
       await refreshState();
@@ -621,7 +625,17 @@ function PartyRoomExperience({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
       const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
-      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks, error: '' } }));
+      const appleMusicSongId = /^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '';
+      let appleMusicStorefront = 'us';
+      try {
+        const segments = new URL(item.url).pathname.split('/').filter(Boolean);
+        if (/^[a-z]{2}$/i.test(segments[0] || '')) appleMusicStorefront = segments[0].toLowerCase();
+      } catch { /* Default to the US storefront when the catalog URL is absent. */ }
+      const matchedTracks = tracks.map(track => ({
+        ...track,
+        ...(appleMusicSongId ? { appleMusicSongId, appleMusicStorefront } : {})
+      }));
+      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: matchedTracks, error: '' } }));
     } catch (error) {
       setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || 'Bit Mono search failed.' } }));
     } finally {
