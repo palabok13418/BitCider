@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
-import { startBitConnectionGuestTransport, startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
+import { startBitConnectionGuestTransport, startBitConnectionHostTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
@@ -1178,6 +1178,9 @@ function JoinPublicPartyWindow({ roomId }) {
     const transport = transportRef.current;
     transportRef.current = null;
     if (transport) await transport.stop({ leave: false });
+    const player = hostPlayerRef.current;
+    if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
+    hostAudioModeRef.current = 'tab';
     setHostAudioState('idle');
   }
 
@@ -1272,6 +1275,8 @@ function CreateRoomWindow() {
   const [hostAudioState, setHostAudioState] = useState('idle');
   const [hostAudioError, setHostAudioError] = useState('');
   const hostTransportRef = useRef(null);
+  const hostPlayerRef = useRef(null);
+  const hostAudioModeRef = useRef('tab');
 
   useEffect(() => () => {
     const transport = hostTransportRef.current;
@@ -1459,6 +1464,97 @@ function CreateRoomWindow() {
     }
   }
 
+
+
+  async function playBitMonoTrack(track, streamUrl) {
+    if (!hostSession || hostSession.role !== 'host') throw new Error('Only the host can start a Bit Mono stream.');
+    if (!track?.trackId || !String(streamUrl || '').startsWith('/bitmono/audio/')) throw new Error('The Bit Mono stream is not ready yet.');
+    const player = hostPlayerRef.current;
+    if (!player) throw new Error('The party audio player is not ready.');
+    const cleanTrack = {
+      source: 'bitmono',
+      trackId: String(track.trackId),
+      title: String(track.title || '').slice(0, 180),
+      artist: String(track.artist || '').slice(0, 180),
+      durationSeconds: Number(track.durationSeconds || 0),
+      ...(track.thumbnailUrl ? { thumbnailUrl: String(track.thumbnailUrl) } : {}),
+      ...(track.audioQuality ? { audioQuality: String(track.audioQuality).slice(0, 40) } : {})
+    };
+    if (!cleanTrack.title || !cleanTrack.artist || !Number.isFinite(cleanTrack.durationSeconds) || cleanTrack.durationSeconds <= 0) {
+      throw new Error('The Bit Mono result is missing valid track metadata.');
+    }
+
+    setHostAudioError('');
+    player.pause();
+    player.src = streamUrl;
+    player.load();
+    const playPromise = player.play();
+    let transportPromise = Promise.resolve(hostTransportRef.current);
+    if (!hostTransportRef.current || hostAudioModeRef.current !== 'bitmono') {
+      if (hostTransportRef.current) {
+        const old = hostTransportRef.current;
+        hostTransportRef.current = null;
+        await old.stop({ leave: false });
+      }
+      setHostAudioState('requesting');
+      // Capture the player synchronously before this function reaches its first
+      // network await so its audio track is present in the WebRTC runtime.
+      transportPromise = startBitConnectionHostMediaTransport({
+        session: hostSession,
+        audioElement: player,
+        onRoomState: setRoomState,
+        onError: transportError => setHostAudioError(transportError.message || 'The room audio connection encountered an error.')
+      });
+    }
+
+    try {
+      const [transport] = await Promise.all([transportPromise, playPromise]);
+      if (transport && transport !== hostTransportRef.current) hostTransportRef.current = transport;
+      hostAudioModeRef.current = 'bitmono';
+      setHostAudioState('streaming');
+      const result = await hostSession.updatePlayback({
+        source: 'bitmono', track: cleanTrack, isPlaying: true, positionSeconds: 0
+      });
+      setRoomState(await hostSession.getState());
+      return result;
+    } catch (error) {
+      if (hostTransportRef.current && hostAudioModeRef.current !== 'bitmono') {
+        await hostTransportRef.current.stop({ leave: false }).catch(() => {});
+        hostTransportRef.current = null;
+      }
+      player.pause();
+      setHostAudioState('idle');
+      setHostAudioError(error.message || 'Could not start Bit Mono audio for the party.');
+      throw error;
+    }
+  }
+
+  async function controlBitMonoPlayback(action) {
+    const player = hostPlayerRef.current;
+    if (!player || hostAudioModeRef.current !== 'bitmono') return;
+    if (action === 'toggle') {
+      if (player.paused) await player.play();
+      else player.pause();
+      await hostSession?.updatePlayback?.({ isPlaying: !player.paused, positionSeconds: player.currentTime || 0 });
+    } else if (action === 'pause') {
+      player.pause();
+      await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds: player.currentTime || 0 });
+    } else if (action === 'play') {
+      await player.play();
+      await hostSession?.updatePlayback?.({ isPlaying: true, positionSeconds: player.currentTime || 0 });
+    }
+    setRoomState(await hostSession.getState());
+  }
+
+  async function seekBitMonoPlayback(positionSeconds) {
+    const player = hostPlayerRef.current;
+    if (!player || hostAudioModeRef.current !== 'bitmono') return;
+    const next = Math.max(0, Math.min(Number(player.duration || 86400), Number(positionSeconds) || 0));
+    player.currentTime = next;
+    await hostSession?.updatePlayback?.({ positionSeconds: next, isPlaying: !player.paused });
+    setRoomState(await hostSession.getState());
+  }
+
   async function stopHostAudio() {
     const transport = hostTransportRef.current;
     hostTransportRef.current = null;
@@ -1589,6 +1685,8 @@ function CreateRoomWindow() {
       )}
 
       {stage === 'created' && createdRoom && hostSession && roomState && (
+        <>
+        <audio ref={hostPlayerRef} className="bc-party-audio-output" preload="none" />
         <PartyRoomExperience
           room={createdRoom.room}
           roomState={roomState}
@@ -1600,7 +1698,11 @@ function CreateRoomWindow() {
           hostAudioError={hostAudioError}
           onStartHostAudio={startHostAudio}
           onStopHostAudio={stopHostAudio}
+          onPlayBitMonoTrack={playBitMonoTrack}
+          onControlBitMono={controlBitMonoPlayback}
+          onSeekBitMono={seekBitMonoPlayback}
         />
+        </>
       )}
 
       {stage === 'error' && (
