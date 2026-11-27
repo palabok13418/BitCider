@@ -5,7 +5,8 @@ import {
   normalizeAppleCatalogTrack,
   musicKitPlaybackSnapshot,
   searchAppleMusicSongs,
-  normalizeAppleAudioVariants
+  normalizeAppleAudioVariants,
+  appleMusicEmbedUrl
 } from './musickit-player.mjs';
 
 test('normalizes Apple audio variant names and drops unknown values', () => {
@@ -14,6 +15,24 @@ test('normalizes Apple audio variant names and drops unknown values', () => {
     ['dolby-atmos', 'hi-res-lossless', 'lossless', 'dolby-audio']
   );
   assert.deepEqual(normalizeAppleAudioVariants('lossy-stereo, atmos'), ['dolby-atmos', 'lossy-stereo']);
+});
+
+test('builds Apple Music embedded-player URLs without a MusicKit developer token', () => {
+  assert.equal(
+    appleMusicEmbedUrl({
+      id: '123456789',
+      url: 'https://music.apple.com/us/album/example-album/987654321?i=123456789'
+    }),
+    'https://embed.music.apple.com/us/album/example-album/987654321?i=123456789'
+  );
+  assert.equal(
+    appleMusicEmbedUrl({ id: '123456789', title: 'Björk - Jóga' }, 'gb'),
+    'https://embed.music.apple.com/gb/song/bjork-joga/123456789'
+  );
+  assert.throws(
+    () => appleMusicEmbedUrl({ id: '123456789', url: 'https://example.com/song/123456789' }),
+    /official song or album URL/
+  );
 });
 
 test('creates a MusicKit queue descriptor from a catalog song id', () => {
