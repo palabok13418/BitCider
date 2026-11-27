@@ -42,10 +42,10 @@ function trackArtwork(track) {
 
 function qualityLabel(track) {
   const value = String(track?.audioQuality || track?.quality || '').toLowerCase();
-  if (value.includes('atmos') || value.includes('joc')) return 'DOLBY ATMOS';
-  if (value.includes('hi-res') || value.includes('hi res') || value.includes('high-resolution')) return 'HI-RES LOSSLESS';
-  if (value.includes('lossless')) return 'LOSSLESS';
-  return 'BITCHORD WEB AUDIO';
+  if (value.includes('atmos') || value.includes('joc')) return { label: 'DOLBY ATMOS', src: 'https://mus-api.palabokmagtiis.workers.dev/icons/Dolby%20Atmos.svg' };
+  if (value.includes('hi-res') || value.includes('hi res') || value.includes('high-resolution')) return { label: 'HI-RES LOSSLESS', src: 'https://mus-api.palabokmagtiis.workers.dev/icons/Hi-Res%20Lossless.svg' };
+  if (value.includes('lossless')) return { label: 'LOSSLESS', src: 'https://mus-api.palabokmagtiis.workers.dev/icons/LOSSLESS.svg' };
+  return null;
 }
 
 function formatTime(seconds) {
@@ -418,7 +418,7 @@ function PartyRoomExperience({
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
-        <div className="bc-party-quality"><span className="bc-party-quality-mark" />{quality}</div>
+        <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
         <div className="bc-party-transport-controls">
           <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
           <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
