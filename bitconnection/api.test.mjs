@@ -986,7 +986,7 @@ test('GIF search returns a clear configuration response when the Deplexo key is 
 });
 
 
-test('Apple Music User Media Tokens are validated, encrypted, and used for account recommendations', async t => {
+test('Apple Music User Media Tokens are encrypted and used for the optional recommendations feed', async t => {
   const seenRequests = [];
   const fetchImpl = async (url, options = {}) => {
     seenRequests.push({ url: String(url), headers: options.headers || {} });
@@ -1077,7 +1077,7 @@ test('Apple Music User Media Tokens are validated, encrypted, and used for accou
   assert.equal((await afterDisconnect.json()).connected, false);
 });
 
-test('Apple Music connection works without a developer token but fails closed without encrypted storage', async t => {
+test('Apple Music account connection needs encryption but not a developer token', async t => {
   const noDeveloperToken = await harness(t, {
     providerCredentialEncryptionConfigured: true,
     fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 })
