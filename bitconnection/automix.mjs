@@ -70,6 +70,15 @@ async function fileMatches(filePath, artifact) {
   }
 }
 
+async function filePresent(filePath, artifact) {
+  try {
+    const info = await fsp.stat(filePath);
+    return info.isFile() && info.size === artifact.bytes;
+  } catch {
+    return false;
+  }
+}
+
 async function downloadArtifact(artifact, destination) {
   if (await fileMatches(destination, artifact)) return destination;
   await fsp.mkdir(path.dirname(destination), { recursive: true });
@@ -516,7 +525,7 @@ export function createAutoMixService({ directory }) {
   async function status() {
     const availability = {};
     for (const artifact of AUTOMIX_MODEL_MANIFEST.models) {
-      availability[artifact.id] = await fileMatches(modelPaths[artifact.id], artifact);
+      availability[artifact.id] = await filePresent(modelPaths[artifact.id], artifact);
     }
     return {
       engine: 'BitConnection AutoMix',
