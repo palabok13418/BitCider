@@ -23,7 +23,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-26-apple-private-recommendations-v5';
+export const BITCONNECTION_API_VERSION = '2026-11-26-apple-private-recommendations-v6';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -1218,7 +1218,7 @@ export function createBitConnectionRouter({
     function safeAppleMusicUrl(value) {
       try {
         const parsed = new URL(String(value || ''));
-        return parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)
+        return parsed.protocol === 'https:' && /(^|\.)music\.apple\.com$/i.test(parsed.hostname)
           ? parsed.toString()
           : '';
       } catch {
