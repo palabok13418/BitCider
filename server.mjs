@@ -78,6 +78,12 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   requireCiderCsrf: requireCsrf,
   csrfTokenForCiderSession: csrfTokenForSession,
   webAuthnContext,
+  appleMusicDeveloperToken: process.env.APPLE_MUSIC_DEVELOPER_TOKEN || '',
+  encryptProviderCredential: encryptToken,
+  decryptProviderCredential: decryptToken,
+  providerCredentialEncryptionConfigured: () => {
+    try { return Boolean(dedicatedTokenEncryptionKey()); } catch { return false; }
+  },
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
   exposeAdminStore: store => { bitConnectionAdminStore = store; },
   maxPartySize: 30,
