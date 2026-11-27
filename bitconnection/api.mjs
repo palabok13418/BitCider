@@ -23,7 +23,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-26-apple-private-recommendations-v6';
+export const BITCONNECTION_API_VERSION = '2026-11-26-musickit-full-playback-v7';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -252,13 +252,13 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       passkeyListing: 'enabled',
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
-      playbackSync: 'youtube-music-and-bitmono-over-host-webrtc',
-      sharedQueue: 'youtube-and-bitmono-track-sources-synchronized-with-room-permissions',
+      playbackSync: 'youtube-bitmono-and-apple-musickit-over-host-tab-audio',
+      sharedQueue: 'youtube-bitmono-and-apple-music-track-sources-synchronized-with-room-permissions',
       queueLoopAndShuffle: 'enabled',
       partyChat: 'text-images-and-giphy-gifs-enabled',
       memberModeration: 'kick-ban-and-host-promotion-enabled',
       privateRoomVerification: 'proximity-or-host-one-time-code',
-      playbackSourceBridge: 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending',
+      playbackSourceBridge: 'apple-musickit-web-v3-bitmono-in-page-audio-and-youtube-player-bridge-pending',
       bitMonoPlayback: 'host-audio-element-captured-and-published-over-webrtc',
       appleMusicRecommendations: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicTtmlLyrics: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
