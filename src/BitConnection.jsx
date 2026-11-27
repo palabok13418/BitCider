@@ -1314,8 +1314,8 @@ function CreateRoomWindow() {
 
     async function prepareMusicKit() {
       if (!account?.authenticated) {
-        setAppleMusicPlaybackStatus('unavailable');
-        setAppleMusicPlaybackError('Sign in to BitAccount Center to initialize direct Apple Music playback.');
+        setAppleMusicPlaybackStatus('embed-ready');
+        setAppleMusicPlaybackError('MusicKit developer credentials are not needed for the Apple Music embedded-player route. Sign in to Apple Music inside the player for full songs.');
         return;
       }
       try {
