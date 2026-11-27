@@ -194,6 +194,7 @@ function PartyRoomExperience({
   const [appleCatalogBusy, setAppleCatalogBusy] = useState(false);
   const [appleCatalogError, setAppleCatalogError] = useState('');
   const [appleCatalogFormatFilter, setAppleCatalogFormatFilter] = useState('all');
+  const [appleMusicEmbed, setAppleMusicEmbed] = useState(null);
   const [bitMonoPrepared, setBitMonoPrepared] = useState({});
   const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
   const [appleMusicLyrics, setAppleMusicLyrics] = useState([]);
@@ -350,7 +351,10 @@ function PartyRoomExperience({
           track
         }, window.location.origin);
       }
-      if (track?.source === 'apple-music') {
+      if (track?.source === 'apple-music' && track?.playbackMode === 'embed') {
+        if (!isHost) throw new Error('Only the host can control the Apple Music embedded player.');
+        setPlaybackMessage('Use the Apple Music player in the Browser panel for playback controls.');
+      } else if (track?.source === 'apple-music') {
         if (!isHost) throw new Error('Only the host can control the Apple Music playback session.');
         await onControlAppleMusic(action);
         setPlaybackMessage('Apple Music playback control updated.');
@@ -373,6 +377,10 @@ function PartyRoomExperience({
 
   async function seekTo(value) {
     const next = Math.max(0, Math.min(duration || 86400, Number(value) || 0));
+    if (track?.source === 'apple-music' && track?.playbackMode === 'embed') {
+      setPlaybackMessage('Use the Apple Music player in the Browser panel to seek.');
+      return;
+    }
     setProgressSeconds(next);
     try {
       if (track?.source === 'apple-music' && isHost) await onSeekAppleMusic(next);
@@ -742,10 +750,22 @@ function PartyRoomExperience({
       return;
     }
     setQueueBusy(true);
-    setPlaybackMessage('Opening Apple Music authorization and starting the full-length track…');
+    setPlaybackMessage(appleMusicPlaybackStatus === 'ready'
+      ? 'Opening Apple Music authorization and starting the full-length track…'
+      : 'Opening Apple Music’s embedded player…');
     try {
-      await onPlayAppleMusicTrack(item);
-      setPlaybackMessage('Apple Music is playing directly in BitCider. Start tab-audio sharing to include party guests.');
+      const result = await onPlayAppleMusicTrack(item);
+      if (result?.playbackMode === 'embed' && result.embedUrl) {
+        setAppleMusicEmbed({
+          url: result.embedUrl,
+          title: String(item.title || 'Apple Music track'),
+          artist: String(item.artist || '')
+        });
+        setPlaybackMessage('Press Play in the Apple Music player below. Share this browser tab to send its audio to party guests.');
+      } else {
+        setAppleMusicEmbed(null);
+        setPlaybackMessage('Apple Music is playing through MusicKit. Start tab-audio sharing to include party guests.');
+      }
     } catch (error) {
       setPlaybackMessage(error.message || 'Apple Music could not start this track.');
     } finally {
@@ -863,7 +883,7 @@ function PartyRoomExperience({
             onPointerUp={() => void seekTo(progressSeconds)}
             onKeyUp={() => void seekTo(progressSeconds)}
             aria-label="Playback position"
-            disabled={!duration || (track?.source === 'apple-music' && !isHost)}
+            disabled={!duration || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))}
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
@@ -879,9 +899,9 @@ function PartyRoomExperience({
           <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
         )}
         <div className="bc-party-transport-controls">
-          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
-          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
-          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
+          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
         </div>
         <div className="bc-party-volume">
           <Icon name="volume" size={17}/>
@@ -1074,15 +1094,37 @@ function PartyRoomExperience({
             {appleMusicPlaybackStatus === 'checking' && (
               <div className="bc-party-inline-status" role="status">Initializing Apple's direct playback engine…</div>
             )}
+            {appleMusicPlaybackStatus === 'embed-ready' && (
+              <div className="bc-party-inline-status" role="status">No developer token is configured. Apple’s embedded player can still play full songs when you sign in to Apple Music inside the player.</div>
+            )}
             {appleMusicPlaybackStatus === 'unavailable' && (
-              <div className="bc-party-inline-status" role="status">{appleMusicPlaybackError || 'Direct playback is not configured on Deplexo yet.'}</div>
+              <div className="bc-party-inline-status" role="status">{appleMusicPlaybackError || 'MusicKit is unavailable. Apple’s embedded player remains available for full songs.'}</div>
+            )}
+            {appleMusicEmbed && (
+              <section className="bc-party-apple-embed" aria-label="Apple Music player">
+                <header>
+                  <div><strong>{appleMusicEmbed.title}</strong><small>{appleMusicEmbed.artist || 'Apple Music'}</small></div>
+                  <button type="button" onClick={() => setAppleMusicEmbed(null)} aria-label="Close Apple Music player"><Icon name="close" size={17}/></button>
+                </header>
+                <iframe
+                  title={'Apple Music player — ' + appleMusicEmbed.title}
+                  src={appleMusicEmbed.url}
+                  width="100%"
+                  height="175"
+                  frameBorder="0"
+                  allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
+                  loading="lazy"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                />
+                <p>Sign in to Apple Music in the player for full-length playback. The host must share this browser tab for party guests to hear it.</p>
+              </section>
             )}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
               <Icon name="music" size={17}/>
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
               <button type="submit" disabled={appleCatalogBusy || !appleCatalogQuery.trim()}>{appleCatalogBusy ? 'Searching…' : 'Search Apple Music'}</button>
             </form>
-            {appleCatalogResults.length > 0 && (
+            {appleCatalogResults.length > 0 && appleCatalogResults.some(item => item.audioVariants?.length) && (
               <div className="bc-party-browser-format-filter">
                 <label htmlFor="bc-apple-format-filter">FILTER BY AVAILABLE FORMAT</label>
                 <select id="bc-apple-format-filter" value={appleCatalogFormatFilter} onChange={event => setAppleCatalogFormatFilter(event.target.value)}>
