@@ -1515,6 +1515,18 @@ export default function BitConnection() {
   const [partyDirectoryLoading, setPartyDirectoryLoading] = useState(true);
   const [partySearchLoading, setPartySearchLoading] = useState(false);
   const [partyDirectoryError, setPartyDirectoryError] = useState('');
+  const [partyServiceCopied, setPartyServiceCopied] = useState(false);
+  const partyServiceUrl = window.location.origin + '/api/bitconnection/party-service';
+
+  async function copyPartyServiceUrl() {
+    try {
+      await navigator.clipboard.writeText(partyServiceUrl);
+      setPartyServiceCopied(true);
+      window.setTimeout(() => setPartyServiceCopied(false), 1800);
+    } catch {
+      setPartyServiceCopied(false);
+    }
+  }
 
   useEffect(() => {
     function openAdminConsole(event) {
@@ -1763,6 +1775,19 @@ export default function BitConnection() {
         </div>
       </section>
       <aside className="bitconnection-discovery" aria-label="Public listening parties">
+        <section className="bc-party-service-card" aria-label="BitChord party service URL">
+          <div className="bc-party-service-kicker">BITCHORD PARTY SERVER</div>
+          <strong>Connect BitChord to BitConnection</strong>
+          <p>Use this service discovery URL in BitChord to find the party API and its room rules.</p>
+          <div className="bc-party-service-url">
+            <code>{partyServiceUrl}</code>
+            <button type="button" onClick={copyPartyServiceUrl} aria-label="Copy BitConnection party service URL">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+              {partyServiceCopied ? 'Copied' : 'Copy URL'}
+            </button>
+          </div>
+          <small>Room limits, private-room verification, host permissions, queue rules, and member moderation stay enforced by BitConnection.</small>
+        </section>
         <div className="bc-discovery-heading">
           <div className="bitconnection-eyebrow"><span /> LIVE DISCOVERY</div>
           <h2>More happening now</h2>
