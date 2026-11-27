@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './bitconnection-party.css';
 
-const GIPHY_API_KEY = import.meta.env?.VITE_GIPHY_API_KEY || '';
-const GIPHY_SEARCH_URL = 'https://api.giphy.com/v1/gifs/search';
 
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -287,29 +285,17 @@ function PartyRoomExperience({
 
   async function searchGifs(event) {
     event?.preventDefault?.();
-    if (!GIPHY_API_KEY) {
-      setGifError('GIF search needs VITE_GIPHY_API_KEY in the BitCider frontend environment.');
-      return;
-    }
     setGifLoading(true);
     setGifError('');
     try {
-      const query = new URLSearchParams({
-        api_key: GIPHY_API_KEY,
-        q: gifQuery.trim() || 'music reaction',
-        limit: '18',
-        rating: 'pg-13',
-        lang: 'en',
-        bundle: 'messaging_non_clips'
+      const query = new URLSearchParams({ q: gifQuery.trim() || 'music reaction' });
+      const response = await fetch('/api/bitconnection/gifs/search?' + query.toString(), {
+        cache: 'no-store',
+        credentials: 'same-origin'
       });
-      const response = await fetch(GIPHY_SEARCH_URL + '?' + query.toString(), { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.meta?.msg || 'GIPHY search is unavailable.');
-      setGifResults((payload.data || []).map(item => ({
-        id: item.id,
-        preview: item.images?.fixed_width_small?.webp || item.images?.fixed_width_small?.url || item.images?.downsized?.url,
-        url: item.images?.original?.url || item.images?.downsized_large?.url
-      })).filter(item => item.preview && item.url));
+      if (!response.ok) throw new Error(payload.message || 'GIPHY search is unavailable.');
+      setGifResults(Array.isArray(payload.gifs) ? payload.gifs : []);
     } catch (error) {
       setGifError(error.message || 'Could not search GIFs.');
     } finally {
