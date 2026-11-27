@@ -24,6 +24,20 @@ The model card identifies the model as MIT-licensed and publishes the final0 ONN
 
 The key and section estimates in this initial version are heuristic DSP, not additional trained neural models. Treat the confidence values accordingly. The planner is a useful starting point, not a substitute for listening tests or experienced DJ review.
 
+## Model research and recommended next stage
+
+A serious DJ stack is a collection of specialized components, not one model. The most useful complete-system reference is [ClubCraft](https://github.com/beneaze/ClubCraft), which combines analysis with two-deck sync and real EQ, filter, crossfader and FX control. It is a system reference, not a single embeddable ONNX file.
+
+For a lightweight second ONNX model, evaluate [LinkSeg 7-class ONNX](https://huggingface.co/elicwhite/linkseg-7c-onnx). It labels intro, verse, chorus, bridge, instrumental, outro and silence from the full mix. It uses the Beat This! beat grid, requires no stem separation, and its ONNX graph is about 1.5 MB. Its model weights are CC-BY 4.0, so preserve the attribution to M. Buisson, B. McFee and S. Essid, *Using Pairwise Link Prediction and Graph Attention Networks for Music Structure Analysis*, ISMIR 2024. The port code is MIT, but that does not change the model-weights license. This is the recommended next ONNX addition for better semantic transition cues.
+
+For a larger structural-analysis option, evaluate the ONNX All-In-One exports used by [LightCut's music-analysis model pack](https://huggingface.co/azstorm/lightcut-music-analysis-models) or the [allinone-DLL-ONNX reference](https://github.com/zukky/allinone-DLL-ONNX). The full arrangement uses eight fold models and analyzes tempo, beats/downbeats and functional sections. It is more involved than LinkSeg: its reference pipeline expects source-separated stems and additional spectrogram/DBN postprocessing, so it is not currently wired into this Node API.
+
+For vocal-aware transitions, evaluate [HTDemucs FT ONNX](https://github.com/StemSplit/demucs-onnx). The complete specialist bag is approximately 1.26 GB FP32 or 660 MB with the published FP16-weight variant; a single specialist is substantially smaller. This enables vocal, drums, bass and other-stem awareness, but costs more storage, RAM and offline CPU/GPU time. It should be an optional model pack, not a mandatory first download.
+
+Do not choose [SongFormer](https://huggingface.co/) as the default for this project without a separate licensing decision: its strongest published checkpoint has non-commercial restrictions. Model benchmark performance is not enough if the weights cannot be used for the product's intended distribution.
+
+Recommended progression: Beat This! for beat/downbeat grids, LinkSeg for full-mix semantic sections, a validated trained key/loudness model for harmonic and gain matching, then optional HTDemucs/All-In-One analysis for vocal-aware and finer structural transitions. Finally, the player bridge must execute the automation. These analysis models alone cannot make a complete live DJ.
+
 ## API flow
 
 1. Host calls POST /rooms/{roomId}/automix/prepare. This begins downloading and verifying the pinned model files.
