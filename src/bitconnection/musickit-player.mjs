@@ -70,7 +70,7 @@ export function appleMusicEmbedUrl(track = {}, storefront = 'us') {
     try {
       const url = new URL(candidate);
       if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'music.apple.com'
-        || !/^\\/[a-z]{2}\\/(?:song|album)\\//i.test(url.pathname)) {
+        || !/^\/[a-z]{2}\/(?:song|album)\//i.test(url.pathname)) {
         throw new TypeError('The Apple Music embed requires an official song or album URL.');
       }
       url.hostname = 'embed.music.apple.com';
@@ -85,7 +85,7 @@ export function appleMusicEmbedUrl(track = {}, storefront = 'us') {
   }
   const slug = cleanString(track.title, 180)
     .normalize('NFKD')
-    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
