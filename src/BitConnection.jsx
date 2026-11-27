@@ -1009,7 +1009,7 @@ function AccountManagementWindow() {
                   disabled={!appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
                 />
               </label>
-              <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.secureStorageConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
+              <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
                 {appleMusicBusy ? 'Saving…' : appleMusicStatus?.connected ? 'Update connection' : 'Connect Apple Music'}
               </button>
             </form>
