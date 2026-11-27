@@ -824,6 +824,78 @@ test('party chat, queue settings, and host moderation are authenticated by the r
 });
 
 
+
+test('AutoMix endpoints expose host-only analysis and a safe plan-only state', async t => {
+  const client = await harness(t);
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'AutoMix Host', password: 'automix-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({
+      roomName: 'AutoMix API Test',
+      visibility: 'public',
+      partySize: 3,
+      ownerOnlyControls: true
+    })
+  });
+  const roomPayload = await created.json();
+  assert.equal(created.status, 201);
+  const roomId = roomPayload.room.roomId;
+  const hostHeaders = {
+    ...csrf.headers,
+    Authorization: 'Bearer ' + roomPayload.hostCredential
+  };
+
+  const status = await client.request('/rooms/' + roomId + '/automix/status', {
+    headers: hostHeaders
+  });
+  const statusPayload = await status.json();
+  assert.equal(status.status, 200);
+  assert.equal(statusPayload.canAnalyze, true);
+  assert.equal(statusPayload.livePlaybackEnabled, false);
+  assert.equal(statusPayload.engine, 'BitConnection AutoMix');
+
+  const guestJoin = await client.request('/rooms/' + roomId + '/join', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({})
+  });
+  const guestPayload = await guestJoin.json();
+  assert.equal(guestJoin.status, 201);
+  const guestStatus = await client.request('/rooms/' + roomId + '/automix/status', {
+    headers: {
+      ...csrf.headers,
+      Authorization: 'Bearer ' + guestPayload.participantCredential
+    }
+  });
+  assert.equal(guestStatus.status, 200);
+  assert.equal((await guestStatus.json()).canAnalyze, false);
+
+  const missingPcm = await client.request('/rooms/' + roomId + '/automix/analyze/missing-track', {
+    method: 'POST',
+    headers: { ...hostHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(missingPcm.status, 415);
+  assert.equal((await missingPcm.json()).error, 'AUTOMIX_PCM_REQUIRED');
+
+  const noPlan = await client.request('/rooms/' + roomId + '/automix/plan', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({})
+  });
+  assert.equal(noPlan.status, 409);
+  assert.equal((await noPlan.json()).error, 'AUTOMIX_NEEDS_TWO_ANALYZED_TRACKS');
+});
+
+
 test('BitConnection publishes its Listening Party service descriptor for BitChord discovery', async t => {
   const client = await harness(t);
   const response = await client.request('/party-service', {
