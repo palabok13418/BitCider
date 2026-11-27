@@ -50,7 +50,7 @@ export function normalizeFairPlayLicenseHeaders(value) {
     if (FORBIDDEN_FAIRPLAY_HEADERS.has(lowerName)) {
       throw new TypeError('Subscriber cookies and Music User Token headers cannot authenticate a FairPlay license request.');
     }
-    if (!headerValue || headerValue.length > 4096 || /[\\r\\n\\u0000-\\u001f\\u007f]/u.test(headerValue)) {
+    if (!headerValue || headerValue.length > 4096 || /[\r\n\u0000-\u001f\u007f]/u.test(headerValue)) {
       throw new TypeError('FairPlay license header values must be non-empty single-line strings of at most 4096 characters.');
     }
     output[headerName] = headerValue;
@@ -90,6 +90,10 @@ export function validateFairPlayConfig(fairPlay) {
   if (typeof fairPlay.transformLicenseResponse !== 'undefined'
     && typeof fairPlay.transformLicenseResponse !== 'function') {
     throw new TypeError('transformLicenseResponse must be a function.');
+  }
+  if (typeof fairPlay.contentIdFromSkdUri !== 'undefined'
+    && typeof fairPlay.contentIdFromSkdUri !== 'function') {
+    throw new TypeError('contentIdFromSkdUri must be a function.');
   }
   return {
     licenseServerUri,
@@ -185,6 +189,9 @@ export async function attachBitCiderStream(media, source, {
       player.configure({ drm: { servers, advanced } });
 
       const networking = player.getNetworkingEngine?.();
+      if (!networking && (fairPlayConfig.getLicenseRequestHeaders || fairPlayConfig.transformLicenseRequest || fairPlayConfig.transformLicenseResponse)) {
+        throw new Error('This Shaka build does not expose the FairPlay license networking engine.');
+      }
       if (networking && (fairPlayConfig.getLicenseRequestHeaders || fairPlayConfig.transformLicenseRequest)) {
         networking.registerRequestFilter(async (type, request, context) => {
           if (type !== shaka.net.NetworkingEngine.RequestType.LICENSE) return;
