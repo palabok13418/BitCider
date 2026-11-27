@@ -826,11 +826,11 @@ function PartyRoomExperience({
             onPointerUp={() => void seekTo(progressSeconds)}
             onKeyUp={() => void seekTo(progressSeconds)}
             aria-label="Playback position"
-            disabled={!duration}
+            disabled={!duration || (track?.source === 'apple-music' && !isHost)}
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
-        <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
+        <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />{track?.source === 'apple-music' ? 'APPLE MUSIC' : 'BITCHORD WEB AUDIO'}</>}</div>
         <div className="bc-party-transport-controls">
           <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
           <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
