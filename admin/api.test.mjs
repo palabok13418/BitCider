@@ -75,3 +75,47 @@ test('bootstrap code alone cannot create an admin session and invalid codes are 
   const protectedOverview = await fetch(origin + '/api/admin/overview');
   assert.equal(protectedOverview.status, 401);
 });
+
+
+test('the persisted owner slot stays globally closed after the first passkey is enrolled', async t => {
+  const original = process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+  process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = 'owner-only-test-secret-with-more-than-thirty-two-bytes';
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-admin-single-owner-'));
+  const dataFile = path.join(directory, 'admin.json');
+  await fs.writeFile(dataFile, JSON.stringify({
+    credential: {
+      id: 'registered-owner-credential-id',
+      publicKey: Buffer.from('owner-public-key').toString('base64url'),
+      counter: 0,
+      transports: [],
+      rpID: 'bitcider.example',
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null
+    },
+    bootstrapConsumed: true,
+    challenges: {},
+    sessions: {}
+  }));
+  t.after(async () => {
+    if (original === undefined) delete process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+    else process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  const origin = await withAdminServer(t, dataFile);
+  const status = await (await fetch(origin + '/api/admin/status')).json();
+  assert.equal(status.initialized, true);
+  assert.equal(status.passkeyCount, 1);
+  assert.equal(status.passkeyLimit, 1);
+  assert.equal(status.bootstrapAvailable, false);
+
+  for (const route of ['/api/admin/bootstrap/options', '/api/admin/bootstrap/verify']) {
+    const response = await fetch(origin + route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE })
+    });
+    assert.equal(response.status, 409, route + ' must stay closed after owner enrollment');
+    assert.equal((await response.json()).error, 'ADMIN_ALREADY_INITIALIZED');
+  }
+});
