@@ -1776,7 +1776,6 @@ export default function BitConnection() {
       </section>
       <aside className="bitconnection-discovery" aria-label="Public listening parties">
         <section className="bc-party-service-card" aria-label="BitChord party service URL">
-          <div className="bc-party-service-kicker">LISTENING PARTY SERVER</div>
           <strong>BitConnection URL</strong>
           <p>Paste this address into BitChord to connect.</p>
           <div className="bc-party-service-url">
