@@ -6,6 +6,25 @@ function cleanString(value, max = 500) {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+const APPLE_AUDIO_VARIANT_ORDER = ['dolby-atmos', 'hi-res-lossless', 'lossless', 'dolby-audio', 'lossy-stereo'];
+
+export function normalizeAppleAudioVariants(values) {
+  const source = Array.isArray(values) ? values : typeof values === 'string' ? values.split(',') : [];
+  const normalized = new Set();
+  for (const value of source) {
+    const raw = typeof value === 'string' ? value
+      : value && typeof value === 'object' ? String(value.rawValue || value.value || value.name || '') : '';
+    const token = raw.trim().toLowerCase().replace(/[_\s]+/g, '-');
+    if (!token) continue;
+    if (token === 'atmos' || /dolby.*atmos/.test(token)) normalized.add('dolby-atmos');
+    else if (/hi.?res.*lossless|high.?resolution.*lossless/.test(token)) normalized.add('hi-res-lossless');
+    else if (/^lossless(?:-audio)?$/.test(token)) normalized.add('lossless');
+    else if (/dolby.*audio/.test(token)) normalized.add('dolby-audio');
+    else if (/lossy.*stereo|^stereo$/.test(token)) normalized.add('lossy-stereo');
+  }
+  return APPLE_AUDIO_VARIANT_ORDER.filter(variant => normalized.has(variant));
+}
+
 export function musicKitQueueDescriptor(track = {}) {
   const candidate = cleanString(track.url || track.appleMusicUrl, 1000);
   if (candidate) {
@@ -25,9 +44,11 @@ export function musicKitQueueDescriptor(track = {}) {
 export function normalizeAppleCatalogTrack(track = {}) {
   const id = cleanString(track.id || track.appleMusicSongId, 40);
   if (!/^\d{1,20}$/.test(id)) throw new TypeError('A valid Apple Music catalog song ID is required.');
+  const audioVariants = normalizeAppleAudioVariants(track.audioVariants || track.audioTraits || track.attributes?.audioTraits);
   return {
     id,
     type: 'apple-music',
+    ...(audioVariants.length ? { audioVariants } : {}),
     title: cleanString(track.title || track.name, 180) || 'Apple Music track',
     artist: cleanString(track.artist || track.artistName, 180),
     album: cleanString(track.album || track.albumName, 180),
@@ -65,7 +86,8 @@ export async function searchAppleMusicSongs(music, term, limit = 25) {
         album: attributes.albumName || attributes.album,
         artworkUrl: artwork,
         url,
-        durationMillis: attributes.durationInMillis
+        durationMillis: attributes.durationInMillis,
+        audioTraits: attributes.audioTraits || attributes.audioVariants || item?.audioTraits
       });
     } catch {
       return null;
@@ -85,13 +107,17 @@ export function musicKitPlaybackSnapshot(music) {
     isPlaying: Boolean(player?.isPlaying),
     positionSeconds: Math.max(0, Number(player?.playbackTime || 0)),
     durationSeconds: Number.isFinite(duration) ? Math.max(0, duration) : 0,
+    targetBitrate: player?.bitrate == null || !Number.isFinite(Number(player.bitrate)) ? null : Number(player.bitrate),
     track: item ? {
       id: String(item.id || item.attributes?.playParams?.id || ''),
       title: cleanString(item.title || item.attributes?.name, 180),
       artist: cleanString(item.artistName || item.attributes?.artistName, 180),
       album: cleanString(item.albumName || item.attributes?.albumName, 180),
       artworkUrl: cleanString(item.artwork?.url || item.attributes?.artwork?.url, 1000)
-        .replace('{w}', '600').replace('{h}', '600')
+        .replace('{w}', '600').replace('{h}', '600'),
+      ...(normalizeAppleAudioVariants(item.attributes?.audioTraits || item.attributes?.audioVariants || item.audioTraits).length
+        ? { audioVariants: normalizeAppleAudioVariants(item.attributes?.audioTraits || item.attributes?.audioVariants || item.audioTraits) }
+        : {})
     } : null
   };
 }
@@ -158,6 +184,8 @@ export async function getMusicKitPlayer({ developerToken, scriptUrl = DEFAULT_MU
   if (!configuredTokenFingerprint) {
     await MusicKit.configure({
       developerToken: token,
+      // Highest documented MusicKit Web bitrate target; this is not a Lossless override.
+      bitrate: MusicKit.PlaybackBitrate?.HIGH ?? 256,
       app: { name: 'BitCider', build: '2026.11.26' }
     });
     configuredTokenFingerprint = fingerprint;

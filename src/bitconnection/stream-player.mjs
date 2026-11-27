@@ -30,6 +30,10 @@ function isSecureServiceUrl(value, label) {
 }
 
 export function validateFairPlayConfig(fairPlay) {
+  if (fairPlay && typeof fairPlay === 'object'
+    && ('mediaUserToken' in fairPlay || 'userMediaToken' in fairPlay)) {
+    throw new TypeError('Apple Music Media-User-Token is subscriber authentication, not a FairPlay license or content key.');
+  }
   if (!fairPlay || typeof fairPlay !== 'object') {
     throw new TypeError('FairPlay playback requires an authorized provider configuration.');
   }

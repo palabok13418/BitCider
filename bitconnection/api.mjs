@@ -594,6 +594,10 @@ export function createBitConnectionRouter({
       } catch { /* Untrusted artwork is omitted. */ }
     }
     const storefront = String(value.appleMusicStorefront || value.storefront || '').trim().toLowerCase();
+    const allowedAudioVariants = new Set(['dolby-atmos', 'hi-res-lossless', 'lossless', 'dolby-audio', 'lossy-stereo']);
+    const audioVariants = Array.isArray(value.audioVariants)
+      ? [...new Set(value.audioVariants.map(item => String(item || '').trim().toLowerCase()).filter(item => allowedAudioVariants.has(item)))].slice(0, 5)
+      : [];
     const urlCandidate = String(value.url || value.appleMusicUrl || '').trim().slice(0, 2048);
     let appleMusicUrl = '';
     if (urlCandidate) {
@@ -610,6 +614,7 @@ export function createBitConnectionRouter({
       artist,
       durationSeconds,
       ...(thumbnailUrl ? { thumbnailUrl } : {}),
+      ...(audioVariants.length ? { audioVariants } : {}),
       ...( /^[a-z]{2}$/.test(storefront) ? { appleMusicStorefront: storefront } : {}),
       ...(appleMusicUrl ? { appleMusicUrl } : {})
     };

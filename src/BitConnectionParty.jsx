@@ -79,6 +79,14 @@ function trackArtwork(track) {
   return '';
 }
 
+const APPLE_AUDIO_VARIANT_LABELS = {
+  'dolby-atmos': 'Dolby Atmos',
+  'hi-res-lossless': 'Hi-Res Lossless',
+  'lossless': 'Lossless',
+  'dolby-audio': 'Dolby Audio',
+  'lossy-stereo': 'Lossy Stereo'
+};
+
 function qualityLabel(track) {
   const value = String(track?.audioQuality || track?.quality || '').toLowerCase();
   if (value.includes('atmos') || value.includes('joc')) return { label: 'DOLBY ATMOS', src: 'https://mus-api.palabokmagtiis.workers.dev/icons/Dolby%20Atmos.svg' };
@@ -185,6 +193,7 @@ function PartyRoomExperience({
   const [appleCatalogResults, setAppleCatalogResults] = useState([]);
   const [appleCatalogBusy, setAppleCatalogBusy] = useState(false);
   const [appleCatalogError, setAppleCatalogError] = useState('');
+  const [appleCatalogFormatFilter, setAppleCatalogFormatFilter] = useState('all');
   const [bitMonoPrepared, setBitMonoPrepared] = useState({});
   const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
   const [appleMusicLyrics, setAppleMusicLyrics] = useState([]);
@@ -213,6 +222,9 @@ function PartyRoomExperience({
   const isPlaying = Boolean(playback.isPlaying);
   const art = trackArtwork(track);
   const quality = qualityLabel(track);
+  const filteredAppleCatalogResults = useMemo(() => appleCatalogFormatFilter === 'all'
+    ? appleCatalogResults
+    : appleCatalogResults.filter(item => item.audioVariants?.includes(appleCatalogFormatFilter)), [appleCatalogResults, appleCatalogFormatFilter]);
   const appleMusicSongId = String(track?.appleMusicSongId || '');
   const appleMusicStorefront = /^[a-z]{2}$/.test(String(track?.appleMusicStorefront || '')) ? String(track.appleMusicStorefront) : 'us';
   const roomName = room?.roomName || roomState?.room?.roomName || 'Listening Party';
@@ -855,7 +867,17 @@ function PartyRoomExperience({
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
-        <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />{track?.source === 'apple-music' ? 'APPLE MUSIC' : 'BITCHORD WEB AUDIO'}</>}</div>
+        {track?.source === 'apple-music' ? (
+          <div className="bc-party-quality bc-party-quality-apple" aria-label="Apple Music audio formats available for this song">
+            <span className="bc-party-quality-caption">AVAILABLE FORMATS</span>
+            {track.audioVariants?.length
+              ? track.audioVariants.map(variant => <span className="bc-party-format-chip" key={variant}>{APPLE_AUDIO_VARIANT_LABELS[variant] || variant}</span>)
+              : <span className="bc-party-quality-note">Apple did not return format availability for this track.</span>}
+            <span className="bc-party-quality-note">Apple selects the active format using its playback settings, device support and network conditions.</span>
+          </div>
+        ) : (
+          <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
+        )}
         <div className="bc-party-transport-controls">
           <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
           <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
@@ -1060,16 +1082,38 @@ function PartyRoomExperience({
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
               <button type="submit" disabled={appleCatalogBusy || !appleCatalogQuery.trim()}>{appleCatalogBusy ? 'Searching…' : 'Search Apple Music'}</button>
             </form>
+            {appleCatalogResults.length > 0 && (
+              <div className="bc-party-browser-format-filter">
+                <label htmlFor="bc-apple-format-filter">FILTER BY AVAILABLE FORMAT</label>
+                <select id="bc-apple-format-filter" value={appleCatalogFormatFilter} onChange={event => setAppleCatalogFormatFilter(event.target.value)}>
+                  <option value="all">All formats</option>
+                  <option value="dolby-atmos">Dolby Atmos</option>
+                  <option value="hi-res-lossless">Hi-Res Lossless</option>
+                  <option value="lossless">Lossless</option>
+                  <option value="dolby-audio">Dolby Audio</option>
+                </select>
+                <small>Filters by Apple's reported track availability, not the active stream format.</small>
+              </div>
+            )}
             {(appleCatalogResults.length > 0 || appleCatalogError) && (
               <section className="bc-party-browser-search-results">
-                <div className="bc-party-browser-search-title">APPLE MUSIC RESULTS {appleCatalogResults.length ? '· ' + appleCatalogResults.length : ''}</div>
+                <div className="bc-party-browser-search-title">APPLE MUSIC RESULTS {filteredAppleCatalogResults.length ? '· ' + filteredAppleCatalogResults.length + (filteredAppleCatalogResults.length !== appleCatalogResults.length ? ' / ' + appleCatalogResults.length : '') : ''}</div>
                 {appleCatalogError && <p>{appleCatalogError}</p>}
-                {appleCatalogResults.map(item => {
+                {appleCatalogResults.length > 0 && filteredAppleCatalogResults.length === 0 && <p>No Apple Music search results advertise this format.</p>}
+                {filteredAppleCatalogResults.map(item => {
                   const id = String(item.id || '');
                   return (
                     <article className="bc-party-browser-search-track" key={id}>
                       {item.artworkUrl ? <img src={item.artworkUrl.replace('{w}', '160').replace('{h}', '160')} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
-                      <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
+                      <div className="bc-party-browser-track-copy">
+                        <strong>{item.title}</strong>
+                        <small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small>
+                        <span className="bc-party-format-list">
+                          {item.audioVariants?.length
+                            ? item.audioVariants.map(variant => <span className="bc-party-format-chip" key={variant}>{APPLE_AUDIO_VARIANT_LABELS[variant] || variant}</span>)
+                            : <span className="bc-party-quality-note">Format availability not reported</span>}
+                        </span>
+                      </div>
                       <div className="bc-party-browser-search-actions">
                         <button type="button" onClick={() => void playRecommendedAppleMusicItem(item)} disabled={!isHost || queueBusy}>{queueBusy ? 'Starting…' : 'Play full song'}</button>
                       </div>

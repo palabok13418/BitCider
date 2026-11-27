@@ -1373,7 +1373,8 @@ function CreateRoomWindow() {
       artist: snapshot.track.artist,
       album: snapshot.track.album,
       artworkUrl: snapshot.track.artworkUrl,
-      durationSeconds: snapshot.durationSeconds
+      durationSeconds: snapshot.durationSeconds,
+      audioVariants: snapshot.track.audioVariants
     });
     const result = await hostSession.updatePlayback({
       source: 'apple-music',
@@ -1413,7 +1414,8 @@ function CreateRoomWindow() {
         title: track.title,
         artist: track.artist,
         album: track.album,
-        artworkUrl: track.artworkUrl
+        artworkUrl: track.artworkUrl,
+        audioVariants: track.audioVariants
       },
       durationSeconds: snapshot.durationSeconds || track.durationSeconds
     });
