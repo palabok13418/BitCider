@@ -86,7 +86,13 @@ async function acquireStateFileLock(file) {
   while (Date.now() < deadline) {
     try {
       const descriptor = fs.openSync(lockFile, 'wx', 0o600);
-      fs.writeFileSync(descriptor, JSON.stringify({ token: lockToken, pid: process.pid, createdAt: Date.now() }));
+      try {
+        fs.writeFileSync(descriptor, JSON.stringify({ token: lockToken, pid: process.pid, createdAt: Date.now() }));
+      } catch (writeError) {
+        try { fs.closeSync(descriptor); } catch {}
+        try { fs.unlinkSync(lockFile); } catch {}
+        throw writeError;
+      }
       return () => {
         try {
           fs.closeSync(descriptor);
