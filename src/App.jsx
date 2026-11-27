@@ -4,6 +4,7 @@ import BackgroundSwitcher from './BackgroundSwitcher.jsx';
 import { runCiderBrowserRelay } from './cider-bridge.js';
 import BitConnectionEntrance from './BitConnectionEntrance.jsx';
 import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
+import AccountDeletionSection from './AccountDeletionSection.jsx';
 import AdminConsole from './AdminConsole.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
@@ -741,11 +742,6 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
   const [newPassword, setNewPassword] = useState('');
   const [revealedAccountKey, setRevealedAccountKey] = useState('');
   const [revealedRecoveryCodes, setRevealedRecoveryCodes] = useState([]);
-  const [deleteStage, setDeleteStage] = useState('idle');
-  const [deleteCaught, setDeleteCaught] = useState(0);
-  const [deleteSpot, setDeleteSpot] = useState({ x: 160, y: 120 });
-  const [deleteProgress, setDeleteProgress] = useState(0);
-  const [deleteProgressLabel, setDeleteProgressLabel] = useState('Preparing account deletion');
   const [busyAction, setBusyAction] = useState('');
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('info');
@@ -882,190 +878,6 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
     }
   }
 
-  function randomDeletePosition() {
-    const panel = document.querySelector('.account-center-panel');
-    const grid = panel?.querySelector('.account-center-grid');
-    if (!panel || !grid) return { x: 160, y: 120, cardIndex: 0, side: 0 };
-
-    // Keep the target attached to one of the three security cards. It is
-    // positioned in the grid's own coordinate space, so scrolling the cards
-    // carries the target with them instead of moving the whole account panel.
-    const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3);
-    const candidates = cards.filter(card => {
-      const rect = card.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    });
-    if (!candidates.length) return { x: 160, y: 120, cardIndex: 0, side: 0 };
-
-    const chosenCard = candidates[Math.floor(Math.random() * candidates.length)];
-    const gridRect = grid.getBoundingClientRect();
-    const rect = chosenCard.getBoundingClientRect();
-    const cardLeft = rect.left - gridRect.left;
-    const cardTop = rect.top - gridRect.top;
-    const cardRight = cardLeft + rect.width;
-    const cardBottom = cardTop + rect.height;
-    const buttonWidth = window.innerWidth <= 480 ? 112 : 146;
-    const buttonHeight = window.innerWidth <= 480 ? 39 : 41;
-    const randomBetween = (min, max) => min <= max
-      ? min + Math.random() * (max - min)
-      : (min + max) / 2;
-    const side = Math.floor(Math.random() * 4);
-    let x;
-    let y;
-
-    // The target sits underneath the card (z-index 4 vs 5), with a visible
-    // strip extending beyond exactly one of its four edges.
-    if (side === 0) { // top edge
-      x = randomBetween(cardLeft + buttonWidth * 0.55, cardRight - buttonWidth * 0.55);
-      y = cardTop + buttonHeight * 0.2;
-    } else if (side === 1) { // right edge
-      x = cardRight - buttonWidth * 0.2;
-      y = randomBetween(cardTop + buttonHeight * 0.55, cardBottom - buttonHeight * 0.55);
-    } else if (side === 2) { // bottom edge
-      x = randomBetween(cardLeft + buttonWidth * 0.55, cardRight - buttonWidth * 0.55);
-      y = cardBottom - buttonHeight * 0.2;
-    } else { // left edge
-      x = cardLeft + buttonWidth * 0.2;
-      y = randomBetween(cardTop + buttonHeight * 0.55, cardBottom - buttonHeight * 0.55);
-    }
-
-    return {
-      x: Math.round(x),
-      y: Math.round(y),
-      cardIndex: cards.indexOf(chosenCard),
-      side
-    };
-  }
-  useEffect(() => {
-    if (deleteStage === 'intro') {
-      const reveal = window.setTimeout(() => setDeleteStage('hands'), 850);
-      return () => window.clearTimeout(reveal);
-    }
-    if (deleteStage === 'hands') {
-      const reveal = window.setTimeout(() => setDeleteStage('game'), 2000);
-      return () => window.clearTimeout(reveal);
-    }
-    return undefined;
-  }, [deleteStage]);
-
-  function startDeleteGame() {
-    setDeleteCaught(0);
-    setDeleteSpot(randomDeletePosition());
-    setDeleteStage('intro');
-    setMessage('');
-  }
-
-  function catchDeleteTarget(event) {
-    event.stopPropagation();
-    if (deleteStage !== 'game') return;
-    const nextCatch = deleteCaught + 1;
-    setDeleteCaught(nextCatch);
-    if (nextCatch >= 5) {
-      void executeDeletion();
-      return;
-    }
-    setDeleteSpot(randomDeletePosition());
-    setDeleteStage('hands');
-  }
-
-  async function clearThisOriginData() {
-    try { window.localStorage.clear(); } catch {}
-    try { window.sessionStorage.clear(); } catch {}
-    try {
-      if ('caches' in window) {
-        const cacheNames = await window.caches.keys();
-        await Promise.all(cacheNames.map(name => window.caches.delete(name)));
-      }
-    } catch {}
-    try {
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map(registration => registration.unregister()));
-      }
-    } catch {}
-  }
-
-  async function executeDeletion() {
-    setDeleteStage('crt-off');
-    document.documentElement.classList.add('bitcider-crt-off');
-    await new Promise(resolve => window.setTimeout(resolve, 1450));
-    document.documentElement.classList.remove('bitcider-crt-off');
-
-    setDeleteStage('deleting');
-    setDeleteProgress(4);
-    setDeleteProgressLabel('Opening the secure deletion process');
-
-    // Paint the progress screen before starting the request, even on very fast servers.
-    await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
-    const progressStartedAt = Date.now();
-    const minimumProgressVisibleMs = 1650;
-
-    try {
-      const response = await fetch('/api/account/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-BitCider-CSRF': csrfToken },
-        cache: 'no-store',
-        body: JSON.stringify({})
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(getErrorMessage(payload, 'Account deletion could not be started.'));
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('This browser could not read the live account deletion status.');
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let completed = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary >= 0) {
-          const block = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          const dataLine = block.split('\n').find(line => line.startsWith('data:'));
-          if (dataLine) {
-            const event = JSON.parse(dataLine.slice(5).trim());
-            if (typeof event.progress === 'number') setDeleteProgress(event.progress);
-            if (event.label) setDeleteProgressLabel(event.label);
-            if (event.type === 'error') throw new Error(event.label || 'Account deletion was interrupted.');
-            if (event.type === 'complete') completed = true;
-          }
-          boundary = buffer.indexOf('\n\n');
-        }
-        if (done) break;
-      }
-
-      if (!completed) throw new Error('The server closed the deletion process before confirming completion.');
-      setDeleteProgress(100);
-      setDeleteProgressLabel('Account deleted successfully');
-      const progressElapsed = Date.now() - progressStartedAt;
-      if (progressElapsed < minimumProgressVisibleMs) {
-        await new Promise(resolve => window.setTimeout(resolve, minimumProgressVisibleMs - progressElapsed));
-      }
-      await clearThisOriginData();
-      await onDeleted();
-
-      setDeleteStage('crt-on');
-      document.documentElement.classList.add('bitcider-crt-on');
-      await new Promise(resolve => window.setTimeout(resolve, 1550));
-      document.documentElement.classList.remove('bitcider-crt-on');
-      onClose();
-    } catch (error) {
-      document.documentElement.classList.remove('bitcider-crt-off', 'bitcider-crt-on');
-      setDeleteStage('crt-on');
-      document.documentElement.classList.add('bitcider-crt-on');
-      await new Promise(resolve => window.setTimeout(resolve, 1450));
-      document.documentElement.classList.remove('bitcider-crt-on');
-      setDeleteStage('idle');
-      notify(error.message || 'Account deletion could not be completed. Your account is still active.', 'warning');
-    }
-  }
-
-  if (deleteStage === 'crt-off' || deleteStage === 'crt-on') return null;
-
   if (!status.account?.authenticated) {
     return (
       <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
@@ -1086,25 +898,9 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
     );
   }
 
-  if (deleteStage === 'deleting') {
-    return (
-      <div className="account-delete-cinema is-black" role="status" aria-live="polite">
-        <div className="account-delete-progress">
-          <div className="account-delete-progress-track" role="progressbar" aria-label="Account deletion progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={deleteProgress}>
-            <i style={{ width: deleteProgress + '%' }} />
-          </div>
-          <div className="account-delete-progress-meta">
-            <span>{deleteProgressLabel} · BITCIDER / ACCOUNT PURGE</span>
-            <span>{Math.round(deleteProgress)}%</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
-    <div className={'account-center-overlay' + (deleteStage === 'game' || deleteStage === 'hands' ? ' is-delete-hunt' : '')} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && deleteStage !== 'game' && deleteStage !== 'hands') closeOverlay(); }}>
+    <div className="account-center-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeOverlay(); }}>
       <section className="account-center-panel" role="dialog" aria-modal="true" aria-labelledby="account-center-title">
         <header className="account-center-header">
           <UnifiedAccountCenterIdentity
@@ -1118,15 +914,6 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
 
         <div className="account-center-content">
           <div className="account-center-grid">
-            {deleteStage === 'game' && (
-              <button
-                className="account-danger-button account-delete-target"
-                type="button"
-                style={{ left: deleteSpot.x + 'px', top: deleteSpot.y + 'px' }}
-                onPointerDown={event => event.stopPropagation()}
-                onClick={catchDeleteTarget}
-              >Delete account</button>
-            )}
             <section className="account-center-card">
               <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
               {revealedAccountKey ? (
@@ -1198,20 +985,10 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
 
           {message && <div className={'account-center-message ' + (messageType === 'warning' ? 'is-warning' : '')} role="status">{message}</div>}
 
-          <div className="account-center-danger-zone">
-            <div><strong>Delete account</strong><p>Permanently remove your account and its saved Cider connection. This cannot be undone.</p></div>
-            {deleteStage !== 'game' && deleteStage !== 'hands' && <button type="button" className={'account-danger-button account-delete-start' + (deleteStage === 'intro' ? ' is-launching' : '')} onClick={startDeleteGame} data-game-message="Let's play a little game before you terminate the account.">Delete account</button>}
-          </div>
+          <AccountDeletionSection status={status} csrfToken={csrfToken} onDeleted={onDeleted} />
         </div>
       </section>
     </div>
-    {deleteStage === 'hands' && (
-      <div className="account-peekaboo-blink" aria-hidden="true">
-        <span className="account-peekaboo-lid eyelid-top" />
-        <span className="account-peekaboo-lid eyelid-bottom" />
-        <span className="account-peekaboo-closed-eyes">⌣　⌣</span>
-      </div>
-    )}
     </>
   );
 }
