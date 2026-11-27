@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './bitconnection-party.css';
+import { qrcodegen } from './qrcodegen';
 
 
 function Icon({ name, size = 18 }) {
@@ -24,6 +25,43 @@ function Icon({ name, size = 18 }) {
     more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>
   };
   return <svg {...common}>{paths[name] || <circle cx="12" cy="12" r="8" />}</svg>;
+}
+
+function PartyQrCode({ value }) {
+  const qr = useMemo(() => {
+    if (!value) return null;
+    try {
+      return qrcodegen.QrCode.encodeText(String(value), qrcodegen.QrCode.Ecc.MEDIUM);
+    } catch {
+      return null;
+    }
+  }, [value]);
+
+  const path = useMemo(() => {
+    if (!qr) return '';
+    const segments = [];
+    for (let y = 0; y < qr.size; y += 1) {
+      for (let x = 0; x < qr.size; x += 1) {
+        if (qr.getModule(x, y)) segments.push(`M${x} ${y}h1v1h-1z`);
+      }
+    }
+    return segments.join('');
+  }, [qr]);
+
+  if (!qr) return null;
+  const extent = qr.size + 8;
+  return (
+    <svg
+      className="bc-party-room-qr"
+      viewBox={`0 0 ${extent} ${extent}`}
+      role="img"
+      aria-label={`QR code containing room code ${value}`}
+      shapeRendering="crispEdges"
+    >
+      <rect width={extent} height={extent} fill="#fff" />
+      <path d={path} fill="#160a10" transform="translate(4 4)" />
+    </svg>
+  );
 }
 
 function avatarFor(person) {
@@ -438,14 +476,32 @@ function PartyRoomExperience({
       <section className="bc-party-content-panel" aria-label="Party content">
         <header className="bc-party-content-heading">
           <div>
-            <span className="bc-party-eyebrow">{roomCode ? 'ROOM ' + roomCode : 'LISTENING PARTY'}</span>
+            <span className="bc-party-eyebrow">{isHost ? 'HOSTING' : 'JOINED'} · LISTENING PARTY</span>
             <h1>{roomName}</h1>
           </div>
           <div className="bc-party-header-actions">
-          <div className="bc-party-member-count"><span/>{participants.length} members</div>
-          {roomCode && <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}><Icon name="copy" size={13}/>Copy code</button>}
-        </div>
+            <div className="bc-party-member-count"><span/>{participants.length} members</div>
+          </div>
         </header>
+
+        <section className="bc-party-room-share" aria-label="Room code and QR code">
+          <div className="bc-party-room-code-copy">
+            <span className="bc-party-room-code-label">ROOM CODE</span>
+            <div className="bc-party-room-code-row">
+              <strong className="bc-party-room-code-value">{roomCode || '--------'}</strong>
+              {roomCode && (
+                <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}>
+                  <Icon name="copy" size={14}/>Copy code
+                </button>
+              )}
+            </div>
+            <small>Enter this code in BitChord or scan the QR code to read it.</small>
+          </div>
+          <div className="bc-party-room-qr-wrap">
+            {roomCode ? <PartyQrCode value={roomCode}/> : <div className="bc-party-room-qr-placeholder" aria-hidden="true"/>}
+            <span>ROOM QR</span>
+          </div>
+        </section>
 
         <div className={'bc-party-tab-content is-' + activeTab}>
           {activeTab === 'lyrics' && (
