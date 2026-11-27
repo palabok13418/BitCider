@@ -120,7 +120,7 @@ function AddonTrackTest() {
   return (
     <section className="admin-addon-test">
       <div className="admin-addon-test-copy">
-        <span className="admin-eyebrow">LIVE BITC HORD ADD-ON CHECK</span>
+        <span className="admin-eyebrow">LIVE BITCHORD ADD-ON CHECK</span>
         <h3>Test a real track</h3>
         <p>Search the linked Cider catalogue, verify the exact recording, then ask the personal add-on for stream metadata. This does not download or play the audio.</p>
       </div>
@@ -624,11 +624,14 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology, pa
             {children.length ? children.map(child => {
               const childStatus = topologyStatuses[child.id] || { state: 'unverified', label: 'NOT PROBED' };
               return (
-                <button type="button" key={child.id} className={child.id === selectedNodeId ? 'is-selected' : ''} onClick={() => setSelectedNodeId(child.id)}>
-                  <i className={'state-' + childStatus.state} />
-                  <span>{child.title}</span>
-                  <small>{childStatus.label || topologyState(childStatus.state).label}</small>
-                </button>
+                <div className="admin-inspector-child-row" key={child.id}>
+                  <button type="button" className={child.id === selectedNodeId ? 'is-selected' : ''} onClick={() => setSelectedNodeId(child.id)}>
+                    <i className={'state-' + childStatus.state} />
+                    <span>{child.title}</span>
+                    <small>{childStatus.label || topologyState(childStatus.state).label}</small>
+                  </button>
+                  {child.type !== 'backend' && <button type="button" className="admin-inspector-child-test" onClick={() => onTestNode(child)} disabled={topologyBusy}>TEST</button>}
+                </div>
               );
             }) : node.parentId ? (
               <button type="button" onClick={() => setSelectedNodeId(node.parentId)}>
