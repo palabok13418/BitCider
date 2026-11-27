@@ -1220,11 +1220,27 @@ export function createBitConnectionRouter({
       const payload = await response.json().catch(() => ({}));
       const attributes = payload?.data?.[0]?.attributes || {};
       const localizations = attributes.ttmlLocalizations || null;
-      let ttml = typeof attributes.ttml === 'string' ? attributes.ttml : '';
-      if (!ttml && localizations && typeof localizations === 'object') {
-        const values = Array.isArray(localizations) ? localizations : Object.values(localizations);
-        ttml = values.find(value => typeof value === 'string' && value.trim().startsWith('<')) || '';
+      function findTtml(value, depth = 0) {
+        if (depth > 6 || value == null) return '';
+        if (typeof value === 'string') {
+          return /<(?:[A-Za-z0-9_-]+:)?tt(?:\s|>)/i.test(value) ? value : '';
+        }
+        if (Array.isArray(value)) {
+          for (const entry of value) {
+            const found = findTtml(entry, depth + 1);
+            if (found) return found;
+          }
+          return '';
+        }
+        if (typeof value === 'object') {
+          for (const entry of Object.values(value)) {
+            const found = findTtml(entry, depth + 1);
+            if (found) return found;
+          }
+        }
+        return '';
       }
+      const ttml = findTtml(attributes.ttml) || findTtml(localizations);
       return { ok: response.ok, status: response.status, ttml, localizations };
     }
 
@@ -1237,11 +1253,11 @@ export function createBitConnectionRouter({
           message: 'Apple Music rejected the saved connection. Reconnect your User Media Token.'
         });
       }
-      if (!result.ok || (!result.ttml && !result.localizations)) {
+      if (!result.ok || !result.ttml) {
         result = await fetchTtml('lyrics');
         source = 'lyrics';
       }
-      if (!result.ok || (!result.ttml && !result.localizations)) {
+      if (!result.ok || !result.ttml) {
         return res.status(result.status === 401 || result.status === 403 ? 401 : 404).json({
           error: 'APPLE_MUSIC_TTML_UNAVAILABLE',
           message: 'Apple Music did not provide TTML lyrics for this song.'
