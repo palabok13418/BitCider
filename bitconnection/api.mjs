@@ -651,6 +651,13 @@ export function createBitConnectionRouter({
     return res.json(bitConnectionHealthPayload(maximum));
   });
 
+  router.options('/party-service', (_req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Cache-Control', 'no-store');
+    return res.status(204).end();
+  });
+
   router.get('/party-service', (req, res) => {
     const forwardedProtocol = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
     const forwardedHost = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
