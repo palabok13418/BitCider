@@ -23,7 +23,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-26-listening-party-workspace-v2';
+export const BITCONNECTION_API_VERSION = '2026-11-26-bitmono-party-playback-v3';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -252,13 +252,14 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       passkeyListing: 'enabled',
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
-      playbackSync: 'youtube-music-through-bitchord-web',
-      sharedQueue: 'synchronized-with-room-permissions',
+      playbackSync: 'youtube-music-and-bitmono-over-host-webrtc',
+      sharedQueue: 'youtube-and-bitmono-track-sources-synchronized-with-room-permissions',
       queueLoopAndShuffle: 'enabled',
       partyChat: 'text-images-and-giphy-gifs-enabled',
       memberModeration: 'kick-ban-and-host-promotion-enabled',
       privateRoomVerification: 'proximity-or-host-one-time-code',
-      playbackSourceBridge: 'not-connected',
+      playbackSourceBridge: 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending',
+      bitMonoPlayback: 'host-audio-element-captured-and-published-over-webrtc',
       appleMusicRecommendations: 'encrypted-user-token-and-developer-token-required',
       appleMusicTtmlLyrics: 'subscriber-token-private-endpoint-experimental',
       appleMusicWebPlayerToken: 'optional-server-side-override',
