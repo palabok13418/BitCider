@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "test": "node --test admin-console.test.mjs admin/api.test.mjs admin/controller.test.mjs unified-account-center.test.mjs account-security.test.mjs security-hardening.test.mjs audio-quality.test.mjs account-flow.integration.test.mjs account-center.integration.test.mjs cider-bridge.integration.test.mjs link-preview.test.mjs bitconnection/api.test.mjs bitconnection/account-visibility.test.mjs cloudflare/worker.test.mjs netlify/functions/backend-proxy.test.mjs bitconnection/realtime-client.test.mjs bitconnection/ice.test.mjs src/bitconnection/audio-transport.test.mjs",
+    "test": "node --test admin-console.test.mjs admin/api.test.mjs admin/controller.test.mjs unified-account-center.test.mjs account-security.test.mjs security-hardening.test.mjs audio-quality.test.mjs account-flow.integration.test.mjs account-center.integration.test.mjs cider-bridge.integration.test.mjs link-preview.test.mjs bitconnection/api.test.mjs bitconnection/automix.test.mjs bitconnection/account-visibility.test.mjs cloudflare/worker.test.mjs netlify/functions/backend-proxy.test.mjs bitconnection/realtime-client.test.mjs bitconnection/ice.test.mjs src/bitconnection/audio-transport.test.mjs",
     "start": "node server.mjs",
     "dev:server": "node server.mjs",
     "deploy:cloudflare": "npm run build && npx wrangler deploy"
@@ -17,7 +17,8 @@
     "express": "^5.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "vgpu": "^0.3.1"
+    "vgpu": "^0.3.1",
+    "onnxruntime-node": "^1.31.1"
   },
   "devDependencies": {
     "vite": "^7.1.7",
