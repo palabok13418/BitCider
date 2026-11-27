@@ -886,6 +886,14 @@ test('AutoMix endpoints expose host-only analysis and a safe plan-only state', a
   assert.equal(missingPcm.status, 415);
   assert.equal((await missingPcm.json()).error, 'AUTOMIX_PCM_REQUIRED');
 
+  const invalidSampleRate = await client.request('/rooms/' + roomId + '/automix/analyze/missing-track', {
+    method: 'POST',
+    headers: { ...hostHeaders, 'Content-Type': 'application/vnd.bitconnection.pcm-f32le', 'X-Audio-Sample-Rate': '44100' },
+    body: new Uint8Array([0, 0, 0, 0])
+  });
+  assert.equal(invalidSampleRate.status, 400);
+  assert.equal((await invalidSampleRate.json()).error, 'AUTOMIX_SAMPLE_RATE_REQUIRED');
+
   const noPlan = await client.request('/rooms/' + roomId + '/automix/plan', {
     method: 'POST',
     headers: hostHeaders,
