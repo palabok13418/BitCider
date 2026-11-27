@@ -85,6 +85,12 @@ A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still runn
 
 Opening `/api/connect` directly in the address bar does not test linking. The address bar sends `GET`, while linking requires a `POST` containing the token returned by Cider's `POST /api/v2/auth/request` response.
 
+## Listening Party GIF search
+
+The Listening Party chat can search and send GIFs through GIPHY. Create a free GIPHY API beta key and configure it as the frontend build variable `VITE_GIPHY_API_KEY` on every deployment that builds the site: Deplexo, Netlify, and Cloudflare. This is a public browser key by design, so do not reuse a private server credential. The chat picker includes GIPHY attribution. Without the key, text and image chat still work, but GIF search displays a setup notice.
+
+Images sent directly in chat are restricted to PNG, JPEG, and WebP, with a 512 KB maximum. Voice input uses the browser's speech-recognition feature and inserts editable text into the composer; raw voice recordings are not uploaded.
+
 ## 2. Deploy the website on Netlify
 
 Create a Netlify site from the same repository and use:
@@ -97,6 +103,7 @@ Add these runtime environment variables in Netlify:
 
 - `BITCIDER_BACKEND_ORIGIN`: the Deplexo app HTTPS origin.
 - `BITCIDER_PROXY_SECRET`: the exact shared gateway secret configured on Deplexo.
+- `VITE_GIPHY_API_KEY`: optional public GIPHY beta key used by the Listening Party GIF picker.
 
 The Netlify Function forwards only `/api/*` and BitChord addon routes to Deplexo. The static website is served from `dist`.
 
@@ -110,7 +117,7 @@ Create a Worker connected to this repository. Use the checked-in `wrangler.jsonc
 - Static assets directory: `dist`
 - Worker-first paths: `/api/*`, addon `manifest.json`, `search`, and `stream` routes.
 
-Add `BITCIDER_BACKEND_ORIGIN` as a regular Worker variable (it is already declared in `wrangler.jsonc`). Add `BITCIDER_PROXY_SECRET` separately as a **Worker Secret**, never as a checked-in plaintext variable. With Wrangler, set it using:
+Add `BITCIDER_BACKEND_ORIGIN` as a regular Worker variable (it is already declared in `wrangler.jsonc`). Add `BITCIDER_PROXY_SECRET` separately as a **Worker Secret**, never as a checked-in plaintext variable. Add `VITE_GIPHY_API_KEY` as a frontend build variable before running `npm run build`. With Wrangler, set it using:
 
 ```sh
 npx wrangler secret put BITCIDER_PROXY_SECRET
