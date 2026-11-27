@@ -96,3 +96,20 @@ test('BitConnection renders the admin console in the component that owns its sta
   assert.ok(rootComponent.includes('<AdminConsole'));
   assert.ok(rootComponent.includes("window.addEventListener('bitcider-admin-open', openAdminConsole)"));
 });
+
+
+test('BitConnection account center fits standard desktop windows and adapts to narrow screens', async () => {
+  const source = await fs.readFile(path.join(ROOT, 'src', 'BitConnection.jsx'), 'utf8');
+  const css = await fs.readFile(path.join(ROOT, 'src', 'bitconnection.css'), 'utf8');
+  assert.ok(source.includes('className="bc-account-workspace"'));
+  assert.ok(source.includes('className="bc-account-grid"'));
+  assert.ok(source.includes('className="bc-account-security-panel"'));
+  assert.ok(source.includes('className="bc-account-passkey-add"'));
+  assert.ok(source.includes('width=860,height=720'), 'account popup should use a standard desktop-friendly size');
+  assert.ok(css.includes('.bc-account-workspace {'));
+  assert.ok(css.includes('width: min(900px, 100%)'));
+  assert.ok(css.includes('grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr)'));
+  assert.ok(css.includes('@media (max-width: 760px)'));
+  assert.ok(css.includes('@media (max-height: 720px) and (min-width: 761px)'));
+  assert.ok(css.includes('max-height: 248px'));
+});
