@@ -7,9 +7,6 @@ function cleanString(value, max = 500) {
 }
 
 export function musicKitQueueDescriptor(track = {}) {
-  const songId = cleanString(track.id || track.appleMusicSongId, 40);
-  if (songId && /^\\d{1,20}$/.test(songId)) return { song: songId };
-
   const candidate = cleanString(track.url || track.appleMusicUrl, 1000);
   if (candidate) {
     let url;
@@ -19,6 +16,9 @@ export function musicKitQueueDescriptor(track = {}) {
     }
     return { url: url.href };
   }
+
+  const songId = cleanString(track.id || track.appleMusicSongId, 40);
+  if (songId && /^\\d{1,20}$/.test(songId)) return { song: songId };
   throw new TypeError('This Apple Music item does not include a playable catalog song ID or URL.');
 }
 
@@ -39,6 +39,38 @@ export function normalizeAppleCatalogTrack(track = {}) {
         ? Math.max(0, Number(track.durationMillis) / 1000)
         : 0
   };
+}
+
+export async function searchAppleMusicSongs(music, term, limit = 25) {
+  const query = cleanString(term, 160);
+  if (!query) return [];
+  if (!music?.api?.search) throw new Error('Apple Music catalog search is not initialized.');
+  const pageSize = Math.max(1, Math.min(25, Math.floor(Number(limit) || 25)));
+  const response = await music.api.search(query, { types: 'songs', limit: pageSize, offset: 0 });
+  const rows = response?.songs?.data
+    || response?.data?.results?.songs?.data
+    || response?.results?.songs?.data
+    || response?.data?.songs
+    || [];
+  if (!Array.isArray(rows)) return [];
+  return rows.map(item => {
+    const attributes = item?.attributes || item || {};
+    const artwork = attributes.artwork?.url || '';
+    const url = attributes.url || item?.url || '';
+    try {
+      return normalizeAppleCatalogTrack({
+        id: item?.id || attributes.playParams?.id,
+        title: attributes.name || attributes.title,
+        artist: attributes.artistName || attributes.artist,
+        album: attributes.albumName || attributes.album,
+        artworkUrl: artwork,
+        url,
+        durationMillis: attributes.durationInMillis
+      });
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
 }
 
 export function musicKitPlaybackSnapshot(music) {
