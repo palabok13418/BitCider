@@ -260,6 +260,212 @@ async function runPersonalAddonChecks(stage = 'stream', query = 'Chicago Michael
   }
 }
 
+async function runBitMonoChecks(stage = 'search', query = 'Chicago Michael Jackson') {
+  const checks = {};
+  const checkedAt = new Date().toISOString();
+  const record = (id, state, label, detail, endpoint, durationMs = null, httpStatus = 200) => {
+    checks[id] = { state, label, detail, endpoint, durationMs, httpStatus, checkedAt };
+  };
+  let manifest;
+  let track = null;
+  let stream = null;
+  let provider = '';
+
+  try {
+    const started = performance.now();
+    manifest = await requestJson('/bitmono/manifest.json');
+    const resources = Array.isArray(manifest.resources) ? manifest.resources : [];
+    if (!String(manifest.id || '').trim() || !resources.includes('search') || !resources.includes('stream')) {
+      throw new Error('The BitMono manifest is missing its stable ID or search/stream resources.');
+    }
+    record(
+      'mono-manifest',
+      'operational',
+      'SEARCH + STREAM',
+      'The live BitMono manifest returned its stable addon ID and both required resources.',
+      '/bitmono/manifest.json',
+      Math.round(performance.now() - started)
+    );
+  } catch (error) {
+    record(
+      'mono-manifest',
+      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+      'MANIFEST FAILED',
+      error.message || 'The BitMono manifest could not be verified.',
+      '/bitmono/manifest.json',
+      null,
+      error.status || null
+    );
+    return { checks, error, manifest, track, stream };
+  }
+
+  if (stage === 'manifest') return { checks, manifest, track, stream };
+
+  try {
+    const started = performance.now();
+    const searchPath = '/bitmono/search?q=' + encodeURIComponent(query.trim()) + '&quality=auto';
+    const search = await requestJson(searchPath);
+    const tracks = Array.isArray(search.tracks) ? search.tracks : [];
+    track = tracks.find(item =>
+      String(item.title || '').trim().toLowerCase() === 'chicago' &&
+      String(item.artist || '').toLowerCase().includes('michael jackson')
+    ) || null;
+    if (!track) {
+      const error = new Error(tracks.length
+        ? 'BitMono returned results, but none matched the exact recording “Chicago” by Michael Jackson.'
+        : 'The live BitMono search returned no matching tracks.');
+      error.candidates = tracks.slice(0, 5).map(item =>
+        String(item.title || 'Untitled') + ' · ' + String(item.artist || 'Unknown artist')
+      );
+      record(
+        'mono-search',
+        'degraded',
+        'SAMPLE NOT FOUND',
+        error.message,
+        searchPath,
+        Math.round(performance.now() - started)
+      );
+      record('mono-primary', 'unverified', 'NOT VERIFIED', 'No sample track was returned, so the primary provider could not be identified.', searchPath);
+      record('mono-fallback', 'unverified', 'NOT VERIFIED', 'No sample track was returned, so fallback use could not be identified.', searchPath);
+      for (const id of ['mono-stream', 'mono-cache', 'mono-lossless', 'mono-hires-atmos']) {
+        if (stage === 'all' || (stage === 'stream' && ['mono-stream', 'mono-cache'].includes(id)) || (stage === 'quality' && ['mono-lossless', 'mono-hires-atmos'].includes(id))) {
+          record(id, 'idle', 'TRACK REQUIRED', 'A matching sample track is required before this stream/cache feature can be exercised.', 'Track-dependent', null, null);
+        }
+      }
+      return { checks, error, candidates: error.candidates, manifest, track, stream };
+    }
+    provider = String(track.id || '').startsWith('dzr_') ? 'deezer' : 'monochrome';
+    record(
+      'mono-search',
+      'operational',
+      'EXACT TRACK FOUND',
+      'The live BitMono catalogue search returned Chicago by Michael Jackson. Provider: ' + provider + '.',
+      searchPath,
+      Math.round(performance.now() - started)
+    );
+    record(
+      'mono-primary',
+      provider === 'monochrome' ? 'operational' : 'degraded',
+      provider === 'monochrome' ? 'PRIMARY ONLINE' : 'FALLBACK IN USE',
+      provider === 'monochrome'
+        ? 'The sample track was returned by the primary Monochrome provider.'
+        : 'The sample track is currently being supplied by Deezer because the primary provider did not return the selected result.',
+      searchPath
+    );
+    record(
+      'mono-fallback',
+      provider === 'deezer' ? 'operational' : 'idle',
+      provider === 'deezer' ? 'ACTIVE' : 'STANDBY',
+      provider === 'deezer'
+        ? 'The Deezer fallback is serving the sample track.'
+        : 'Monochrome succeeded, so the Deezer fallback was not needed for this test.',
+      searchPath
+    );
+  } catch (error) {
+    record(
+      'mono-search',
+      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+      'SEARCH FAILED',
+      error.message || 'The live BitMono search failed.',
+      '/bitmono/search',
+      null,
+      error.status || null
+    );
+    return { checks, error, manifest, track, stream };
+  }
+
+  if (stage === 'search') return { checks, manifest, track, stream, provider };
+
+  const shouldResolveStream = ['stream', 'quality', 'all'].includes(stage);
+  if (!shouldResolveStream) return { checks, manifest, track, stream, provider };
+
+  try {
+    const started = performance.now();
+    const quality = provider === 'deezer' ? 'high' : 'lossless';
+    const streamPath = '/bitmono/stream/' + encodeURIComponent(track.id) + '?quality=' + quality;
+    stream = await requestJson(streamPath);
+    if (typeof stream.url !== 'string' || !stream.url.trim()) {
+      throw new Error('BitMono did not return a cached media URL.');
+    }
+    const mediaUrl = new URL(stream.url);
+    if (mediaUrl.protocol !== 'https:') {
+      throw new Error('BitMono returned a non-HTTPS audio URL.');
+    }
+    const cacheValid = stream.cacheReady === true &&
+      stream.buffered === true &&
+      Number(stream.sizeBytes) > 0 &&
+      /^[a-f0-9]{64}$/i.test(String(stream.sha256 || ''));
+    if (!cacheValid) {
+      throw new Error('The stream metadata did not prove that the complete audio file was cached and hashed.');
+    }
+    record(
+      'mono-stream',
+      'operational',
+      'STREAM RESOLVED',
+      'BitMono returned an HTTPS media URL after complete-file resolution. Codec: ' + (stream.codec || stream.format || 'not supplied') + '.',
+      streamPath,
+      Math.round(performance.now() - started)
+    );
+    record(
+      'mono-cache',
+      'operational',
+      'COMPLETE FILE CACHED',
+      'The stream response confirms a complete buffered file, ' + Number(stream.sizeBytes).toLocaleString() + ' bytes, and a SHA-256 digest.',
+      streamPath,
+      Math.round(performance.now() - started)
+    );
+
+    if (stage === 'stream') return { checks, manifest, track, stream, provider, mediaHost: mediaUrl.host };
+
+    const isLossless = String(stream.codec || stream.format || '').toLowerCase() === 'flac' &&
+      /lossless/i.test(String(stream.quality || stream.audioQuality || ''));
+    record(
+      'mono-lossless',
+      isLossless ? 'operational' : 'degraded',
+      isLossless ? 'LOSSLESS VERIFIED' : 'LOSSLESS NOT DELIVERED',
+      isLossless
+        ? 'The sample stream reports FLAC and LOSSLESS metadata.'
+        : 'The sample stream did not return a verified FLAC lossless rendition. The actual codec is ' + (stream.codec || stream.format || 'unknown') + '.',
+      streamPath
+    );
+
+    const options = Array.isArray(manifest.settings)
+      ? manifest.settings.flatMap(setting => Array.isArray(setting.options) ? setting.options : [])
+      : [];
+    const hasPremiumChoices = options.some(option => /hi.?res|atmos/i.test(String(option.value || '') + ' ' + String(option.label || '')));
+    const immersive = String(stream.audioMode || '').toUpperCase() === 'DOLBY_ATMOS' ||
+      String(stream.codec || '').toLowerCase() === 'eac3-joc';
+    const hires = Number(stream.bitDepth) >= 24 || Number(stream.sampleRate) > 48000;
+    record(
+      'mono-hires-atmos',
+      immersive || hires ? 'operational' : hasPremiumChoices ? 'partial' : 'degraded',
+      immersive ? 'ATMOS VERIFIED' : hires ? 'HI-RES VERIFIED' : hasPremiumChoices ? 'OPTIONS ONLY' : 'NOT ADVERTISED',
+      immersive || hires
+        ? 'The live sample stream returned immersive or 24-bit/high-sample-rate metadata.'
+        : hasPremiumChoices
+          ? 'The manifest lists Hi-Res/Atmos choices, but this live sample resolved to ' + (stream.codec || stream.format || 'an unclassified codec') + ' ' + (stream.audioMode || 'stereo') + '. The option list is not proof of an immersive stream.'
+          : 'The manifest does not declare Hi-Res or Dolby Atmos choices.',
+      streamPath
+    );
+    return { checks, manifest, track, stream, provider, mediaHost: mediaUrl.host };
+  } catch (error) {
+    const targetIds = stage === 'stream' ? ['mono-stream', 'mono-cache']
+      : ['mono-stream', 'mono-cache', 'mono-lossless', 'mono-hires-atmos'];
+    for (const id of targetIds) {
+      record(
+        id,
+        error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
+        'STREAM TEST FAILED',
+        error.message || 'The BitMono stream/cache check failed.',
+        '/bitmono/stream/' + encodeURIComponent(track.id),
+        null,
+        error.status || null
+      );
+    }
+    return { checks, error, manifest, track, stream, provider };
+  }
+}
+
 function StatusPill({ state = 'checking', label }) {
   const normalized = state === 'online' || state === 'operational' ? 'online'
     : state === 'offline' || state === 'error' ? 'offline'
