@@ -1118,12 +1118,11 @@ export function createBitConnectionRouter({
   });
 
   router.post('/rooms/:roomId/close', identityCsrf, async (req, res) => {
-    const identity = identityForRequest(req, res);
-    if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED' });
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
       if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
-      if (room.hostIdentityId !== identity.identityId) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
+      const participant = participantForRoom(room, req, res);
+      if (!isRoomOwner(room, participant)) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
       room.status = 'closed';
       room.updatedAt = new Date().toISOString();
       room.participants = {};
