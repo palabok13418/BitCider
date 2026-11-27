@@ -733,6 +733,26 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   assert.equal(autoMix.status, 503);
   assert.equal((await autoMix.json()).error, 'AUTOMIX_NOT_CONFIGURED');
 
+  const queuedTrack = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({
+      action: 'add',
+      track: {
+        videoId: 'abcdefghijk',
+        title: 'Metadata Test',
+        artist: 'BitChord',
+        durationSeconds: 214,
+        thumbnailUrl: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+        audioQuality: 'Hi-Res Lossless'
+      }
+    })
+  });
+  const queuedTrackPayload = await queuedTrack.json();
+  assert.equal(queuedTrack.status, 200);
+  assert.equal(queuedTrackPayload.queue[0].audioQuality, 'Hi-Res Lossless');
+  assert.equal(queuedTrackPayload.queue[0].artwork, 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg');
+
   const hostState = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/state', { headers: hostHeaders });
   const hostStatePayload = await hostState.json();
   assert.equal(hostState.status, 200);
@@ -740,6 +760,8 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   assert.equal(hostStatePayload.queueSettings.shuffle, true);
   assert.equal(hostStatePayload.chat.length, 1);
   assert.equal(hostStatePayload.chat[0].text, 'This sounds incredible');
+  assert.equal(hostStatePayload.queue.length, 1);
+  assert.equal(hostStatePayload.queue[0].audioQuality, 'Hi-Res Lossless');
 
   const banAnonymous = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/members/' + guestPayload.participantId + '/moderate', {
     method: 'POST',
