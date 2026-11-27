@@ -23,6 +23,7 @@ In Deplexo's environment settings, configure:
 | `BITCIDER_DATA_DIR` | `/data/bitcider` |
 | `BITCIDER_ENCRYPTION_KEY` | A stable random 32-byte base64url secret, configured on Deplexo only |
 | `APPLE_MUSIC_DEVELOPER_TOKEN` | Apple Music API developer JWT, configured as a Deplexo-only secret |
+| `APPLE_MUSIC_WEB_PLAYER_TOKEN` | Optional web-player/MusicKit JWT override for the experimental TTML endpoint; Deplexo-only secret |
 | `BITCIDER_ADMIN_BOOTSTRAP_CODE` | One-time, high-entropy owner setup code; remove after the first passkey is enrolled |
 | `BITCONNECTION_GIPHY_API_KEY` | Free GIPHY beta API key used only by the Deplexo GIF search proxy; never expose it in frontend variables |
 
