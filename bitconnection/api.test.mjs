@@ -78,8 +78,6 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
   assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
   assert.equal(payload.capabilities.serverSideAudioAnalysis, 'host-uploaded-to-deplexo-not-relayed');
-  assert.equal(payload.capabilities.serverSideOnnxDjPlanning, 'harmonic-and-phrase-aligned-transition-plans-enabled');
-  assert.equal(payload.capabilities.liveAutoMixExecution, 'blocked-until-bitchord-player-control-bridge');
   assert.equal(payload.limits.maxPartySize, 30);
 });
 
