@@ -1516,7 +1516,7 @@ export default function BitConnection() {
   const [partySearchLoading, setPartySearchLoading] = useState(false);
   const [partyDirectoryError, setPartyDirectoryError] = useState('');
   const [partyServiceCopied, setPartyServiceCopied] = useState(false);
-  const partyServiceUrl = window.location.origin + '/api/bitconnection/party-service';
+  const partyServiceUrl = 'https://bitcider.de.deplexo.com/party';
 
   async function copyPartyServiceUrl() {
     try {
@@ -1776,9 +1776,9 @@ export default function BitConnection() {
       </section>
       <aside className="bitconnection-discovery" aria-label="Public listening parties">
         <section className="bc-party-service-card" aria-label="BitChord party service URL">
-          <div className="bc-party-service-kicker">BITCHORD PARTY SERVER</div>
-          <strong>Connect BitChord to BitConnection</strong>
-          <p>Use this service discovery URL in BitChord to find the party API and its room rules.</p>
+          <div className="bc-party-service-kicker">LISTENING PARTY SERVER</div>
+          <strong>BitConnection URL</strong>
+          <p>Paste this address into BitChord to connect.</p>
           <div className="bc-party-service-url">
             <code>{partyServiceUrl}</code>
             <button type="button" onClick={copyPartyServiceUrl} aria-label="Copy BitConnection party service URL">
@@ -1786,7 +1786,6 @@ export default function BitConnection() {
               {partyServiceCopied ? 'Copied' : 'Copy URL'}
             </button>
           </div>
-          <small>Room limits, private-room verification, host permissions, queue rules, and member moderation stay enforced by BitConnection.</small>
         </section>
         <div className="bc-discovery-heading">
           <div className="bitconnection-eyebrow"><span /> LIVE DISCOVERY</div>
