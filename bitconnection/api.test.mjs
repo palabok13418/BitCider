@@ -73,7 +73,7 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.partyChat, 'text-images-and-giphy-gifs-enabled');
   assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
   assert.equal(payload.capabilities.playbackSourceBridge, 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending');
-  assert.equal(payload.capabilities.appleMusicRecommendations, 'encrypted-user-token-and-developer-token-required');
+  assert.equal(payload.capabilities.appleMusicRecommendations, 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental');
   assert.equal(payload.capabilities.bitMonoPlayback, 'host-audio-element-captured-and-published-over-webrtc');
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
   assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
