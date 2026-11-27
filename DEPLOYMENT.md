@@ -173,13 +173,29 @@ The BitConnection host audio element now uses `src/bitconnection/stream-player.m
 
 The included player libraries are HLS.js (`hls.js`) and Shaka Player (`shaka-player`). They are playback engines, not FairPlay licensing servers. The FairPlay KSM sample is not installed as a production license server; a KSM requires the content provider's own authorized FPS credentials and license workflow.
 
-For Apple Music catalog playback, the existing personal addon continues to use the signed-in Cider browser bridge: it asks Cider to play the selected catalog song, reads the resulting Cider queue asset URL, and returns that authorized playback URL. This is separate from the subscriber Media-User-Token flow used for TTML lyrics and recommendation shelves.
+The personal BitCider addon still supports its existing signed-in Cider browser bridge. BitConnection now also has a separate direct Apple Music playback path described below; it does not route playback through Cider.
+
+## Direct Apple Music playback through MusicKit Web
+
+BitConnection's Browser can start full catalog songs directly through Apple's MusicKit Web v3 player. The host's MusicKit session handles Apple's subscriber authorization and protected playback; BitCider does not fetch a raw FairPlay media key or cache the protected stream.
+
+Set this optional Deplexo-only environment variable to enable direct browser playback:
+
+```dotenv
+APPLE_MUSICKIT_DEVELOPER_TOKEN=<signed Apple Music developer JWT>
+```
+
+This is a signed MusicKit developer JWT, not the user's Music User Token and not a private key. The authenticated BitConnection playback-config endpoint returns it with `Cache-Control: private, no-store`; it is never written into the BitConnection account store. MusicKit Web then calls `authorize()` so Apple can authorize the subscriber and manage the Music User Token for its own playback session. The JWT must be issued for the Apple MusicKit service and the deployed application origin.
+
+The Apple Music recommendation Browser exposes a **Play Apple Music** action for catalog song entries. It uses `setQueue({ song: catalogSongId })` and MusicKit's own player controls for play, pause, next, previous and seek. The same track metadata is synchronized to the listening-party room. To let guests hear the host's Apple Music output, the host must also start BitCider tab-audio sharing; audio remains in Apple's authorized playback session and is not relayed by Deplexo.
+
+The account-center Music User Token remains the credential for the private TTML and recommendation integrations below. MusicKit Web does not accept that manually stored token as a substitute for its developer-token configuration or Apple authorization flow.
 
 ## Apple Music account connection
 
 Users add their own Apple Music Music User Token (also referred to in the account UI as a User Media Token) in BitAccount Center. Deplexo stores that credential encrypted with the dedicated `BITCIDER_ENCRYPTION_KEY`; the plaintext token is never returned to the browser or written to logs.
 
-**Apple Music does not require a BitCider-owned developer token for subscriber-backed features.** Deplexo discovers the short-lived web-player Bearer JWT from the public JavaScript bundle served by `music.apple.com`, caches it until shortly before its JWT expiry, and pairs it with the account's encrypted `Media-User-Token`. TTML lyrics use Apple's private `amp-api` catalog lyrics routes; personalized recommendation shelves use the private `amp-api-edge` route `/v1/recommendations/{storefront}`. The subscriber's own `Media-User-Token` unlocks account-specific content. `APPLE_MUSIC_WEB_PLAYER_TOKEN` is only an optional override for the web-player Bearer and can normally remain blank. No Apple Developer Program key or `APPLE_MUSIC_DEVELOPER_TOKEN` environment variable is needed.
+**TTML lyrics and the experimental private recommendation shelves do not require a BitCider-owned developer token.** Deplexo discovers the short-lived web-player Bearer JWT from the public JavaScript bundle served by `music.apple.com`, caches it until shortly before its JWT expiry, and pairs it with the account's encrypted `Media-User-Token`. TTML lyrics use Apple's private `amp-api` catalog lyrics routes; personalized recommendation shelves use the private `amp-api-edge` route `/v1/recommendations/{storefront}`. `APPLE_MUSIC_WEB_PLAYER_TOKEN` is only an optional override for the web-player Bearer and can normally remain blank. Direct full-length browser playback is a separate official MusicKit Web feature and requires `APPLE_MUSICKIT_DEVELOPER_TOKEN` plus Apple's subscriber authorization flow.
 
 The account connection stores the user token encrypted with `BITCIDER_ENCRYPTION_KEY`. Subscriber access is checked when the first private Apple Music request is made. The account-scoped TTML endpoint first tries Apple's private `syllable-lyrics` response and falls back to `lyrics` for line-level timing. Both the lyrics and recommendation routes are undocumented web-player endpoints, not part of Apple's stable public API, so Apple may change or disable them without notice.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
