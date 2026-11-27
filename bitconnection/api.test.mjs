@@ -1111,3 +1111,54 @@ test('Apple Music connection fails closed when developer token or encrypted stor
   assert.equal(noEncryptionResponse.status, 503);
   assert.equal((await noEncryptionResponse.json()).error, 'SECURE_PROVIDER_STORAGE_NOT_CONFIGURED');
 });
+
+
+test('Apple Music TTML lyrics prefer syllable timing and use the saved subscriber token', async t => {
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url: String(url), headers: options.headers || {} });
+    if (String(url).includes('/v1/me/recommendations?limit=1')) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (String(url).includes('/syllable-lyrics?extend=ttmlLocalizations')) {
+      return new Response(JSON.stringify({
+        data: [{ attributes: { ttml: '<tt xmlns="http://www.w3.org/ns/ttml"><body><p begin="0s" end="2s">hello</p></body></tt>' } }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error('Unexpected Apple Music endpoint: ' + url);
+  };
+  const client = await harness(t, {
+    appleMusicDeveloperToken: 'test-apple-developer-jwt',
+    providerCredentialEncryptionConfigured: true,
+    fetchImpl
+  });
+  const csrf = await csrfContext(client);
+  await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Timed Lyrics', password: 'timed-lyrics-secret' })
+  });
+  const token = 'apple-music-lyrics-token-1234567890';
+  const connected = await client.request('/account/providers/apple-music', {
+    method: 'PUT',
+    headers: { ...csrf.headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ userMediaToken: token })
+  });
+  assert.equal(connected.status, 200);
+
+  const lyrics = await client.request('/account/providers/apple-music/lyrics?songId=123456789&storefront=us', {
+    headers: { Cookie: csrf.cookie }
+  });
+  const payload = await lyrics.json();
+  assert.equal(lyrics.status, 200);
+  assert.equal(payload.format, 'ttml');
+  assert.equal(payload.source, 'syllable-lyrics');
+  assert.match(payload.ttml, /<p begin="0s"/);
+  const lyricsRequest = requests.find(request => request.url.includes('/syllable-lyrics?'));
+  assert.ok(lyricsRequest);
+  assert.equal(lyricsRequest.headers['Media-User-Token'], token);
+  assert.equal(lyricsRequest.headers['Music-User-Token'], undefined);
+  assert.equal(lyricsRequest.headers.Authorization, 'Bearer test-apple-developer-jwt');
+  assert.equal(lyricsRequest.headers.Origin, 'https://music.apple.com');
+});
+
