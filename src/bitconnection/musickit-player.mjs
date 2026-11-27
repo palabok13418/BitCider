@@ -158,9 +158,7 @@ export async function getMusicKitPlayer({ developerToken, scriptUrl = DEFAULT_MU
   if (!configuredTokenFingerprint) {
     await MusicKit.configure({
       developerToken: token,
-      app: { name: 'BitCider', build: '2026.11.26' },
-      features: ['player-accurate-timing', 'api-data-store', 'api-session-storage'],
-      suppressErrorDialog: true
+      app: { name: 'BitCider', build: '2026.11.26' }
     });
     configuredTokenFingerprint = fingerprint;
   }
