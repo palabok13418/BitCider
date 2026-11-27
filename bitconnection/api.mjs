@@ -23,7 +23,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-26-apple-ttml-web-player-v4';
+export const BITCONNECTION_API_VERSION = '2026-11-26-apple-private-recommendations-v5';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -260,7 +260,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       privateRoomVerification: 'proximity-or-host-one-time-code',
       playbackSourceBridge: 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending',
       bitMonoPlayback: 'host-audio-element-captured-and-published-over-webrtc',
-      appleMusicRecommendations: 'encrypted-user-token-and-developer-token-required',
+      appleMusicRecommendations: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicTtmlLyrics: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicWebPlayerToken: 'optional-server-side-override',
       synchronizedLyrics: 'not-connected',
@@ -288,7 +288,6 @@ export function createBitConnectionRouter({
   iceConfig = {},
   giphyApiKey = process.env.BITCONNECTION_GIPHY_API_KEY || '',
   fetchImpl = globalThis.fetch,
-  appleMusicDeveloperToken = process.env.APPLE_MUSIC_DEVELOPER_TOKEN || '',
   appleMusicWebPlayerToken = process.env.APPLE_MUSIC_WEB_PLAYER_TOKEN || '',
   encryptProviderCredential = null,
   decryptProviderCredential = null,
@@ -894,11 +893,15 @@ export function createBitConnectionRouter({
 
 
 
-  function appleMusicAuthHeaders(userMediaToken) {
+  function appleMusicAuthHeaders(userMediaToken, webPlayerBearer) {
     return {
       Accept: 'application/json',
-      Authorization: 'Bearer ' + String(appleMusicDeveloperToken || '').trim(),
-      'Music-User-Token': userMediaToken
+      Authorization: 'Bearer ' + webPlayerBearer,
+      'Media-User-Token': userMediaToken,
+      'Music-User-Token': userMediaToken,
+      Origin: 'https://music.apple.com',
+      Referer: 'https://music.apple.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
     };
   }
 
@@ -999,22 +1002,37 @@ export function createBitConnectionRouter({
     if (typeof fetchImpl !== 'function') {
       throw appleMusicError(503, 'Apple Music requests are unavailable on this backend.');
     }
-    const response = await fetchImpl(url, {
+
+    const hasBearerOverride = Boolean(String(appleMusicWebPlayerToken || '').trim());
+    let webPlayerBearer = await resolveAppleMusicWebPlayerToken();
+    const send = bearer => fetchImpl(url, {
       method: 'GET',
-      headers: appleMusicAuthHeaders(userMediaToken),
+      headers: appleMusicAuthHeaders(userMediaToken, bearer),
       cache: 'no-store',
-      signal: AbortSignal.timeout(10000)
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000)
     });
+
+    let response = await send(webPlayerBearer);
+    if ((response.status === 401 || response.status === 403) && !hasBearerOverride) {
+      // Apple rotates the public web-player JWT. Refresh it once before
+      // treating the subscriber's stored Media-User-Token as invalid.
+      cachedAppleWebPlayerToken = '';
+      cachedAppleWebPlayerTokenExpiresAt = 0;
+      webPlayerBearer = await resolveAppleMusicWebPlayerToken();
+      response = await send(webPlayerBearer);
+    }
+
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const status = response.status === 401 || response.status === 403 ? 401
         : response.status === 429 ? 429
           : 502;
       throw appleMusicError(status, status === 401
-        ? 'Apple Music rejected the credentials. Check the User Media Token and backend developer-token configuration.'
+        ? 'Apple Music rejected the web-player or subscriber token. Refresh the User Media Token in BitAccount Center if the private request keeps failing.'
         : status === 429
           ? 'Apple Music is rate limiting requests. Try again shortly.'
-          : 'Apple Music could not complete this request.');
+          : 'Apple Music could not complete this private web-player request.');
     }
     return payload;
   }
@@ -1080,7 +1098,8 @@ export function createBitConnectionRouter({
       provider: 'Apple Music',
       connected: Boolean(connection?.userMediaTokenEncrypted),
       connectedAt: connection?.connectedAt || null,
-      recommendationsConfigured: Boolean(String(appleMusicDeveloperToken || '').trim()),
+      recommendationsConfigured: typeof fetchImpl === 'function',
+      recommendationsAuthentication: 'automatic-web-player-bearer-plus-user-media-token-private-endpoint-experimental',
       lyricsAuthentication: 'automatic-web-player-bearer-plus-user-media-token',
       webPlayerTokenOverrideConfigured: Boolean(String(appleMusicWebPlayerToken || '').trim()),
       secureStorageConfigured: Boolean(providerCredentialEncryptionConfigured())
@@ -1160,12 +1179,13 @@ export function createBitConnectionRouter({
     if (!identity) {
       return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to view your Apple Music recommendations.' });
     }
-    if (!String(appleMusicDeveloperToken || '').trim()) {
-      return res.status(503).json({ error: 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED', message: 'Apple Music recommendations are not configured on the backend yet.' });
+    if (typeof decryptProviderCredential !== 'function' || typeof fetchImpl !== 'function') {
+      return res.status(503).json({
+        error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE',
+        message: 'Secure Apple Music credentials cannot be read on this backend.'
+      });
     }
-    if (typeof decryptProviderCredential !== 'function') {
-      return res.status(503).json({ error: 'PROVIDER_CREDENTIAL_DECRYPTION_UNAVAILABLE', message: 'Secure Apple Music credentials cannot be read on this backend.' });
-    }
+
     const connection = storedAppleMusicConnection(store.read(), identity.identityId);
     if (!connection?.userMediaTokenEncrypted) {
       return res.status(409).json({ error: 'APPLE_MUSIC_NOT_CONNECTED', message: 'Connect Apple Music in BitAccount Center first.' });
@@ -1180,58 +1200,144 @@ export function createBitConnectionRouter({
       return res.status(409).json({ error: 'APPLE_MUSIC_RECONNECT_REQUIRED', message: 'Reconnect Apple Music in BitAccount Center.' });
     }
 
+    const requestedStorefront = String(req.query.storefront || 'us').trim().toLowerCase();
+    const storefront = /^[a-z]{2}$/.test(requestedStorefront) ? requestedStorefront : 'us';
+    const recommendationsUrl = 'https://amp-api-edge.music.apple.com/v1/recommendations/'
+      + encodeURIComponent(storefront) + '?limit=8';
+
+    function displayText(value, fallback = '') {
+      if (typeof value === 'string') return value.trim();
+      if (value && typeof value === 'object') {
+        for (const candidate of [value.stringForDisplay, value.standard, value.text, value.name, value.label]) {
+          if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+        }
+      }
+      return fallback;
+    }
+
+    function safeAppleMusicUrl(value) {
+      try {
+        const parsed = new URL(String(value || ''));
+        return parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)
+          ? parsed.toString()
+          : '';
+      } catch {
+        return '';
+      }
+    }
+
+    function includedResources(payload) {
+      const result = Array.isArray(payload?.included) ? [...payload.included] : [];
+      const resources = payload?.resources;
+      if (Array.isArray(resources)) result.push(...resources);
+      else if (resources && typeof resources === 'object') {
+        for (const collection of Object.values(resources)) {
+          if (Array.isArray(collection)) result.push(...collection);
+          else if (collection && typeof collection === 'object') result.push(...Object.values(collection));
+        }
+      }
+      return result;
+    }
+
+    function recommendationItems(row, payload) {
+      const relationships = row?.relationships || {};
+      const relationship = relationships.contents || relationships.tracks || relationships.items;
+      const references = Array.isArray(relationship?.data) ? relationship.data : [];
+      const included = includedResources(payload);
+      const embedded = Array.isArray(row?.contents) ? row.contents
+        : Array.isArray(row?.items) ? row.items
+          : Array.isArray(row?.attributes?.contents) ? row.attributes.contents
+            : Array.isArray(row?.attributes?.items) ? row.attributes.items
+              : [];
+      const linked = references.map(reference => {
+        if (reference?.attributes) return reference;
+        return included.find(resource => String(resource?.id || '') === String(reference?.id || '')
+          && (!reference?.type || !resource?.type || String(resource.type) === String(reference.type))) || reference;
+      });
+      const collected = linked.length ? linked : embedded;
+      return collected.map(normalizeAppleRecommendationItem).filter(Boolean).slice(0, 12);
+    }
+
     try {
-      const response = await requestAppleMusicJson(
-        'https://api.music.apple.com/v1/me/recommendations?limit=8',
-        userMediaToken
-      );
-      const rows = Array.isArray(response?.data) ? response.data.slice(0, 8) : [];
-      const recommendations = await Promise.all(rows.map(async row => {
+      const response = await requestAppleMusicJson(recommendationsUrl, userMediaToken);
+      const rows = Array.isArray(response?.data) ? response.data
+        : Array.isArray(response?.results?.recommendations?.data) ? response.results.recommendations.data
+          : Array.isArray(response?.results?.data) ? response.results.data
+            : Array.isArray(response?.recommendations?.data) ? response.recommendations.data
+              : [];
+      const included = includedResources(response);
+      const recommendations = await Promise.all(rows.slice(0, 8).map(async row => {
         const attributes = row?.attributes || {};
+        const title = displayText(attributes.title, displayText(attributes.name, 'For you'));
+        const description = displayText(attributes.reason, displayText(attributes.description, ''));
         const recommendation = {
           id: String(row?.id || '').slice(0, 160),
           type: String(row?.type || '').slice(0, 40),
-          title: String(attributes.title || attributes.name || 'For you').trim().slice(0, 180),
-          description: String(attributes.reason?.stringForDisplay || attributes.description?.standard || '').trim().slice(0, 260),
+          title: title.slice(0, 180),
+          description: description.slice(0, 260),
           artworkUrl: normalizeAppleArtwork(attributes.artwork?.url),
-          url: '',
-          items: []
+          url: safeAppleMusicUrl(attributes.url),
+          items: recommendationItems(row, response)
         };
-        try {
-          const contentsUrl = 'https://api.music.apple.com/v1/me/recommendations/'
-            + encodeURIComponent(recommendation.id) + '/contents?limit=12';
-          const contents = await requestAppleMusicJson(contentsUrl, userMediaToken);
-          recommendation.items = (Array.isArray(contents?.data) ? contents.data : [])
-            .map(normalizeAppleRecommendationItem)
-            .filter(Boolean)
-            .slice(0, 12);
-        } catch (error) {
-          // A recommendation may not expose a contents relationship. Keep its
-          // collection card visible and let the rest of the feed render.
-          if (error.status === 401) throw error;
-        }
-        try {
-          const url = String(attributes.url || '');
-          const parsed = new URL(url);
-          if (parsed.protocol === 'https:' && /(^|\.)music\.apple\.com$/i.test(parsed.hostname)) {
-            recommendation.url = parsed.toString();
+
+        const relationships = row?.relationships || {};
+        const contentRelationship = relationships.contents || relationships.tracks || relationships.items;
+        const relatedHref = safePrivateAppleMusicRelationshipUrl(contentRelationship?.href);
+        if (!recommendation.items.length && relatedHref) {
+          try {
+            const contents = await requestAppleMusicJson(relatedHref, userMediaToken);
+            const contentRows = Array.isArray(contents?.data) ? contents.data
+              : Array.isArray(contents?.results?.data) ? contents.results.data
+                : [];
+            recommendation.items = contentRows.map(normalizeAppleRecommendationItem)
+              .filter(Boolean).slice(0, 12);
+          } catch (error) {
+            // Some Apple shelves expose a title/artwork card without a contents
+            // relationship. Keep it visible; only auth failures fail the feed.
+            if (error.status === 401) throw error;
           }
-        } catch { /* Some recommendation containers do not have a public URL. */ }
+        }
         return recommendation;
       }));
+
       res.set('Cache-Control', 'private, no-store');
-      return res.json({ provider: 'Apple Music', recommendations, fetchedAt: new Date().toISOString() });
+      return res.json({
+        provider: 'Apple Music',
+        source: 'amp-api-edge',
+        storefront,
+        authentication: 'web-player-bearer-plus-user-media-token',
+        recommendations,
+        fetchedAt: new Date().toISOString()
+      });
     } catch (error) {
       return res.status(error.status || 502).json({
         error: error.status === 401 ? 'APPLE_MUSIC_RECONNECT_REQUIRED'
           : error.status === 429 ? 'APPLE_MUSIC_RATE_LIMITED'
-            : 'APPLE_MUSIC_RECOMMENDATIONS_FAILED',
+            : error.status === 503 ? 'APPLE_MUSIC_WEB_PLAYER_TOKEN_UNAVAILABLE'
+              : 'APPLE_MUSIC_RECOMMENDATIONS_FAILED',
         message: error.message || 'Apple Music recommendations are unavailable.'
       });
     }
   });
 
-
+  function safePrivateAppleMusicRelationshipUrl(value) {
+    try {
+      const parsed = new URL(String(value || ''), 'https://amp-api-edge.music.apple.com/');
+      const permittedHosts = new Set([
+        'amp-api-edge.music.apple.com',
+        'amp-api.music.apple.com',
+        'api.music.apple.com'
+      ]);
+      return parsed.protocol === 'https:'
+        && permittedHosts.has(parsed.hostname.toLowerCase())
+        && parsed.pathname.startsWith('/v1/')
+        && !parsed.username && !parsed.password
+        ? parsed.toString()
+        : '';
+    } catch {
+      return '';
+    }
+  }
 
   router.get('/account/providers/apple-music/lyrics', rateAppleMusic, async (req, res) => {
     const identity = identityForRequest(req, res);
