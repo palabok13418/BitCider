@@ -1352,16 +1352,100 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
           const payload = target.id.startsWith('site-') ? null : await response.json().catch(() => null);
           const durationMs = Math.round(performance.now() - startedAt);
           const gated = ['idle', 'advertised', 'unverified'].includes(previous.state);
+          let state = response.ok ? (gated ? previous.state : 'operational')
+            : response.status === 401 ? 'idle'
+              : response.status >= 500 || response.status === 404 ? 'offline' : 'degraded';
+          let label = response.ok ? (gated ? previous.label || 'SESSION / LIVE TEST REQUIRED' : 'OPERATIONAL') : 'HTTP ' + response.status;
+          let detail = response.ok
+            ? (gated ? (previous.detail || 'This feature is gated.') + ' Its backing endpoint responded successfully, but the feature itself still needs its required session or real resource.' : 'The feature endpoint responded successfully to a live test.')
+            : payload?.message || payload?.error || 'The feature endpoint returned HTTP ' + response.status + '.';
+
+          if (target.id === 'bc-cider-state') {
+            state = response.ok && payload?.connected === true ? 'operational' : response.ok ? 'idle' : state;
+            label = state === 'operational' ? 'CIDER LINKED' : state === 'idle' ? 'NOT LINKED' : label;
+            detail = state === 'operational' ? 'The active browser session has a saved Cider connection and personal add-on key.' : state === 'idle' ? 'The API is responding, but this browser session is not linked to Cider.' : detail;
+          } else if (target.id === 'bc-browser-relay') {
+            state = !response.ok ? state : payload?.connected !== true ? 'idle' : payload?.ciderRelay?.online === true ? 'operational' : 'degraded';
+            label = state === 'operational' ? 'RELAY ONLINE' : state === 'idle' ? 'CIDER REQUIRED' : state === 'degraded' ? 'RELAY OFFLINE' : label;
+            detail = state === 'operational' ? 'The open BitCider tab is reporting an active browser-local Cider relay.' : state === 'idle' ? 'Link Cider to register a browser-local relay.' : state === 'degraded' ? 'Cider is linked, but this browser relay is not currently polling and responding.' : detail;
+          } else if (target.id === 'bc-account-state') {
+            state = response.ok && payload?.account?.authenticated === true ? 'operational' : response.ok ? 'idle' : state;
+            label = state === 'operational' ? 'ACCOUNT SIGNED IN' : state === 'idle' ? 'SIGNED OUT' : label;
+            detail = state === 'operational' ? 'The current browser session has an authenticated BitCider account.' : state === 'idle' ? 'The anonymous browser session is active; no BitCider account is signed in.' : detail;
+          } else if (target.id === 'bc-passkeys') {
+            const count = Number(payload?.passkeyCount);
+            state = response.ok && payload?.account?.authenticated === true && Number.isFinite(count) ? 'operational' : response.ok ? 'idle' : state;
+            label = state === 'operational' ? count + ' REGISTERED' : state === 'idle' ? 'SIGN-IN REQUIRED' : label;
+            detail = state === 'operational' ? 'The account status response returned the account passkey inventory.' : state === 'idle' ? 'Passkey inventory is available only after signing into a BitCider account.' : detail;
+          } else if (target.id === 'bc-recovery') {
+            const count = Number(payload?.account?.recoveryCodeCount);
+            state = response.ok && payload?.account?.authenticated === true && Number.isFinite(count) && count > 0 ? 'operational' : response.ok && payload?.account?.authenticated !== true ? 'idle' : 'degraded';
+            label = state === 'operational' ? count + ' UNUSED' : state === 'idle' ? 'SIGN-IN REQUIRED' : 'NO UNUSED CODES';
+            detail = state === 'operational' ? 'The account status response reports unused recovery codes.' : state === 'idle' ? 'Sign in to inspect the recovery-code inventory.' : 'The signed-in account has no unused recovery codes.';
+          } else if (target.id === 'bc-encryption') {
+            state = response.ok && payload?.tokenEncryptionConfigured === true ? 'operational' : response.ok ? 'degraded' : state;
+            label = state === 'operational' ? 'DEDICATED KEY READY' : state === 'degraded' ? 'VOLUME KEY' : label;
+            detail = state === 'operational' ? 'The dedicated Deplexo token-encryption key is configured.' : state === 'degraded' ? 'The service is using its persistent-volume fallback key. Configure BITCIDER_ENCRYPTION_KEY on Deplexo.' : detail;
+          } else if (target.id === 'bc-auth-flow') {
+            state = response.ok && payload?.browserCiderBridgeSupported === true ? 'operational' : response.ok ? 'degraded' : state;
+            label = state === 'operational' ? 'SUPPORTED' : state === 'degraded' ? 'NOT ADVERTISED' : label;
+            detail = state === 'operational' ? 'The backend health contract advertises browser-local Cider authorization and relay support.' : state === 'degraded' ? 'The backend did not advertise browser-local Cider bridge support.' : detail;
+          } else if (target.id === 'mono-manifest') {
+            const resources = Array.isArray(payload?.resources) ? payload.resources : [];
+            state = response.ok && resources.includes('search') && resources.includes('stream') ? 'operational' : response.ok ? 'degraded' : state;
+            label = state === 'operational' ? 'SEARCH + STREAM' : state === 'degraded' ? 'MANIFEST INCOMPLETE' : label;
+            detail = state === 'operational' ? 'The BitMono manifest declares both search and stream resources.' : state === 'degraded' ? 'The BitMono manifest is missing search or stream support.' : detail;
+          } else if (target.id === 'mono-primary' || target.id === 'mono-fallback') {
+            const provider = payload?.provider;
+            if (response.ok && provider) {
+              const primary = provider === 'monochrome';
+              const fallback = provider === 'deezer';
+              state = target.id === 'mono-primary'
+                ? primary ? 'operational' : fallback ? 'degraded' : 'unverified'
+                : fallback ? 'operational' : primary ? 'idle' : 'unverified';
+              label = target.id === 'mono-primary'
+                ? primary ? 'PRIMARY ONLINE' : fallback ? 'FALLBACK IN USE' : 'NOT VERIFIED'
+                : fallback ? 'ACTIVE' : primary ? 'STANDBY' : 'NOT VERIFIED';
+              detail = target.id === 'mono-primary'
+                ? primary ? 'The live BitMono check was served by the primary Monochrome provider.' : fallback ? 'The live BitMono check is succeeding through Deezer because Monochrome did not supply the selected result.' : 'The response did not identify the active provider.'
+                : fallback ? 'The Deezer fallback is serving the live check.' : primary ? 'Monochrome succeeded, so Deezer fallback was not needed.' : 'The response did not identify the fallback state.';
+            }
+          } else if (target.id.startsWith('conn-') && response.ok && payload?.capabilities) {
+            const capabilities = payload.capabilities;
+            const capabilityKey = {
+              'conn-recovery': 'recoveryCodes',
+              'conn-create-room': 'roomCreation',
+              'conn-playback-sync': 'playbackSync',
+              'conn-shared-queue': 'sharedQueue',
+              'conn-signaling': 'realtimeRooms',
+              'conn-ice': 'iceConfiguration',
+              'conn-private-access': 'privateRoomVerification'
+            }[target.id];
+            if (capabilityKey) {
+              const value = capabilities[capabilityKey];
+              const enabled = target.id === 'conn-recovery' || target.id === 'conn-create-room'
+                ? value === 'enabled'
+                : target.id === 'conn-signaling' ? String(value || '').includes('signaling') : Boolean(value);
+              state = enabled ? 'advertised' : 'degraded';
+              label = enabled ? 'CAPABILITY DECLARED' : 'NOT AVAILABLE';
+              detail = enabled
+                ? 'The BitConnection health response advertises ' + capabilityKey + '. The actual action still requires its normal signed-in account or live room.'
+                : 'The BitConnection health response did not advertise ' + capabilityKey + '.';
+            }
+          } else if (target.id === 'conn-passkeys' && response.status === 401) {
+            state = 'operational';
+            label = 'AUTH GATED';
+            detail = 'The passkey-listing endpoint is present and correctly requires an authenticated BitConnection account.';
+          }
+
           results[target.id] = {
             ...previous,
-            state: response.ok ? (gated ? previous.state : 'operational') : response.status === 401 ? 'idle' : response.status >= 500 || response.status === 404 ? 'offline' : 'degraded',
-            label: response.ok ? (gated ? previous.label || 'SESSION / LIVE TEST REQUIRED' : 'OPERATIONAL') : 'HTTP ' + response.status,
+            state,
+            label,
             httpStatus: response.status,
             durationMs,
             checkedAt: new Date().toISOString(),
-            detail: response.ok
-              ? (gated ? (previous.detail || 'This feature is gated.') + ' Its backing endpoint responded successfully, but the feature itself still needs its required session or real resource.' : 'The feature endpoint responded successfully to a live test.')
-              : payload?.message || payload?.error || 'The feature endpoint returned HTTP ' + response.status + '.'
+            detail
           };
         } catch (testError) {
           results[target.id] = {
