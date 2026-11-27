@@ -98,22 +98,15 @@ async function acquireStateFileLock(file) {
       };
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      try {
-        const stat = fs.statSync(lockFile);
-        // Recover a lock left behind by a crashed worker. Normal state
-        // mutations are synchronous and should never hold this for two minutes.
-        if (Date.now() - stat.mtimeMs > 120000) {
-          fs.unlinkSync(lockFile);
-          continue;
-        }
-      } catch (statError) {
-        if (statError.code === 'ENOENT') continue;
-        throw statError;
-      }
+      // Fail closed when a lock is left behind. Automatically stealing a
+      // "stale" lock is unsafe: a paused worker could resume after another
+      // worker has taken over and write an older snapshot over the new state.
+      // An operator must confirm every backend worker is stopped before
+      // removing an abandoned .lock file from the persistent volume.
       await new Promise(resolve => setTimeout(resolve, 25));
     }
   }
-  throw new Error('Timed out waiting for the shared admin-state lock.');
+  throw new Error('Timed out waiting for the shared admin-state lock. If this lock is abandoned, stop all BitCider backend workers and remove admin.json.lock from the persistent data volume before restarting.');
 }
 
 function createStateStore(file) {
