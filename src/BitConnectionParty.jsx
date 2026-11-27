@@ -574,9 +574,11 @@ function PartyRoomExperience({
       if (!statusResponse.ok) throw new Error(status.message || 'Could not check the Apple Music connection.');
       setBrowserAppleConnected(Boolean(status.connected));
       if (!status.connected) {
-        setBrowserMessage(status.developerTokenConfigured
-          ? 'Connect Apple Music in BitAccount Center to load your personal recommendations.'
-          : 'Apple Music is not configured on the Deplexo backend yet.');
+        setBrowserMessage('Connect Apple Music in BitAccount Center to load subscriber-backed TTML lyrics and any available recommendations.');
+        return;
+      }
+      if (status.recommendationsConfigured === false) {
+        setBrowserMessage('Apple Music is connected for TTML lyrics. The optional personalized recommendation feed needs a separate Apple Developer token; Bit Mono search below is still available.');
         return;
       }
 
