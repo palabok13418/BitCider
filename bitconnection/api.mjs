@@ -599,7 +599,7 @@ export function createBitConnectionRouter({
     if (urlCandidate) {
       try {
         const parsed = new URL(urlCandidate);
-        if (parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)) appleMusicUrl = parsed.toString();
+        if (parsed.protocol === 'https:' && /(^|\.)music\.apple\.com$/i.test(parsed.hostname)) appleMusicUrl = parsed.toString();
       } catch { /* Untrusted catalog URL is omitted. */ }
     }
     return {
