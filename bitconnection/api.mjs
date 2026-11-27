@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createIceConfiguration } from './ice.mjs';
+import { createAutoMixService, buildAutoMixPlan } from './automix.mjs';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -258,7 +259,8 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       privateRoomVerification: 'proximity-or-host-one-time-code',
       playbackSourceBridge: 'not-connected',
       synchronizedLyrics: 'not-connected',
-      serverSideAutoMix: 'not-configured',
+      serverSideAutoMix: 'onnx-analysis-and-dj-planning-ready-player-bridge-required',
+      serverSideAudioAnalysis: 'host-uploaded-to-deplexo-not-relayed',
       audioRelay: 'never-server-side',
       iceConfiguration: 'participant-scoped-stun-and-short-lived-turn-credentials'
     },
@@ -281,11 +283,15 @@ export function createBitConnectionRouter({
   iceConfig = {},
   giphyApiKey = process.env.BITCONNECTION_GIPHY_API_KEY || '',
   fetchImpl = globalThis.fetch,
+  automixDirectory,
   exposeAdminStore = null
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
   const store = createDataStore(dataFile);
   const secret = makeSecretFile(dataFile);
+  const autoMix = createAutoMixService({
+    directory: automixDirectory || path.join(path.dirname(path.resolve(dataFile)), 'bitconnection-automix')
+  });
   async function createAdminBotAccount({ username, password }) {
     const normalizedUsername = cleanUsername(username);
     if (!normalizedUsername || !validatePassword(password)) return { status: 400, error: 'INVALID_BOT_CREDENTIALS' };
@@ -333,6 +339,7 @@ export function createBitConnectionRouter({
   const ratePublicDiscovery = createRateLimit(120, 60 * 1000);
   const rateGifSearch = createRateLimit(30, 60 * 1000);
   const rateSignal = createRateLimit(180, 60 * 1000);
+  const rateAutoMix = createRateLimit(4, 10 * 60 * 1000);
   const hostLocations = new Map();
   const pendingVerificationCodes = new Map();
   const PRESENCE_TTL_MS = 75 * 1000;
@@ -765,14 +772,15 @@ export function createBitConnectionRouter({
         partyChat: true,
         memberModeration: true,
         directWebRtcAudio: true,
+        serverSideOnnxAnalysis: true,
+        serverSideOnnxAutoMix: false,
         sourcePlaybackCommands: false,
-        synchronizedLyrics: false,
-        serverSideOnnxAutoMix: false
+        synchronizedLyrics: false
       },
       unavailableFeatures: {
         sourcePlaybackCommands: 'The BitChord player-control bridge is not connected yet.',
         synchronizedLyrics: 'The BitChord lyrics feed is not connected yet.',
-        serverSideOnnxAutoMix: 'The server-side ONNX AutoMix runtime is not installed yet.'
+        serverSideOnnxAutoMix: 'ONNX beat analysis and DJ transition planning are available. Live execution still needs the BitChord player-control bridge.'
       },
       endpoints: {
         health: { method: 'GET', path: '/health' },
@@ -784,6 +792,10 @@ export function createBitConnectionRouter({
         heartbeat: { method: 'POST', path: '/rooms/{roomId}/heartbeat' },
         playbackState: { method: 'POST', path: '/rooms/{roomId}/playback' },
         queue: { method: 'POST', path: '/rooms/{roomId}/queue' },
+        autoMixStatus: { method: 'GET', path: '/rooms/{roomId}/automix/status' },
+        autoMixPrepare: { method: 'POST', path: '/rooms/{roomId}/automix/prepare' },
+        autoMixAnalyze: { method: 'POST', path: '/rooms/{roomId}/automix/analyze/{queueItemId}', contentType: 'application/vnd.bitconnection.pcm-f32le' },
+        autoMixPlan: { method: 'POST', path: '/rooms/{roomId}/automix/plan' },
         chat: { method: 'POST', path: '/rooms/{roomId}/chat' },
         memberModeration: { method: 'POST', path: '/rooms/{roomId}/members/{participantId}/moderate' },
         gifSearch: { method: 'GET', path: '/gifs/search?q={query}' },
@@ -1566,6 +1578,109 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, participant: result.participant });
   });
 
+  router.get('/rooms/:roomId/automix/status', async (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const participant = participantForRoom(room, req, res);
+    if (!participant || participant.status === 'left') {
+      return res.status(401).json({ error: 'ROOM_MEMBERSHIP_REQUIRED' });
+    }
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      ...await autoMix.status(),
+      canAnalyze: isRoomOwner(room, participant),
+      analyzedQueueItems: (room.queue || []).filter(item => Boolean(item.autoMixAnalysis)).length,
+      livePlaybackEnabled: false
+    });
+  });
+
+  router.post('/rooms/:roomId/automix/prepare', identityCsrf, rateAutoMix, async (req, res) => {
+    const room = store.read().rooms[String(req.params.roomId || '')];
+    if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+    const participant = participantForRoom(room, req, res);
+    if (!isRoomOwner(room, participant)) {
+      return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED', message: 'Only the host can prepare the AutoMix models.' });
+    }
+    void autoMix.initialize().catch(() => {});
+    res.set('Cache-Control', 'no-store');
+    return res.status(202).json({
+      ok: true,
+      status: 'preparing',
+      model: 'Beat This! final0',
+      message: 'The server is downloading and verifying the ONNX beat-tracking models. Check the AutoMix status endpoint for readiness.'
+    });
+  });
+
+  router.post(
+    '/rooms/:roomId/automix/analyze/:queueItemId',
+    identityCsrf,
+    rateAutoMix,
+    express.raw({ type: 'application/vnd.bitconnection.pcm-f32le', limit: '64mb' }),
+    async (req, res) => {
+      const snapshot = store.read();
+      const room = snapshot.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+      const participant = participantForRoom(room, req, res);
+      if (!isRoomOwner(room, participant)) {
+        return res.status(403).json({ error: 'ROOM_OWNER_REQUIRED', message: 'Only the host can submit audio for server-side AutoMix analysis.' });
+      }
+      if (!Buffer.isBuffer(req.body)) {
+        return res.status(415).json({
+          error: 'AUTOMIX_PCM_REQUIRED',
+          message: 'Send mono Float32 PCM in little-endian byte order using application/vnd.bitconnection.pcm-f32le.'
+        });
+      }
+      if (String(req.get('x-audio-sample-rate') || '') !== '22050') {
+        return res.status(400).json({ error: 'AUTOMIX_SAMPLE_RATE_REQUIRED', message: 'AutoMix analysis requires 22050 Hz mono PCM.' });
+      }
+      const queueItemId = String(req.params.queueItemId || '');
+      const queued = (room.queue || []).find(item => item.queueItemId === queueItemId);
+      if (!queued) return res.status(404).json({ error: 'QUEUE_ITEM_NOT_FOUND' });
+      try {
+        const analysis = await autoMix.analyzePcm(req.body, { sampleRate: 22050 });
+        const saved = await store.update(data => {
+          const current = data.rooms[room.roomId];
+          if (!current || current.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+          const item = (current.queue || []).find(entry => entry.queueItemId === queueItemId);
+          if (!item) return { status: 404, error: 'QUEUE_ITEM_NOT_FOUND' };
+          item.autoMixAnalysis = analysis;
+          current.autoMixAnalysisUpdatedAt = new Date().toISOString();
+          current.updatedAt = current.autoMixAnalysisUpdatedAt;
+          return { ok: true };
+        });
+        if (saved.status) return res.status(saved.status).json({ error: saved.error });
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ok: true, queueItemId, analysis });
+      } catch (error) {
+        const status = error instanceof RangeError || error instanceof TypeError ? 400 : 503;
+        return res.status(status).json({
+          error: 'AUTOMIX_ANALYSIS_FAILED',
+          message: String(error?.message || 'The ONNX analysis could not be completed.').slice(0, 240)
+        });
+      }
+    }
+  );
+
+  router.post('/rooms/:roomId/automix/plan', identityCsrf, rateAutoMix, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!isRoomOwner(room, participant)) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
+      try {
+        const plan = buildAutoMixPlan(room.queue || [], { smartOrder: req.body?.smartOrder !== false });
+        room.autoMixPlan = plan;
+        room.updatedAt = new Date().toISOString();
+        return { ok: true, plan };
+      } catch (error) {
+        return { status: 409, error: error.code || 'AUTOMIX_PLAN_FAILED', message: error.message, write: false };
+      }
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, plan: result.plan });
+  });
+
   router.post('/rooms/:roomId/queue', identityCsrf, async (req, res) => {
     const result = await store.update(data => {
       const room = data.rooms[String(req.params.roomId || '')];
@@ -1584,7 +1699,7 @@ export function createBitConnectionRouter({
           return { status: 400, error: 'INVALID_QUEUE_SETTINGS', message: 'Loop and shuffle must be boolean values.' };
         }
         if (settings.autoMix === true) {
-          return { status: 503, error: 'AUTOMIX_NOT_CONFIGURED', message: 'Server-side AutoMix is not configured on this deployment yet.' };
+          return { status: 503, error: 'AUTOMIX_PLAYER_BRIDGE_REQUIRED', message: 'The Deplexo ONNX analyzer and DJ planner are available, but the BitChord player-control bridge is not connected yet. AutoMix cannot control transitions until that bridge is implemented.' };
         }
         room.queueSettings = { loop: settings.loop, shuffle: settings.shuffle, autoMix: false };
       } else if (action === 'add') {
