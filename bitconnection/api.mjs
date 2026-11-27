@@ -261,7 +261,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       playbackSourceBridge: 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending',
       bitMonoPlayback: 'host-audio-element-captured-and-published-over-webrtc',
       appleMusicRecommendations: 'encrypted-user-token-and-developer-token-required',
-      appleMusicTtmlLyrics: 'subscriber-token-private-endpoint-experimental',
+      appleMusicTtmlLyrics: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicWebPlayerToken: 'optional-server-side-override',
       synchronizedLyrics: 'not-connected',
       serverSideAutoMix: 'onnx-analysis-and-dj-planning-ready-player-bridge-required',
@@ -909,6 +909,86 @@ export function createBitConnectionRouter({
       && !/[\u0000-\u0020\u007f]/u.test(value);
   }
 
+  let cachedAppleWebPlayerToken = '';
+  let cachedAppleWebPlayerTokenExpiresAt = 0;
+  let appleWebPlayerTokenDiscoveryPromise = null;
+
+  function appleJwtExpiry(token) {
+    try {
+      const payload = String(token).split('.')[1];
+      if (!payload) return 0;
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+      return Number(claims.exp) || 0;
+    } catch { return 0; }
+  }
+
+  function appleWebPlayerBundleUrls(html) {
+    const urls = [];
+    const expression = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>/gi;
+    for (const match of String(html || '').matchAll(expression)) {
+      try {
+        const url = new URL(match[1], 'https://music.apple.com/');
+        if (url.protocol !== 'https:') continue;
+        if (!['music.apple.com', 'js-cdn.music.apple.com'].includes(url.hostname.toLowerCase())) continue;
+        if (!/index|music|main/i.test(url.pathname)) continue;
+        if (!urls.includes(url.toString())) urls.push(url.toString());
+      } catch { /* Ignore invalid script sources. */ }
+    }
+    return urls.slice(0, 8);
+  }
+
+  function extractUsableAppleWebPlayerToken(bundleText) {
+    const expression = /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g;
+    const now = Math.floor(Date.now() / 1000);
+    for (const match of String(bundleText || '').matchAll(expression)) {
+      const token = match[0];
+      const expiresAt = appleJwtExpiry(token);
+      if (expiresAt > now + 120) return { token, expiresAt };
+    }
+    return null;
+  }
+
+  async function resolveAppleMusicWebPlayerToken() {
+    const configured = String(appleMusicWebPlayerToken || '').trim().replace(/^Bearer\s+/i, '');
+    if (configured) return configured;
+    const now = Math.floor(Date.now() / 1000);
+    if (cachedAppleWebPlayerToken && cachedAppleWebPlayerTokenExpiresAt > now + 120) return cachedAppleWebPlayerToken;
+    if (appleWebPlayerTokenDiscoveryPromise) return appleWebPlayerTokenDiscoveryPromise;
+    appleWebPlayerTokenDiscoveryPromise = (async () => {
+      if (typeof fetchImpl !== 'function') throw appleMusicError(503, 'Apple Music web-player token discovery is unavailable.');
+      const headers = {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+      };
+      const pageResponse = await fetchImpl('https://music.apple.com/us/browse', {
+        method: 'GET', headers, cache: 'no-store', redirect: 'follow',
+        signal: AbortSignal.timeout(12000)
+      });
+      if (!pageResponse.ok) throw appleMusicError(503, 'Apple Music web-player token could not be discovered from music.apple.com.');
+      const html = await pageResponse.text();
+      for (const bundleUrl of appleWebPlayerBundleUrls(html)) {
+        try {
+          const bundleResponse = await fetchImpl(bundleUrl, {
+            method: 'GET',
+            headers: { ...headers, Accept: 'application/javascript,text/javascript,*/*' },
+            cache: 'no-store', redirect: 'follow',
+            signal: AbortSignal.timeout(15000)
+          });
+          if (!bundleResponse.ok) continue;
+          const candidate = extractUsableAppleWebPlayerToken(await bundleResponse.text());
+          if (candidate) {
+            cachedAppleWebPlayerToken = candidate.token;
+            cachedAppleWebPlayerTokenExpiresAt = candidate.expiresAt;
+            return candidate.token;
+          }
+        } catch { /* Try the next Apple Music bundle candidate. */ }
+      }
+      throw appleMusicError(503, 'Apple Music changed its web-player bundle; an automatic Bearer token could not be extracted.');
+    })();
+    try { return await appleWebPlayerTokenDiscoveryPromise; }
+    finally { appleWebPlayerTokenDiscoveryPromise = null; }
+  }
+
   function appleMusicError(status, message) {
     const error = new Error(message);
     error.status = status;
@@ -1000,8 +1080,9 @@ export function createBitConnectionRouter({
       provider: 'Apple Music',
       connected: Boolean(connection?.userMediaTokenEncrypted),
       connectedAt: connection?.connectedAt || null,
-      developerTokenConfigured: Boolean(String(appleMusicDeveloperToken || '').trim()),
-      webPlayerTokenConfigured: Boolean(String(appleMusicWebPlayerToken || appleMusicDeveloperToken || '').trim()),
+      recommendationsConfigured: Boolean(String(appleMusicDeveloperToken || '').trim()),
+      lyricsAuthentication: 'automatic-web-player-bearer-plus-user-media-token',
+      webPlayerTokenOverrideConfigured: Boolean(String(appleMusicWebPlayerToken || '').trim()),
       secureStorageConfigured: Boolean(providerCredentialEncryptionConfigured())
     });
   });
@@ -1020,33 +1101,12 @@ export function createBitConnectionRouter({
         message: 'Enter a valid Apple Music User Media Token without spaces or line breaks.'
       });
     }
-    if (!String(appleMusicDeveloperToken || '').trim()) {
-      return res.status(503).json({
-        error: 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED',
-        message: 'Apple Music recommendations are not configured on the backend yet.'
-      });
-    }
     if (typeof encryptProviderCredential !== 'function'
       || typeof decryptProviderCredential !== 'function'
       || !providerCredentialEncryptionConfigured()) {
       return res.status(503).json({
         error: 'SECURE_PROVIDER_STORAGE_NOT_CONFIGURED',
         message: 'Secure provider storage is unavailable until the Deplexo encryption key is configured.'
-      });
-    }
-
-    let validation;
-    try {
-      validation = await requestAppleMusicJson(
-        'https://api.music.apple.com/v1/me/recommendations?limit=1',
-        userMediaToken
-      );
-    } catch (error) {
-      return res.status(error.status || 502).json({
-        error: error.status === 401 ? 'APPLE_MUSIC_AUTH_REJECTED'
-          : error.status === 429 ? 'APPLE_MUSIC_RATE_LIMITED'
-            : 'APPLE_MUSIC_VALIDATION_FAILED',
-        message: error.message || 'Apple Music could not validate this connection.'
       });
     }
 
@@ -1063,7 +1123,7 @@ export function createBitConnectionRouter({
       record.appleMusic = {
         userMediaTokenEncrypted: encrypted,
         connectedAt: new Date().toISOString(),
-        validatedAt: new Date().toISOString()
+        tokenValidation: 'deferred-until-first-ttml-request'
       };
       data.providerConnections[identity.identityId] = record;
       return { ok: true };
@@ -1072,7 +1132,8 @@ export function createBitConnectionRouter({
     return res.json({
       ok: true,
       connected: true,
-      validated: Array.isArray(validation?.data),
+      validated: false,
+      validationDeferred: true,
       connectedAt: new Date().toISOString()
     });
   });
@@ -1177,9 +1238,6 @@ export function createBitConnectionRouter({
     if (!identity) {
       return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to fetch Apple Music lyrics.' });
     }
-    if (!String(appleMusicDeveloperToken || '').trim()) {
-      return res.status(503).json({ error: 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED', message: 'Apple Music lyrics are not configured on the backend yet.' });
-    }
     if (typeof decryptProviderCredential !== 'function' || typeof fetchImpl !== 'function') {
       return res.status(503).json({ error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE', message: 'Secure Apple Music credentials cannot be read on this backend.' });
     }
@@ -1201,6 +1259,15 @@ export function createBitConnectionRouter({
     if (!validAppleMusicUserToken(userMediaToken)) {
       return res.status(409).json({ error: 'APPLE_MUSIC_RECONNECT_REQUIRED', message: 'Reconnect Apple Music in BitAccount Center.' });
     }
+    let webPlayerBearer;
+    try {
+      webPlayerBearer = await resolveAppleMusicWebPlayerToken();
+    } catch (error) {
+      return res.status(503).json({
+        error: 'APPLE_MUSIC_WEB_PLAYER_TOKEN_UNAVAILABLE',
+        message: error.message || 'Apple Music web-player authorization could not be refreshed.'
+      });
+    }
 
     async function fetchTtml(endpoint) {
       const url = 'https://amp-api.music.apple.com/v1/catalog/'
@@ -1210,9 +1277,12 @@ export function createBitConnectionRouter({
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          Authorization: 'Bearer ' + String(appleMusicWebPlayerToken || appleMusicDeveloperToken || '').trim(),
+          Authorization: 'Bearer ' + webPlayerBearer,
           Origin: 'https://music.apple.com',
-          'Media-User-Token': userMediaToken
+          Referer: 'https://music.apple.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+          'Media-User-Token': userMediaToken,
+          Cookie: 'media-user-token=' + userMediaToken
         },
         cache: 'no-store',
         signal: AbortSignal.timeout(10000)
