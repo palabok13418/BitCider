@@ -20,6 +20,7 @@ function Icon({ name, size = 18 }) {
     mic: <><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" /></>,
     gif: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M8 9h3v3H8zM16 9h-2v6h2M14 12h2" /></>,
     close: <><path d="m6 6 12 12M18 6 6 18" /></>,
+    browser: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></>,
     copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
     crown: <><path d="m2 8 5 4 5-8 5 8 5-4-2 12H4z" /><path d="M4 20h16" /></>,
     grip: <><path d="M9 5v14M15 5v14" /></>,
@@ -116,6 +117,14 @@ function PartyRoomExperience({
   const [gifResults, setGifResults] = useState([]);
   const [gifLoading, setGifLoading] = useState(false);
   const [gifError, setGifError] = useState('');
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserError, setBrowserError] = useState('');
+  const [browserMessage, setBrowserMessage] = useState('');
+  const [browserRecommendations, setBrowserRecommendations] = useState([]);
+  const [browserAppleConnected, setBrowserAppleConnected] = useState(false);
+  const [bitMonoSearches, setBitMonoSearches] = useState({});
+  const [bitMonoLoading, setBitMonoLoading] = useState({});
   const [queueBusy, setQueueBusy] = useState(false);
   const [memberBusy, setMemberBusy] = useState('');
   const [playbackMessage, setPlaybackMessage] = useState('');
@@ -413,6 +422,92 @@ function PartyRoomExperience({
     void moveQueueItem(sourceId, to);
   }
 
+
+
+  async function loadAppleMusicBrowser() {
+    setBrowserLoading(true);
+    setBrowserError('');
+    setBrowserMessage('');
+    setBrowserRecommendations([]);
+    try {
+      const accountResponse = await fetch('/api/bitconnection/account', {
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      const account = await accountResponse.json().catch(() => ({}));
+      if (!accountResponse.ok) throw new Error(account.message || 'Could not check your BitAccount session.');
+
+      let identityHeaders = {};
+      let identityAccount = account;
+      if (account.bitCiderAccountAvailable) {
+        const linkedHeaders = { 'X-BitConnection-Identity': 'bitcider' };
+        const linkedResponse = await fetch('/api/bitconnection/account', {
+          headers: linkedHeaders, credentials: 'same-origin', cache: 'no-store'
+        });
+        const linkedAccount = await linkedResponse.json().catch(() => ({}));
+        if (linkedResponse.ok && linkedAccount.authenticated) {
+          identityHeaders = linkedHeaders;
+          identityAccount = linkedAccount;
+        }
+      }
+      if (!identityAccount.authenticated) {
+        setBrowserMessage('Sign in to BitAccount Center to see your personal Apple Music recommendations.');
+        return;
+      }
+
+      const statusResponse = await fetch('/api/bitconnection/account/providers/apple-music', {
+        headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
+      });
+      const status = await statusResponse.json().catch(() => ({}));
+      if (!statusResponse.ok) throw new Error(status.message || 'Could not check the Apple Music connection.');
+      setBrowserAppleConnected(Boolean(status.connected));
+      if (!status.connected) {
+        setBrowserMessage(status.developerTokenConfigured
+          ? 'Connect Apple Music in BitAccount Center to load your personal recommendations.'
+          : 'Apple Music is not configured on the Deplexo backend yet.');
+        return;
+      }
+
+      const response = await fetch('/api/bitconnection/account/providers/apple-music/recommendations', {
+        headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Apple Music recommendations could not be loaded.');
+      setBrowserRecommendations(Array.isArray(payload.recommendations) ? payload.recommendations : []);
+      setBrowserAppleConnected(true);
+      if (!payload.recommendations?.length) setBrowserMessage('Apple Music did not return any recommendations for this account yet.');
+    } catch (error) {
+      setBrowserError(error.message || 'Could not load Apple Music recommendations.');
+    } finally {
+      setBrowserLoading(false);
+    }
+  }
+
+  function openBrowser() {
+    setBrowserOpen(true);
+    void loadAppleMusicBrowser();
+  }
+
+  async function searchRecommendationInBitMono(item) {
+    const key = String(item?.id || item?.title || '').slice(0, 180);
+    if (!key) return;
+    setBitMonoLoading(previous => ({ ...previous, [key]: true }));
+    setBitMonoSearches(previous => ({ ...previous, [key]: null }));
+    try {
+      const query = [item.title, item.artist].filter(Boolean).join(' ');
+      const response = await fetch('/bitmono/search?' + new URLSearchParams({ q: query }), {
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
+      const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
+      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks, error: '' } }));
+    } catch (error) {
+      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || 'Bit Mono search failed.' } }));
+    } finally {
+      setBitMonoLoading(previous => ({ ...previous, [key]: false }));
+    }
+  }
+
   const lyrics = Array.isArray(roomState?.lyrics?.lines) ? roomState.lyrics.lines : [];
   const currentLyricIndex = Number.isInteger(roomState?.lyrics?.currentIndex) ? roomState.lyrics.currentIndex : -1;
 
@@ -632,6 +727,77 @@ function PartyRoomExperience({
           ))}
         </nav>
       </section>
+
+      <button className="bc-party-browser-button" type="button" onClick={openBrowser} aria-haspopup="dialog" aria-expanded={browserOpen}>
+        <Icon name="browser" size={18}/><span>Browser</span>
+      </button>
+      {browserOpen && createPortal(
+        <div className="bc-party-browser-overlay" role="dialog" aria-modal="true" aria-label="Apple Music Browser" onMouseDown={event => { if (event.target === event.currentTarget) setBrowserOpen(false); }}>
+          <section className="bc-party-browser-panel">
+            <header className="bc-party-browser-heading">
+              <div>
+                <span>APPLE MUSIC · PERSONALIZED FOR YOU</span>
+                <h2>Browser</h2>
+                <p>Your Apple Music recommendations, with Bit Mono catalogue matches.</p>
+              </div>
+              <button type="button" onClick={() => setBrowserOpen(false)} aria-label="Close Browser"><Icon name="close" size={20}/></button>
+            </header>
+            <div className="bc-party-browser-toolbar">
+              <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
+              <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
+            </div>
+            {browserLoading && <div className="bc-party-browser-state"><span className="bc-party-browser-spinner"/><strong>Loading your recommendations</strong><small>Checking your connected Apple Music account</small></div>}
+            {!browserLoading && browserError && <div className="bc-party-browser-state is-error"><strong>Could not load Browser</strong><small>{browserError}</small><button type="button" onClick={() => void loadAppleMusicBrowser()}>Try again</button></div>}
+            {!browserLoading && !browserError && browserMessage && (
+              <div className="bc-party-browser-state">
+                <strong>{browserAppleConnected ? 'No recommendations yet' : 'Connect Apple Music'}</strong>
+                <small>{browserMessage}</small>
+                {!browserAppleConnected && <button type="button" onClick={() => window.open('/bitconnection/?account=1', 'bitconnection-account', 'popup=yes,width=920,height=760,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no')}>Open BitAccount Center <Icon name="more" size={14}/></button>}
+              </div>
+            )}
+            {!browserLoading && !browserError && browserRecommendations.length > 0 && (
+              <div className="bc-party-browser-recommendations">
+                {browserRecommendations.map((recommendation, index) => (
+                  <article className="bc-party-browser-recommendation" key={recommendation.id || index}>
+                    <div className="bc-party-browser-recommendation-head">
+                      {recommendation.artworkUrl
+                        ? <img src={recommendation.artworkUrl} alt="" loading="lazy"/>
+                        : <span className="bc-party-browser-art-fallback"><Icon name="waveform" size={21}/></span>}
+                      <div><span>RECOMMENDED FOR YOU</span><strong>{recommendation.title}</strong>{recommendation.description && <small>{recommendation.description}</small>}</div>
+                    </div>
+                    {recommendation.items?.length > 0 && (
+                      <div className="bc-party-browser-track-list">
+                        {recommendation.items.map((item, itemIndex) => {
+                          const key = String(item.id || item.title || itemIndex).slice(0, 180);
+                          const search = bitMonoSearches[key];
+                          return (
+                            <div className="bc-party-browser-track" key={key}>
+                              {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
+                              <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
+                              <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in Bit Mono'}</button>
+                              {search && (
+                                <div className="bc-party-browser-mono-results">
+                                  {search.error
+                                    ? <small className="is-error">{search.error}</small>
+                                    : search.tracks.length
+                                      ? search.tracks.slice(0, 4).map(track => <div key={track.id}><strong>{track.title}</strong><small>{track.artist}{track.audioQuality ? ' · ' + track.audioQuality : ''}</small></div>)
+                                      : <small>No Bit Mono matches were found.</small>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </article>
+                ))}
+                <p className="bc-party-browser-footnote">Bit Mono matches are catalogue results only. Synchronized in-party playback is being integrated separately.</p>
+              </div>
+            )}
+          </section>
+        </div>,
+        document.body
+      )}
     </main>
   );
 }
