@@ -905,7 +905,7 @@ function PartyRoomExperience({
         </div>
         <div className="bc-party-volume">
           <Icon name="volume" size={17}/>
-          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(Number(event.target.value))} aria-label="Volume" disabled={track?.playbackMode === 'embed'}/> 
+          <input type="range" min="0" max="1" step="0.01" value={volume} onChange={event => setVolume(Number(event.target.value))} aria-label="Volume" disabled={isHost && track?.playbackMode === 'embed'}/> 
           <span>{Math.round(volume * 100)}%</span>
         </div>
         {audioBlocked && !isHost && <button className="bc-party-resume-audio" type="button" onClick={onResumeAudio}>Tap to enable party audio</button>}
