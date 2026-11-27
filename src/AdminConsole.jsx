@@ -498,7 +498,7 @@ function AddonTrackTest() {
 
   async function run() {
     const accepted = window.confirm(
-      'The stream test will select Chicago in the linked Cider queue and pause Cider after it resolves the media URL. It will not play or download the song. Continue?'
+      'The stream test selects Chicago in the linked Cider queue. Cider may briefly start playback while resolving the stream, then the resolver pauses Cider. The admin test does not download the audio file. Continue?'
     );
     if (!accepted) return;
     setBusy(true);
@@ -518,7 +518,7 @@ function AddonTrackTest() {
       setResult({
         ok: true,
         title: String(report.track.title) + ' · ' + String(report.track.artist),
-        detail: 'Exact catalogue match found. The personal add-on returned an absolute HTTPS stream URL and metadata. Cider was asked to resolve the item, then paused. No audio file was downloaded or played.',
+        detail: 'Exact catalogue match found. The personal add-on returned an absolute HTTPS stream URL and metadata. Cider was asked to resolve the item and then paused; the admin console did not download the audio file.',
         album: report.track.album || 'Album not supplied',
         duration: Number.isFinite(Number(report.track.duration)) ? Math.round(Number(report.track.duration)) + ' sec' : 'Not supplied',
         quality: report.stream.quality || report.stream.audioQuality || report.stream.format || 'Metadata returned',
@@ -537,7 +537,7 @@ function AddonTrackTest() {
       <div className="admin-addon-test-copy">
         <span className="admin-eyebrow">LIVE BITCHORD ADD-ON CHECK</span>
         <h3>Test a real track</h3>
-        <p>Search the linked Cider catalogue, verify the exact recording, then resolve a stream. Stream resolution temporarily selects the track in Cider and pauses Cider afterward. Audio is not played or downloaded.</p>
+        <p>Search the linked Cider catalogue, verify the exact recording, then resolve a stream. Cider may briefly start the selected track before the resolver pauses it. The admin test does not download the audio file.</p>
       </div>
       <div className="admin-addon-test-controls">
         <label htmlFor="admin-addon-query">SAMPLE TRACK</label>
@@ -1541,7 +1541,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
         if (site) await runTest(site);
       }
       if (needsCiderResolve && !window.confirm(
-        'This test asks Cider to resolve the sample track “Chicago” by Michael Jackson. Cider temporarily selects the track in its queue and pauses after resolving the media URL. It does not play or download the song. Continue?'
+        'This test asks Cider to resolve the sample track “Chicago” by Michael Jackson. It selects the track in Cider, which may briefly start playback before the resolver pauses it. The admin test does not download the audio file. Continue?'
       )) {
         setNotice('Track test cancelled. The page/API check still ran; no Cider queue request was made.');
         return;
