@@ -36,7 +36,8 @@ export class BitConnectionApiClient {
     this.csrfToken = String(csrfToken || '');
     this.identityMode = identityMode === 'bitcider' ? 'bitcider' : 'bitconnection';
     this.ciderCsrfToken = String(ciderCsrfToken || '');
-    this.fetchImpl = fetchImpl;
+    // Native Window.fetch requires the Window receiver; invoking it as this.fetchImpl would bind `this` to the API client.
+    this.fetchImpl = fetchImpl.bind(globalThis);
   }
 
   identityHeaders() {
