@@ -25,8 +25,27 @@ test('both product account screens use the shared unified identity header', asyn
   ]);
   assert.ok(appSource.includes('<UnifiedAccountCenterIdentity'));
   assert.ok(connectionSource.includes('<UnifiedAccountCenterIdentity'));
-  assert.ok(sharedSource.includes('UNIFIED ACCOUNT CENTER'));
+  assert.ok(sharedSource.includes('BITACCOUNT CENTER'));
   assert.ok(sharedSource.includes('BitCider settings'));
   assert.ok(sharedSource.includes('BitConnection settings'));
   assert.ok(sharedCss.includes('.unified-account-center-product.is-active'));
+});
+
+
+test('BitAccount is the shared account-center brand without merging product authentication', async () => {
+  const [sharedSource, connectionSource, appSource, adminSource] = await Promise.all([
+    fs.readFile(new URL('./src/UnifiedAccountCenter.jsx', import.meta.url), 'utf8'),
+    fs.readFile(new URL('./src/BitConnection.jsx', import.meta.url), 'utf8'),
+    fs.readFile(new URL('./src/App.jsx', import.meta.url), 'utf8'),
+    fs.readFile(new URL('./src/AdminConsole.jsx', import.meta.url), 'utf8')
+  ]);
+  assert.ok(sharedSource.includes('BITACCOUNT CENTER'));
+  assert.ok(sharedSource.includes('One BitAccount across supported products'));
+  assert.ok(connectionSource.includes('<strong>BitAccount Center</strong>'));
+  assert.ok(connectionSource.includes('YOUR BITACCOUNT'));
+  assert.ok(appSource.includes('Open BitAccount Center'));
+  assert.ok(appSource.includes('from BitAccount Center.'));
+  assert.ok(adminSource.includes("title: 'BitAccount Center'"));
+  assert.ok(sharedSource.includes('BitCider settings'));
+  assert.ok(sharedSource.includes('BitConnection settings'));
 });
