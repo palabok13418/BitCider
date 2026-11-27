@@ -1043,7 +1043,8 @@ test('Apple Music User Media Tokens are validated, encrypted, and used for accou
   assert.equal(connected.status, 200);
   const connectedPayload = await connected.json();
   assert.equal(connectedPayload.connected, true);
-  assert.equal(connectedPayload.validated, true);
+  assert.equal(connectedPayload.validated, false);
+  assert.equal(connectedPayload.validationDeferred, true);
   assert.equal(JSON.stringify(connectedPayload).includes(token), false);
 
   const stored = fs.readFileSync(client.dataFile, 'utf8');
@@ -1052,6 +1053,7 @@ test('Apple Music User Media Tokens are validated, encrypted, and used for accou
   const status = await client.request('/account/providers/apple-music', { headers: { Cookie: csrf.cookie } });
   const statusPayload = await status.json();
   assert.equal(statusPayload.connected, true);
+  assert.equal(statusPayload.recommendationsConfigured, true);
   assert.equal(JSON.stringify(statusPayload).includes(token), false);
 
   const recommendations = await client.request('/account/providers/apple-music/recommendations', {
@@ -1075,7 +1077,7 @@ test('Apple Music User Media Tokens are validated, encrypted, and used for accou
   assert.equal((await afterDisconnect.json()).connected, false);
 });
 
-test('Apple Music connection fails closed when developer token or encrypted storage is unavailable', async t => {
+test('Apple Music connection works without a developer token but fails closed without encrypted storage', async t => {
   const noDeveloperToken = await harness(t, {
     providerCredentialEncryptionConfigured: true,
     fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 })
@@ -1091,8 +1093,10 @@ test('Apple Music connection fails closed when developer token or encrypted stor
     headers: { ...csrf.headers, 'content-type': 'application/json' },
     body: JSON.stringify({ userMediaToken: 'valid-example-user-media-token-987654321' })
   });
-  assert.equal(noDevResponse.status, 503);
-  assert.equal((await noDevResponse.json()).error, 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED');
+  assert.equal(noDevResponse.status, 200);
+  const noDevPayload = await noDevResponse.json();
+  assert.equal(noDevPayload.connected, true);
+  assert.equal(noDevPayload.validationDeferred, true);
 
   const noEncryption = await harness(t, {
     appleMusicDeveloperToken: 'test-apple-developer-jwt',
