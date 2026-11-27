@@ -54,8 +54,8 @@ test('BitMono sample checks verify full-file cache, checksum, and delivered qual
 test('stream and rendition tests disclose Cider queue side effects before resolving', async () => {
   const source = await fs.readFile(path.join(ROOT, 'src', 'AdminConsole.jsx'), 'utf8');
   assert.ok(source.includes('window.confirm('));
-  assert.ok(source.includes('temporarily selects the track in its queue and pauses after resolving the media URL'));
-  assert.ok(source.includes('It will not play or download the song.'));
+  assert.ok(source.includes('may briefly start playback while resolving the stream'));
+  assert.ok(source.includes('The admin test does not download the audio file.'));
 });
 
 test('feature and subfeature test controls are wired to targeted checks', async () => {
