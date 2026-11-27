@@ -1590,7 +1590,8 @@ export function createBitConnectionRouter({
       if (imageUrl != null) {
         try {
           const parsed = new URL(String(imageUrl));
-          if (parsed.protocol !== 'https:' || !/(^|\.)giphy\.com$/i.test(parsed.hostname) || String(imageUrl).length > 2000) {
+          if (parsed.protocol !== 'https:' || parsed.username || parsed.password
+            || !/(^|\.)giphy\.com$/i.test(parsed.hostname) || String(imageUrl).length > 2000) {
             return { status: 400, error: 'INVALID_CHAT_GIF', message: 'GIFs must use a valid HTTPS GIPHY media URL.' };
           }
           safeImageUrl = parsed.toString();
