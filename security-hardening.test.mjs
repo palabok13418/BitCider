@@ -15,7 +15,7 @@ test('security policy permits only required first-party and local Cider connecti
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
-  assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);\n  assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);\n  assert.doesNotMatch(CONTENT_SECURITY_POLICY, /frame-src[^;]*https?:/);
+  assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);\n  assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);\n  assert.match(CONTENT_SECURITY_POLICY, /frame-src[^;]*https:\\/\\/\\*\\.apple\\.com/);
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /script-src[^;]*'unsafe-eval'/);
 });
 
