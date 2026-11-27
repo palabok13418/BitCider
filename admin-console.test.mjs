@@ -30,7 +30,7 @@ test('BitChord sample test verifies Chicago by Michael Jackson through manifest,
   assert.ok(source.includes("'/search'"));
   assert.ok(source.includes("'/stream/'"));
   assert.ok(source.includes("quality=high"));
-  assert.ok(source.includes("quality=low"));
+  assert.ok(source.includes("resolveRendition(track.id, 'low')"));
   assert.ok(source.includes("atmos=auto"));
 });
 
