@@ -117,8 +117,7 @@ function PartyRoomExperience({
     const base = Number(playback.positionSeconds || 0);
     setProgressSeconds(base);
     if (!isPlaying) return undefined;
-    const startedAt = Date.parse(playback.updatedAt || 0);
-    const elapsed = Number.isFinite(startedAt) && startedAt > 0 ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+    const startedAt = playback.updatedAt ? Date.parse(playback.updatedAt) : 0;
     const timer = window.setInterval(() => {
       const current = base + (startedAt > 0 ? Math.max(0, (Date.now() - startedAt) / 1000) : 0);
       setProgressSeconds(Math.min(duration || Number.MAX_SAFE_INTEGER, current));
@@ -412,7 +411,9 @@ function PartyRoomExperience({
             min="0"
             max={Math.max(duration, 1)}
             value={Math.min(progressSeconds, Math.max(duration, 1))}
-            onChange={event => void seekTo(event.target.value)}
+            onChange={event => setProgressSeconds(Number(event.target.value))}
+            onPointerUp={() => void seekTo(progressSeconds)}
+            onKeyUp={() => void seekTo(progressSeconds)}
             aria-label="Playback position"
             disabled={!duration}
           />
