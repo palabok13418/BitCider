@@ -82,7 +82,7 @@ export default function UnifiedAccountCenterIdentity({
   const accountDate = createdAt || resolvedProfile?.createdAt;
   const dateLabel = accountDate
     ? 'Created ' + new Date(accountDate).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
-    : 'One account center for both products';
+    : 'One BitAccount across supported products';
 
   return (
     <div className="unified-account-center-identity" aria-live="polite">
@@ -93,7 +93,7 @@ export default function UnifiedAccountCenterIdentity({
             : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>}
         </div>
         <div className="unified-account-center-copy">
-          <span className="unified-account-center-kicker">UNIFIED ACCOUNT CENTER</span>
+          <span className="unified-account-center-kicker">BITACCOUNT CENTER</span>
           <h2>Account &amp; security</h2>
           <p>{resolvedProfile?.username ? resolvedProfile.username + ' · ' : ''}{dateLabel}</p>
         </div>
@@ -102,7 +102,7 @@ export default function UnifiedAccountCenterIdentity({
         <span className="unified-account-center-status-label">SIGNED IN TO</span>
         <strong>{accountLabel}</strong>
       </div>
-      <div className="unified-account-center-products" aria-label="Product sign-in status">
+      <div className="unified-account-center-products" aria-label="BitAccount product sign-in status">
         <span className={'unified-account-center-product' + (products.bitCider ? ' is-active' : '')}>
           <i aria-hidden="true" />
           <span>BitCider</span>
@@ -115,7 +115,7 @@ export default function UnifiedAccountCenterIdentity({
         </span>
       </div>
       {products.bitCider && products.bitConnection && (
-        <nav className="unified-account-center-links" aria-label="Product account settings">
+        <nav className="unified-account-center-links" aria-label="BitAccount product settings">
           <a href="/?account-center=1" target="_blank" rel="noreferrer">BitCider settings</a>
           <a href="/bitconnection/?account=1&identity=bitconnection" target="_blank" rel="noreferrer">BitConnection settings</a>
         </nav>
