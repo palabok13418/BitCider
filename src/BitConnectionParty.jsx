@@ -330,8 +330,11 @@ function PartyRoomExperience({
       }
       if (track?.source === 'bitmono') {
         if (!isHost) throw new Error('Only the host can control the active Bit Mono audio stream.');
+        if (action === 'next' || action === 'previous') {
+          setPlaybackMessage('Queue-based next and previous playback will be connected in the next player pass.');
+          return;
+        }
         await onControlBitMono(action);
-        await session?.updatePlayback?.({ isPlaying: action === 'toggle' ? !isPlaying : action === 'play', positionSeconds: progressSeconds });
         setPlaybackMessage('Bit Mono playback control updated.');
       } else {
         if (action === 'toggle') await session?.updatePlayback?.({ isPlaying: !isPlaying });
@@ -346,8 +349,8 @@ function PartyRoomExperience({
     const next = Math.max(0, Math.min(duration || 86400, Number(value) || 0));
     setProgressSeconds(next);
     try {
-      await session?.updatePlayback?.({ positionSeconds: next });
       if (track?.source === 'bitmono' && isHost) await onSeekBitMono(next);
+      else await session?.updatePlayback?.({ positionSeconds: next });
       window.dispatchEvent(new CustomEvent('bitconnection:playback-control', {
         detail: { roomId: room?.roomId, action: 'seek', positionSeconds: next }
       }));
@@ -846,8 +849,8 @@ function PartyRoomExperience({
               ) : (
                 <div className="bc-party-lyrics-empty">
                   <Icon name="waveform" size={40}/>
-                  <strong>Lyrics will appear here</strong>
-                  <span>Connect BitChord's synchronized lyrics feed to share live lyrics with the party.</span>
+                  <strong>{appleMusicLyricsLoading ? 'Fetching Apple Music TTML lyrics…' : appleMusicLyricsError && appleMusicSongId ? 'Apple Music lyrics unavailable' : 'Lyrics will appear here'}</strong>
+                  <span>{appleMusicLyricsLoading ? 'Checking the connected subscriber token for word- and line-timed lyrics.' : appleMusicLyricsError && appleMusicSongId ? appleMusicLyricsError : appleMusicSongId ? 'Apple Music did not return timed lyrics for this track.' : 'Connect BitChord’s synchronized lyrics feed or play a matched Apple Music recommendation to load subscriber-backed TTML.'}</span>
                 </div>
               )}
             </section>
