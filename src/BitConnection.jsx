@@ -863,16 +863,6 @@ function AccountManagementWindow() {
         </section>
       )}
       {stage !== 'error' && stage !== 'loading' && stage !== 'signedout' && error && stage !== 'manage' && <div className="bc-global-error" role="alert">{error}</div>}
-      {adminConsoleOpen && (
-        <AdminConsole
-          bootstrapCode={adminBootstrapCode}
-          onBootstrapConsumed={() => setAdminBootstrapCode('')}
-          onClose={() => {
-            setAdminConsoleOpen(false);
-            setAdminBootstrapCode('');
-          }}
-        />
-      )}
     </main>
   );
 }
@@ -1816,6 +1806,16 @@ export default function BitConnection() {
             </svg>
           </div>
         </div>
+      )}
+      {adminConsoleOpen && (
+        <AdminConsole
+          bootstrapCode={adminBootstrapCode}
+          onBootstrapConsumed={() => setAdminBootstrapCode('')}
+          onClose={() => {
+            setAdminConsoleOpen(false);
+            setAdminBootstrapCode('');
+          }}
+        />
       )}
     </main>
   );
