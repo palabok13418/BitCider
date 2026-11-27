@@ -970,13 +970,13 @@ function AccountManagementWindow() {
               <div>
                 <span className="bc-account-panel-kicker">CONNECTED MUSIC SERVICES</span>
                 <h2>Apple Music</h2>
-                <p>Connect your Apple Music User Media Token to enable personalized recommendations and subscriber-backed lyrics.</p>
+                <p>Connect your Apple Music User Media Token for subscriber-backed TTML lyrics. The Apple web-player Bearer token is discovered automatically, so no Apple Developer token is needed for lyrics.</p>
               </div>
               <span className={'bc-account-provider-state' + (appleMusicStatus?.connected ? ' is-connected' : '')}>
                 <i />{appleMusicStatus?.connected ? 'CONNECTED' : 'NOT CONNECTED'}
               </span>
             </div>
-            {!appleMusicStatus?.developerTokenConfigured && (
+            {!appleMusicStatus?.secureStorageConfigured && (
               <div className="bc-account-unavailable">
                 <strong>Apple Music backend setup is incomplete</strong>
                 <p>The Deplexo backend needs its Apple Music developer token before user connections can be validated. Your personal token is not submitted until this is configured.</p>
@@ -986,6 +986,12 @@ function AccountManagementWindow() {
               <div className="bc-account-unavailable">
                 <strong>Encrypted provider storage is unavailable</strong>
                 <p>Configure the dedicated Deplexo BITCIDER_ENCRYPTION_KEY before saving an Apple Music token.</p>
+              </div>
+            )}
+            {appleMusicStatus?.secureStorageConfigured && appleMusicStatus.recommendationsConfigured === false && (
+              <div className="bc-account-unavailable">
+                <strong>Personalized recommendation feed is separate</strong>
+                <p>Apple Music TTML lyrics work without an Apple Developer token. The optional official personalized-recommendations feed is not configured.</p>
               </div>
             )}
             {appleMusicStatus?.connected && (
@@ -1006,14 +1012,14 @@ function AccountManagementWindow() {
                   spellCheck={false}
                   placeholder="Paste your Apple Music User Media Token"
                   aria-label="Apple Music User Media Token"
-                  disabled={!appleMusicStatus?.developerTokenConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
+                  disabled={!appleMusicStatus?.secureStorageConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
                 />
               </label>
-              <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.developerTokenConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
-                {appleMusicBusy ? 'Checking…' : appleMusicStatus?.connected ? 'Update connection' : 'Connect Apple Music'}
+              <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.secureStorageConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
+                {appleMusicBusy ? 'Saving…' : appleMusicStatus?.connected ? 'Update connection' : 'Connect Apple Music'}
               </button>
             </form>
-            <small className="bc-account-provider-footnote">Your token is validated with Apple Music, encrypted on Deplexo, and never shown again or stored in browser storage. Only connect an account you own.</small>
+            <small className="bc-account-provider-footnote">Your token is encrypted on Deplexo and never shown again or stored in browser storage. Apple validates subscriber access when TTML lyrics are first requested. Only connect an account you own.</small>
           </section>
 
           {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
