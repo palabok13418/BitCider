@@ -25,7 +25,8 @@ test('BitChord sample test verifies Chicago by Michael Jackson through manifest,
   assert.ok(source.includes("manifestPath.replace(/\\/manifest\\.json$/, '/stream/'"));
   assert.ok(source.includes("mediaUrl.protocol !== 'https:'"));
   assert.ok(source.includes("'/api/status'"));
-  assert.ok(source.includes("'/manifest.json'"));
+  assert.ok(source.includes('manifestPath = addonUrl.pathname'));
+  assert.ok(source.includes('manifest = await requestJson(manifestPath)'));
   assert.ok(source.includes("'/search'"));
   assert.ok(source.includes("'/stream/'"));
   assert.ok(source.includes("quality=high"));
