@@ -783,7 +783,6 @@ function AccountManagementWindow() {
         provider: 'Apple Music',
         connected: true,
         connectedAt: payload.connectedAt || new Date().toISOString(),
-        developerTokenConfigured: true,
         secureStorageConfigured: true
       }));
       setNotice('Apple Music is connected to this BitAccount.');
