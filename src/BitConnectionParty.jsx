@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './bitconnection-party.css';
 import { qrcodegen } from './qrcodegen';
 
@@ -417,6 +418,25 @@ function PartyRoomExperience({
 
   return (
     <main className="bc-party-room" data-role={isHost ? 'host' : 'guest'}>
+      <section className="bc-party-room-share" aria-label="Room code and QR code">
+          <div className="bc-party-room-code-copy">
+            <span className="bc-party-room-code-label">ROOM CODE</span>
+            <div className="bc-party-room-code-row">
+              <strong className="bc-party-room-code-value">{roomCode || '--------'}</strong>
+              {roomCode && (
+                <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}>
+                  <Icon name="copy" size={14}/>Copy code
+                </button>
+              )}
+            </div>
+            <small>Enter this code in BitChord or scan the QR code to read it.</small>
+          </div>
+          <div className="bc-party-room-qr-wrap">
+            {roomCode ? <PartyQrCode value={roomCode}/> : <div className="bc-party-room-qr-placeholder" aria-hidden="true"/>}
+            <span>ROOM QR</span>
+          </div>
+        </section>
+
       <section className="bc-party-playback-panel" aria-label="Playback">
         <div className="bc-party-left-heading">
           <span className="bc-party-live-dot" />
@@ -471,8 +491,6 @@ function PartyRoomExperience({
         <button className="bc-party-leave" type="button" onClick={onLeave}>Leave party</button>
       </section>
 
-      <div className="bc-party-divider" aria-hidden="true"/>
-
       <section className="bc-party-content-panel" aria-label="Party content">
         <header className="bc-party-content-heading">
           <div>
@@ -484,24 +502,7 @@ function PartyRoomExperience({
           </div>
         </header>
 
-        <section className="bc-party-room-share" aria-label="Room code and QR code">
-          <div className="bc-party-room-code-copy">
-            <span className="bc-party-room-code-label">ROOM CODE</span>
-            <div className="bc-party-room-code-row">
-              <strong className="bc-party-room-code-value">{roomCode || '--------'}</strong>
-              {roomCode && (
-                <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}>
-                  <Icon name="copy" size={14}/>Copy code
-                </button>
-              )}
-            </div>
-            <small>Enter this code in BitChord or scan the QR code to read it.</small>
-          </div>
-          <div className="bc-party-room-qr-wrap">
-            {roomCode ? <PartyQrCode value={roomCode}/> : <div className="bc-party-room-qr-placeholder" aria-hidden="true"/>}
-            <span>ROOM QR</span>
-          </div>
-        </section>
+  
 
         <div className={'bc-party-tab-content is-' + activeTab}>
           {activeTab === 'lyrics' && (
@@ -581,7 +582,7 @@ function PartyRoomExperience({
               </form>
               <div className="bc-party-composer-footnote">{isRecording ? 'Listening… speak your message' : 'Images only · Voice is transcribed into editable text'}</div>
 
-              {gifOpen && (
+              {gifOpen && createPortal(
                 <div className="bc-party-gif-overlay" role="dialog" aria-modal="true" aria-label="GIF picker">
                   <div className="bc-party-gif-picker">
                     <div className="bc-party-gif-heading"><strong>Find a GIF</strong><button type="button" onClick={() => setGifOpen(false)} aria-label="Close GIF picker"><Icon name="close"/></button></div>
@@ -592,7 +593,8 @@ function PartyRoomExperience({
                     </div>
                     <small>Powered by GIPHY</small>
                   </div>
-                </div>
+                </div>,
+                document.body
               )}
             </section>
           )}
