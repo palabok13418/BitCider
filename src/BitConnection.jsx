@@ -1476,7 +1476,7 @@ function CreateRoomWindow() {
 
 
 
-  async function playBitMonoTrack(track, streamUrl) {
+  async function playBitMonoTrack(track, streamUrl, mimeType = '') {
     if (!hostSession || hostSession.role !== 'host') throw new Error('Only the host can start a Bit Mono stream.');
     if (!track?.trackId || !String(streamUrl || '').startsWith('/bitmono/audio/')) throw new Error('The Bit Mono stream is not ready yet.');
     const player = hostPlayerRef.current;
@@ -1501,7 +1501,7 @@ function CreateRoomWindow() {
     await hostStreamEngineRef.current?.destroy?.();
     hostStreamEngineRef.current = null;
     const streamEngine = await attachBitCiderStream(player, streamUrl, {
-      mimeType: track.mimeType || track.contentType || '',
+      mimeType: mimeType || track.mimeType || track.contentType || '',
       onError: streamError => setHostAudioError(streamError.message || 'The HLS stream encountered an error.')
     });
     hostStreamEngineRef.current = streamEngine;
