@@ -1162,3 +1162,80 @@ test('Apple Music TTML lyrics prefer syllable timing and use the saved subscribe
   assert.equal(lyricsRequest.headers.Origin, 'https://music.apple.com');
 });
 
+
+
+test('BitMono search results can enter the shared queue and become synchronized party playback', async t => {
+  const client = await harness(t);
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Mono Host', password: 'mono-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ roomName: 'BitMono Party', visibility: 'public', partySize: 4, ownerOnlyControls: false })
+  });
+  const room = await created.json();
+  assert.equal(created.status, 201);
+  const hostHeaders = { ...csrf.headers, Authorization: 'Bearer ' + room.hostCredential };
+  const track = {
+    source: 'bitmono',
+    id: 'mono_123456789',
+    title: 'Example FLAC Song',
+    artist: 'Example Artist',
+    durationSeconds: 203.4,
+    artworkURL: 'https://cdn.example.test/artwork.jpg',
+    audioQuality: 'LOSSLESS'
+  };
+
+  const queued = await client.request('/rooms/' + room.room.roomId + '/queue', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ action: 'add', track })
+  });
+  const queuedPayload = await queued.json();
+  assert.equal(queued.status, 200);
+  assert.equal(queuedPayload.queue[0].source, 'bitmono');
+  assert.equal(queuedPayload.queue[0].trackId, 'mono_123456789');
+
+  const playback = await client.request('/rooms/' + room.room.roomId + '/playback', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({
+      source: 'bitmono',
+      track: {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        durationSeconds: track.durationSeconds,
+        artworkURL: track.artworkURL,
+        audioQuality: track.audioQuality
+      },
+      isPlaying: true,
+      positionSeconds: 0
+    })
+  });
+  assert.equal(playback.status, 200);
+  const state = await client.request('/rooms/' + room.room.roomId + '/state', { headers: hostHeaders });
+  const payload = await state.json();
+  assert.equal(state.status, 200);
+  assert.equal(payload.playbackState.source, 'bitmono');
+  assert.equal(payload.playbackState.track.trackId, 'mono_123456789');
+  assert.equal(payload.playbackState.track.audioQuality, 'Lossless');
+  assert.equal(payload.playbackState.isPlaying, true);
+
+  const invalid = await client.request('/rooms/' + room.room.roomId + '/playback', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({
+      source: 'bitmono',
+      track: { id: '../private', title: 'Bad Track', artist: 'Bad Artist', durationSeconds: 3 },
+      isPlaying: true
+    })
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error, 'INVALID_BITMONO_TRACK');
+});
