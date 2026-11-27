@@ -664,3 +664,113 @@ test('room ICE endpoint fails closed when TURN is configured without its shared 
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error, 'ICE_CONFIGURATION_UNAVAILABLE');
 });
+
+
+test('party chat, queue settings, and host moderation are authenticated by the room participant session', async t => {
+  const hostClient = await harness(t);
+  const hostCsrf = await csrfContext(hostClient);
+  const registration = await hostClient.request('/auth/register', {
+    method: 'POST',
+    headers: hostCsrf.headers,
+    body: JSON.stringify({ username: 'Party Host', password: 'party-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const created = await hostClient.request('/rooms', {
+    method: 'POST',
+    headers: hostCsrf.headers,
+    body: JSON.stringify({
+      roomName: 'Shared Party UI',
+      visibility: 'public',
+      partySize: 4,
+      ownerOnlyControls: false
+    })
+  });
+  const roomPayload = await created.json();
+  assert.equal(created.status, 201);
+
+  const guestClient = await harness(t);
+  const guestCsrf = await csrfContext(guestClient);
+  const guestJoin = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
+    method: 'POST',
+    headers: guestCsrf.headers,
+    body: JSON.stringify({})
+  });
+  const guestPayload = await guestJoin.json();
+  assert.equal(guestJoin.status, 201);
+  const guestHeaders = {
+    ...guestCsrf.headers,
+    Authorization: 'Bearer ' + guestPayload.participantCredential
+  };
+  const hostHeaders = {
+    ...hostCsrf.headers,
+    Authorization: 'Bearer ' + roomPayload.hostCredential
+  };
+
+  const sentMessage = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/chat', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ text: 'This sounds incredible', imageUrl: 'https://media.giphy.com/media/test/giphy.gif' })
+  });
+  assert.equal(sentMessage.status, 201);
+  const messagePayload = await sentMessage.json();
+  assert.equal(messagePayload.message.text, 'This sounds incredible');
+  assert.equal(messagePayload.message.imageType, 'gif');
+  assert.equal(messagePayload.message.participantId, guestPayload.participantId);
+
+  const settings = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ action: 'settings', settings: { loop: true, shuffle: true, autoMix: false } })
+  });
+  assert.equal(settings.status, 200);
+
+  const autoMix = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ action: 'settings', settings: { loop: true, shuffle: true, autoMix: true } })
+  });
+  assert.equal(autoMix.status, 503);
+  assert.equal((await autoMix.json()).error, 'AUTOMIX_NOT_CONFIGURED');
+
+  const hostState = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/state', { headers: hostHeaders });
+  const hostStatePayload = await hostState.json();
+  assert.equal(hostState.status, 200);
+  assert.equal(hostStatePayload.queueSettings.loop, true);
+  assert.equal(hostStatePayload.queueSettings.shuffle, true);
+  assert.equal(hostStatePayload.chat.length, 1);
+  assert.equal(hostStatePayload.chat[0].text, 'This sounds incredible');
+
+  const banAnonymous = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/members/' + guestPayload.participantId + '/moderate', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ action: 'ban' })
+  });
+  assert.equal(banAnonymous.status, 409);
+  assert.equal((await banAnonymous.json()).error, 'ACCOUNT_REQUIRED_FOR_BAN');
+
+  const promoted = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/members/' + guestPayload.participantId + '/moderate', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ action: 'promote' })
+  });
+  assert.equal(promoted.status, 200);
+  assert.equal((await promoted.json()).action, 'promote');
+
+  const promotedState = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/state', { headers: guestHeaders });
+  const promotedStatePayload = await promotedState.json();
+  assert.equal(promotedState.status, 200);
+  assert.equal(promotedStatePayload.participant.role, 'host');
+
+  const oldHostClose = await hostClient.request('/rooms/' + roomPayload.room.roomId + '/close', {
+    method: 'POST',
+    headers: hostHeaders
+  });
+  assert.equal(oldHostClose.status, 403);
+
+  const newHostClose = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/close', {
+    method: 'POST',
+    headers: guestHeaders
+  });
+  assert.equal(newHostClose.status, 200);
+});
