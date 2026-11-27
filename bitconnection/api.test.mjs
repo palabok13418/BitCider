@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicDeveloperToken = '', providerCredentialEncryptionConfigured = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -23,6 +23,10 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     iceConfig,
     giphyApiKey,
     fetchImpl,
+    appleMusicDeveloperToken,
+    encryptProviderCredential: value => ({ value: Buffer.from(value).toString('base64url'), iv: 'test-iv', tag: 'test-tag' }),
+    decryptProviderCredential: box => Buffer.from(box.value, 'base64url').toString('utf8'),
+    providerCredentialEncryptionConfigured: () => providerCredentialEncryptionConfigured,
     getUserSession: () => ciderAccount ? { authenticated: true, accountId: 'existing-cider-account', sessionId: 'cider-session-123' } : { authenticated: false },
     requireCiderCsrf: (_req, _res, next) => next(),
     csrfTokenForCiderSession: () => 'cider-test-csrf',
@@ -40,7 +44,7 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     const response = await fetch(base + route, { ...options, headers, redirect: 'manual' });
     return response;
   }
-  return { request, base };
+  return { request, base, dataFile };
 }
 
 async function csrfContext(client) {
@@ -68,6 +72,7 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.partyChat, 'text-images-and-giphy-gifs-enabled');
   assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
   assert.equal(payload.capabilities.playbackSourceBridge, 'not-connected');
+  assert.equal(payload.capabilities.appleMusicRecommendations, 'encrypted-user-token-and-developer-token-required');
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
   assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
   assert.equal(payload.capabilities.serverSideAudioAnalysis, 'host-uploaded-to-deplexo-not-relayed');
@@ -976,4 +981,133 @@ test('GIF search returns a clear configuration response when the Deplexo key is 
   const payload = await response.json();
   assert.equal(response.status, 503);
   assert.equal(payload.error, 'GIF_SEARCH_NOT_CONFIGURED');
+});
+
+
+test('Apple Music User Media Tokens are validated, encrypted, and used for account recommendations', async t => {
+  const seenRequests = [];
+  const fetchImpl = async (url, options = {}) => {
+    seenRequests.push({ url: String(url), headers: options.headers || {} });
+    if (String(url).endsWith('/v1/me/recommendations?limit=1')) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (String(url).endsWith('/v1/me/recommendations?limit=8')) {
+      return new Response(JSON.stringify({
+        data: [{
+          id: 'personal-mix-1',
+          type: 'personal-recommendation',
+          attributes: { title: 'Made for tonight', description: { standard: 'A personal mix' } }
+        }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (String(url).includes('/v1/me/recommendations/personal-mix-1/contents?')) {
+      return new Response(JSON.stringify({
+        data: [{
+          id: '12345',
+          type: 'songs',
+          attributes: {
+            name: 'Example track',
+            artistName: 'Example artist',
+            albumName: 'Example album',
+            artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.{f}' },
+            url: 'https://music.apple.com/us/song/example/12345',
+            durationInMillis: 180000
+          }
+        }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const client = await harness(t, {
+    appleMusicDeveloperToken: 'test-apple-developer-jwt',
+    providerCredentialEncryptionConfigured: true,
+    fetchImpl
+  });
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Apple Listener', password: 'apple-listener-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const token = 'user-media-token-example-value-1234567890';
+  const connected = await client.request('/account/providers/apple-music', {
+    method: 'PUT',
+    headers: { ...csrf.headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ userMediaToken: token })
+  });
+  assert.equal(connected.status, 200);
+  const connectedPayload = await connected.json();
+  assert.equal(connectedPayload.connected, true);
+  assert.equal(connectedPayload.validated, true);
+  assert.equal(JSON.stringify(connectedPayload).includes(token), false);
+
+  const stored = fs.readFileSync(client.dataFile, 'utf8');
+  assert.equal(stored.includes(token), false, 'the raw user token must never be written to the BitConnection store');
+
+  const status = await client.request('/account/providers/apple-music', { headers: { Cookie: csrf.cookie } });
+  const statusPayload = await status.json();
+  assert.equal(statusPayload.connected, true);
+  assert.equal(JSON.stringify(statusPayload).includes(token), false);
+
+  const recommendations = await client.request('/account/providers/apple-music/recommendations', {
+    headers: { Cookie: csrf.cookie }
+  });
+  const recommendationPayload = await recommendations.json();
+  assert.equal(recommendations.status, 200);
+  assert.equal(recommendationPayload.recommendations[0].title, 'Made for tonight');
+  assert.equal(recommendationPayload.recommendations[0].items[0].title, 'Example track');
+  assert.equal(recommendationPayload.recommendations[0].items[0].artist, 'Example artist');
+  assert.equal(recommendationPayload.recommendations[0].items[0].artworkUrl, 'https://is1-ssl.mzstatic.com/image/600x600bb.jpg');
+  assert.ok(seenRequests.every(entry => entry.headers.Authorization === 'Bearer test-apple-developer-jwt'));
+  assert.ok(seenRequests.every(entry => entry.headers['Music-User-Token'] === token));
+
+  const disconnected = await client.request('/account/providers/apple-music', {
+    method: 'DELETE',
+    headers: csrf.headers
+  });
+  assert.equal(disconnected.status, 200);
+  const afterDisconnect = await client.request('/account/providers/apple-music', { headers: { Cookie: csrf.cookie } });
+  assert.equal((await afterDisconnect.json()).connected, false);
+});
+
+test('Apple Music connection fails closed when developer token or encrypted storage is unavailable', async t => {
+  const noDeveloperToken = await harness(t, {
+    providerCredentialEncryptionConfigured: true,
+    fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 })
+  });
+  const csrf = await csrfContext(noDeveloperToken);
+  await noDeveloperToken.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'No Apple Developer', password: 'secret-password' })
+  });
+  const noDevResponse = await noDeveloperToken.request('/account/providers/apple-music', {
+    method: 'PUT',
+    headers: { ...csrf.headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ userMediaToken: 'valid-example-user-media-token-987654321' })
+  });
+  assert.equal(noDevResponse.status, 503);
+  assert.equal((await noDevResponse.json()).error, 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED');
+
+  const noEncryption = await harness(t, {
+    appleMusicDeveloperToken: 'test-apple-developer-jwt',
+    providerCredentialEncryptionConfigured: false,
+    fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 })
+  });
+  const noEncryptionCsrf = await csrfContext(noEncryption);
+  await noEncryption.request('/auth/register', {
+    method: 'POST',
+    headers: noEncryptionCsrf.headers,
+    body: JSON.stringify({ username: 'No Secure Storage', password: 'secret-password' })
+  });
+  const noEncryptionResponse = await noEncryption.request('/account/providers/apple-music', {
+    method: 'PUT',
+    headers: { ...noEncryptionCsrf.headers, 'content-type': 'application/json' },
+    body: JSON.stringify({ userMediaToken: 'valid-example-user-media-token-987654321' })
+  });
+  assert.equal(noEncryptionResponse.status, 503);
+  assert.equal((await noEncryptionResponse.json()).error, 'SECURE_PROVIDER_STORAGE_NOT_CONFIGURED');
 });
