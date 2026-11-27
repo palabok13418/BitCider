@@ -71,6 +71,8 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
   assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
   assert.equal(payload.capabilities.serverSideAudioAnalysis, 'host-uploaded-to-deplexo-not-relayed');
+  assert.equal(payload.capabilities.serverSideOnnxDjPlanning, 'harmonic-and-phrase-aligned-transition-plans-enabled');
+  assert.equal(payload.capabilities.liveAutoMixExecution, 'blocked-until-bitchord-player-control-bridge');
   assert.equal(payload.limits.maxPartySize, 30);
 });
 
@@ -922,6 +924,8 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
   assert.equal(manifest.capabilities.sourcePlaybackCommands, false);
   assert.equal(manifest.capabilities.synchronizedLyrics, false);
   assert.equal(manifest.capabilities.serverSideOnnxAnalysis, true);
+  assert.equal(manifest.capabilities.serverSideOnnxDjPlanning, true);
+  assert.equal(manifest.capabilities.liveAutoMixExecution, false);
   assert.equal(manifest.capabilities.serverSideOnnxAutoMix, false);
   assert.match(manifest.unavailableFeatures.serverSideOnnxAutoMix, /player-control bridge/i);
   assert.equal(manifest.partyRules.maximumParticipants, 4);
