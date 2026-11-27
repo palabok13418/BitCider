@@ -696,7 +696,7 @@ function PartyRoomExperience({
     }
     try {
       setQueueBusy(true);
-      await onPlayBitMonoTrack(prepared.track, prepared.url);
+      await onPlayBitMonoTrack(prepared.track, prepared.url, prepared.mimeType);
       setPlaybackMessage('Bit Mono is now playing for the party.');
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not start Bit Mono playback.');
