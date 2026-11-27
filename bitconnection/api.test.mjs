@@ -1188,7 +1188,9 @@ test('BitMono search results can enter the shared queue and become synchronized 
     artist: 'Example Artist',
     durationSeconds: 203.4,
     artworkURL: 'https://cdn.example.test/artwork.jpg',
-    audioQuality: 'LOSSLESS'
+    audioQuality: 'LOSSLESS',
+    appleMusicSongId: '12345678901',
+    appleMusicStorefront: 'us'
   };
 
   const queued = await client.request('/rooms/' + room.room.roomId + '/queue', {
@@ -1225,6 +1227,8 @@ test('BitMono search results can enter the shared queue and become synchronized 
   assert.equal(payload.playbackState.source, 'bitmono');
   assert.equal(payload.playbackState.track.trackId, 'mono_123456789');
   assert.equal(payload.playbackState.track.audioQuality, 'Lossless');
+  assert.equal(payload.playbackState.track.appleMusicSongId, '12345678901');
+  assert.equal(payload.playbackState.track.appleMusicStorefront, 'us');
   assert.equal(payload.playbackState.isPlaying, true);
 
   const invalid = await client.request('/rooms/' + room.room.roomId + '/playback', {
