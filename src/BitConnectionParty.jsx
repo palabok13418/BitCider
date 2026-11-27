@@ -444,7 +444,6 @@ function PartyRoomExperience({
         )}
         {playbackMessage && <div className="bc-party-inline-status" role="status">{playbackMessage}</div>}
         <button className="bc-party-leave" type="button" onClick={onLeave}>Leave party</button>
-        <audio ref={audioRef || undefined} autoPlay playsInline />
       </section>
 
       <div className="bc-party-divider" aria-hidden="true"/>
