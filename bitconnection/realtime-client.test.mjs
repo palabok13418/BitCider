@@ -323,3 +323,42 @@ test('host mesh can attach tab audio after peers were created without duplicatin
   assert.deepEqual(peer.addedTracks.map(item => item.track), [audioTrack]);
   mesh.close();
 });
+
+
+test('party session sends scoped chat and moderation requests', async () => {
+  const calls = [];
+  const client = new BitConnectionApiClient({
+    baseUrl: '/api/bitconnection',
+    csrfToken: 'party-csrf-token',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  const session = new (await import('../src/bitconnection/realtime-client.mjs')).BitConnectionRoomSession(client, {
+    roomId: 'party-room',
+    participantId: 'party-member',
+    credential: 'party-participant-credential',
+    role: 'guest'
+  });
+
+  await session.sendChat({ text: 'Hello party', imageUrl: 'https://media.giphy.com/media/example/giphy.gif' });
+  await session.moderateMember('target-member', 'kick');
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, '/api/bitconnection/rooms/party-room/chat');
+  assert.equal(calls[1].url, '/api/bitconnection/rooms/party-room/members/target-member/moderate');
+  for (const call of calls) {
+    assert.equal(call.options.method, 'POST');
+    assert.equal(call.options.headers.get('Authorization'), 'Bearer party-participant-credential');
+    assert.equal(call.options.headers.get('X-BitConnection-CSRF'), 'party-csrf-token');
+  }
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    text: 'Hello party',
+    imageUrl: 'https://media.giphy.com/media/example/giphy.gif'
+  });
+  assert.deepEqual(JSON.parse(calls[1].options.body), { action: 'kick' });
+});
