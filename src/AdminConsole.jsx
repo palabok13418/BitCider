@@ -37,41 +37,108 @@ function copyText(value) {
   if (value) void navigator.clipboard?.writeText(String(value)).catch(() => {});
 }
 
-function BitCiderPreview() {
+function MiniSitePreview({ site }) {
   return (
-    <div className="admin-site-preview">
-      <div className="admin-preview-top"><span className="admin-preview-brand"><i /> BITCIDER</span><span className="admin-preview-menu">•••</span></div>
-      <div className="admin-preview-hero">
-        <div className="admin-preview-orbit"><span /><i /><b /></div>
-        <div className="admin-preview-overline">YOUR MUSIC SOURCE</div>
-        <strong>Your <em>Cider.</em><br />Your BitChord.</strong>
-        <span className="admin-preview-copy">Connect Cider and bring your library to BitChord.</span>
-        <div className="admin-preview-cta">CONNECT CIDER <b>↗</b></div>
-      </div>
-      <div className="admin-preview-footer"><span>BITCIDER</span><span>MADE FOR BITCHORD</span></div>
+    <div className="admin-live-preview">
+      <iframe
+        src={site.page}
+        title={site.name + ' live page preview'}
+        loading="lazy"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <span className="admin-preview-live-label">LIVE PAGE</span>
     </div>
   );
 }
 
-function MiniSitePreview({ site }) {
-  if (site.id === 'bitcider') return <BitCiderPreview />;
-  if (site.id === 'bitmono') {
-    return (
-      <div className="admin-mini-preview is-mono">
-        <span className="admin-mini-kicker">MONOCHROME × BITCHORD</span>
-        <strong>Your <em>Monochrome.</em><br />Your BitChord.</strong>
-        <div className="admin-mini-equalizer"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-        <small>FREE MUSIC SOURCE</small>
-      </div>
-    );
+function AddonTrackTest() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [query, setQuery] = useState('Chicago Michael Jackson');
+
+  async function run() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const status = await requestJson('/api/status');
+      if (status.connected !== true || typeof status.addonUrl !== 'string' || !status.addonUrl) {
+        throw new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
+      }
+      const manifestUrl = new URL(status.addonUrl, window.location.origin);
+      if (manifestUrl.origin !== window.location.origin || !/\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(manifestUrl.pathname)) {
+        throw new Error('The personal add-on URL did not match the expected same-origin manifest route.');
+      }
+      const manifest = await requestJson(manifestUrl.pathname);
+      if (!Array.isArray(manifest.resources) || !manifest.resources.includes('search')) {
+        throw new Error('The personal add-on manifest does not declare search support.');
+      }
+      const searchPath = manifestUrl.pathname.replace(/\/manifest\.json$/, '/search') + '?q=' + encodeURIComponent(query.trim());
+      const search = await requestJson(searchPath);
+      const tracks = Array.isArray(search.tracks) ? search.tracks : [];
+      const track = tracks.find(item =>
+        String(item.title || '').trim().toLowerCase() === 'chicago' &&
+        String(item.artist || '').toLowerCase().includes('michael jackson')
+      );
+      if (!track) {
+        setResult({
+          ok: false,
+          title: 'No exact Chicago match returned',
+          detail: tracks.length
+            ? 'The add-on returned ' + tracks.length + ' result(s), but none matched the exact title “Chicago” and artist “Michael Jackson”. No stream was requested.'
+            : 'The live Cider search returned no tracks. Check that Cider is signed in and its browser relay is running.',
+          candidates: tracks.slice(0, 4).map(item => String(item.title || 'Untitled') + ' · ' + String(item.artist || 'Unknown artist'))
+        });
+        return;
+      }
+      if (!manifest.resources.includes('stream')) {
+        throw new Error('The add-on found the track but its manifest does not declare stream support.');
+      }
+      const streamPath = manifestUrl.pathname.replace(/\/manifest\.json$/, '/stream/' + encodeURIComponent(track.id)) + '?quality=HIGH';
+      const stream = await requestJson(streamPath);
+      const mediaUrl = new URL(stream.url);
+      if (mediaUrl.protocol !== 'https:') {
+        throw new Error('The stream resolver returned a non-HTTPS media URL. BitChord requires absolute secure media URLs.');
+      }
+      setResult({
+        ok: true,
+        title: String(track.title) + ' · ' + String(track.artist),
+        detail: 'Exact catalogue match found. The personal add-on returned a valid HTTPS stream URL and metadata. No audio file was downloaded or played.',
+        album: track.album || 'Album not supplied',
+        duration: Number.isFinite(Number(track.duration)) ? Math.round(Number(track.duration)) + ' sec' : 'Not supplied',
+        quality: stream.quality || stream.format || 'Metadata returned',
+        codec: stream.codec || stream.format || 'Not supplied',
+        mediaHost: mediaUrl.host
+      });
+    } catch (error) {
+      setResult({ ok: false, title: 'Addon test failed', detail: error.message || 'The live add-on test failed.' });
+    } finally {
+      setBusy(false);
+    }
   }
+
   return (
-    <div className="admin-mini-preview is-connection">
-      <span className="admin-mini-kicker">LIVE LISTENING</span>
-      <strong>Music hits<br /><em>different</em> together.</strong>
-      <div className="admin-mini-room"><i /><i /><i /><span>ROOM READY</span></div>
-      <small>POWERED BY BITCHORD</small>
-    </div>
+    <section className="admin-addon-test">
+      <div className="admin-addon-test-copy">
+        <span className="admin-eyebrow">LIVE BITC HORD ADD-ON CHECK</span>
+        <h3>Test a real track</h3>
+        <p>Search the linked Cider catalogue, verify the exact recording, then ask the personal add-on for stream metadata. This does not download or play the audio.</p>
+      </div>
+      <div className="admin-addon-test-controls">
+        <label htmlFor="admin-addon-query">TRACK SEARCH</label>
+        <input id="admin-addon-query" value={query} onChange={event => setQuery(event.target.value)} />
+        <button type="button" className="admin-button admin-button-primary" onClick={run} disabled={busy || !query.trim()}>
+          {busy ? 'TESTING ADD-ON…' : 'TEST CHICAGO BY MICHAEL JACKSON'}
+        </button>
+      </div>
+      {result && (
+        <div className={'admin-addon-test-result ' + (result.ok ? 'is-success' : 'is-failed')} role="status">
+          <div><strong>{result.title}</strong><span>{result.detail}</span></div>
+          {result.ok && <dl><div><dt>ALBUM</dt><dd>{result.album}</dd></div><div><dt>DURATION</dt><dd>{result.duration}</dd></div><div><dt>QUALITY</dt><dd>{result.quality}</dd></div><div><dt>CODEC</dt><dd>{result.codec}</dd></div><div><dt>MEDIA HOST</dt><dd>{result.mediaHost}</dd></div></dl>}
+          {result.candidates?.length > 0 && <ul>{result.candidates.map((candidate, index) => <li key={index}>{candidate}</li>)}</ul>}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -279,7 +346,7 @@ function paintCanvasNode(context, node, position, status, scale, selected, hover
   context.restore();
 }
 
-function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) {
+function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology, pageStatuses, openSite, runTest, onTestNode }) {
   const canvasRef = useRef(null);
   const viewportRef = useRef(null);
   const dragRef = useRef(null);
@@ -484,6 +551,16 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
         <div><span>FEATURE CHECKS</span><strong>{verifiedChecks}<small> / {checkCount}</small></strong></div>
       </div>
 
+      <div className="admin-product-previews">
+        <div className="admin-product-previews-heading"><div><span className="admin-eyebrow">PRODUCT PAGES</span><h3>Live previews</h3></div><span>REAL PAGES · SAME DEPLOYMENT</span></div>
+        <div className="admin-product-preview-grid">
+          {SITE_DEFINITIONS.map(site => (
+            <SiteNode key={site.id} site={site} status={pageStatuses?.[site.id]} openSite={openSite} runTest={runTest} />
+          ))}
+        </div>
+      </div>
+      <AddonTrackTest />
+
       <div className="admin-canvas-toolbar">
         <div className="admin-canvas-legend">
           <span><i className="is-operational" /> Operational</span>
@@ -527,6 +604,11 @@ function MapView({ overview, topologyStatuses, topologyBusy, refreshTopology }) 
             <h3>{node.title}</h3>
             <span className={'admin-topology-badge state-' + nodeStatus.state}><i />{nodeStatus.label || topologyState(nodeStatus.state).label}</span>
             <p>{node.subtitle || nodeStatus.detail}</p>
+            {node.type !== 'backend' && (
+              <button type="button" className="admin-button admin-button-primary admin-inspector-test" onClick={() => onTestNode(node)} disabled={topologyBusy}>
+                {topologyBusy ? 'RUNNING CHECKS…' : node.type === 'feature' ? 'TEST FEATURE BRANCH' : node.type === 'check' ? 'TEST SUBFEATURE' : 'TEST PAGE + API'}
+              </button>
+            )}
           </div>
           <div className="admin-inspector-detail">
             <span>CHECK RESULT</span>
@@ -987,6 +1069,17 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
     }
   }
 
+  async function runNodeTest(node) {
+    setNotice('Running live checks for ' + node.title + ' and its connected branch…');
+    setError('');
+    try {
+      await refreshTopology();
+      setNotice(node.title + ' test finished. Review the selected node and its child checks for the live results.');
+    } catch (testError) {
+      setError(node.title + ': ' + (testError.message || 'Feature test failed.'));
+    }
+  }
+
   async function runTest(site) {
     setPageStatuses(previous => ({
       ...previous,
@@ -1182,7 +1275,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
           </aside>
 
           <main className="admin-console-main">
-            {tab === 'map' && <MapView overview={overview} topologyStatuses={topologyStatuses} topologyBusy={topologyBusy} refreshTopology={refreshTopology} />}
+            {tab === 'map' && <MapView overview={overview} topologyStatuses={topologyStatuses} topologyBusy={topologyBusy} refreshTopology={refreshTopology} pageStatuses={pageStatuses} openSite={page => window.open(page, '_blank', 'noopener,noreferrer')} runTest={runTest} onTestNode={runNodeTest} />}
 
             {tab === 'users' && (
               <section className="admin-pane">
