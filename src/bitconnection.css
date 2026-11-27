@@ -1393,3 +1393,414 @@ a { color: inherit; text-decoration: none; }
   .bc-account-heading { gap: 11px; }
   .bc-account-avatar { width: 48px; height: 48px; flex-basis: 48px; }
 }
+
+
+/* Standard-window BitConnection account center */
+.bc-account-window {
+  min-height: 100vh;
+  min-height: 100dvh;
+  justify-content: center;
+  overflow-y: auto;
+  padding: clamp(16px, 2.6vw, 30px);
+}
+.bc-account-window .bc-window-state {
+  width: min(900px, 100%);
+}
+.bc-account-workspace {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(900px, 100%);
+  gap: 16px;
+  margin: auto;
+}
+.bc-account-topbar,
+.bc-account-brand,
+.bc-account-top-actions,
+.bc-account-protected,
+.bc-account-footer,
+.bc-account-footer > div {
+  display: flex;
+  align-items: center;
+}
+.bc-account-topbar {
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 54px;
+}
+.bc-account-brand { gap: 11px; min-width: 0; }
+.bc-account-brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 1px solid rgba(255,174,195,.26);
+  border-radius: 12px;
+  color: #ffe7ed;
+  background: linear-gradient(145deg, rgba(244,73,119,.28), rgba(147,23,63,.15));
+  box-shadow: inset 0 1px rgba(255,255,255,.13);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -.04em;
+}
+.bc-account-brand > div { display: grid; gap: 3px; }
+.bc-account-brand > div > span,
+.bc-account-panel-kicker {
+  color: rgba(255,196,210,.61);
+  font: 800 9px/1.35 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .15em;
+}
+.bc-account-brand strong {
+  color: #fff3f6;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -.045em;
+}
+.bc-account-top-actions { gap: 12px; }
+.bc-account-protected {
+  gap: 7px;
+  color: rgba(223,244,233,.8);
+  font: 8px/1.4 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .09em;
+  white-space: nowrap;
+}
+.bc-account-protected i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #72d7a7;
+  box-shadow: 0 0 0 3px rgba(114,215,167,.12);
+}
+.bc-account-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.bc-account-profile-panel,
+.bc-account-security-panel {
+  min-width: 0;
+  padding: clamp(17px, 2vw, 22px);
+  border: 1px solid rgba(255,217,228,.12);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(33,13,22,.83), rgba(15,7,12,.82));
+  box-shadow: 0 16px 42px rgba(0,0,0,.18), inset 0 1px rgba(255,255,255,.045);
+}
+.bc-account-profile-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.bc-account-profile-panel .unified-account-center-identity {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 14px;
+}
+.bc-account-profile-panel .unified-account-center-heading { align-items: center; }
+.bc-account-profile-panel .unified-account-center-avatar {
+  width: 58px;
+  height: 58px;
+  flex-basis: 58px;
+  border-radius: 16px;
+}
+.bc-account-profile-panel .unified-account-center-copy h2 {
+  font-size: 20px;
+}
+.bc-account-profile-panel .unified-account-center-status {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 9px;
+  text-align: left;
+}
+.bc-account-profile-panel .unified-account-center-status strong {
+  margin-top: 0;
+  font-size: 15px;
+}
+.bc-account-profile-panel .unified-account-center-products {
+  gap: 7px;
+}
+.bc-account-profile-panel .unified-account-center-product {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 34px;
+  border-radius: 9px;
+}
+.bc-account-profile-panel .unified-account-center-links a {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.bc-account-profile-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,224,232,.09);
+}
+.bc-account-note-icon,
+.bc-account-key-icon {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(255,183,202,.14);
+  border-radius: 10px;
+  color: #f2a6bc;
+  background: rgba(255,255,255,.035);
+}
+.bc-account-note-icon svg,
+.bc-account-key-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bc-account-profile-note > span:last-child,
+.bc-account-passkey-copy,
+.bc-account-empty > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.bc-account-profile-note strong,
+.bc-account-empty strong {
+  color: rgba(255,239,244,.9);
+  font-size: 10px;
+  font-weight: 650;
+}
+.bc-account-profile-note small,
+.bc-account-empty small {
+  color: rgba(255,222,231,.46);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.bc-account-security-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.bc-account-security-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bc-account-security-head h2 {
+  margin: 5px 0 5px;
+  color: #fff4f7;
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -.055em;
+}
+.bc-account-security-head p {
+  max-width: 350px;
+  margin: 0;
+  color: rgba(255,225,233,.57);
+  font-size: 10px;
+  line-height: 1.55;
+}
+.bc-account-count {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 3px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,187,205,.16);
+  border-radius: 9px;
+  color: #ffe4eb;
+  background: rgba(255,255,255,.045);
+  font: 700 14px 'DM Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.bc-account-count small {
+  color: rgba(255,224,232,.42);
+  font-size: 9px;
+}
+.bc-account-passkey-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,220,228,.1);
+  border-radius: 12px;
+  background: rgba(0,0,0,.17);
+}
+.bc-account-passkey-add label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+.bc-account-passkey-add label > span {
+  color: rgba(255,220,230,.66);
+  font: 8px/1.35 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .07em;
+}
+.bc-account-passkey-add input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid rgba(255,222,231,.13);
+  border-radius: 8px;
+  outline: none;
+  color: #fff2f5;
+  background: rgba(255,255,255,.045);
+  font-size: 11px;
+}
+.bc-account-passkey-add input::placeholder { color: rgba(255,224,231,.28); }
+.bc-account-passkey-add input:focus {
+  border-color: rgba(255,119,153,.7);
+  box-shadow: 0 0 0 3px rgba(255,73,119,.1);
+}
+.bc-account-passkey-add .bc-primary-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+.bc-account-passkey-list {
+  display: grid;
+  max-height: 248px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(255,165,190,.22) transparent;
+}
+.bc-account-passkey-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 57px;
+  border-bottom: 1px solid rgba(255,220,228,.08);
+}
+.bc-account-passkey-copy strong {
+  overflow: hidden;
+  color: rgba(255,243,247,.91);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bc-account-passkey-copy small {
+  color: rgba(255,220,230,.45);
+  font-size: 9px;
+}
+.bc-account-remove,
+.bc-account-signout {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,175,192,.16);
+  border-radius: 8px;
+  color: rgba(255,224,232,.76);
+  background: rgba(255,255,255,.035);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+}
+.bc-account-remove:hover,
+.bc-account-signout:hover { border-color: rgba(255,175,192,.34); background: rgba(255,255,255,.07); }
+.bc-account-remove:disabled,
+.bc-account-signout:disabled { cursor: not-allowed; opacity: .5; }
+.bc-account-empty,
+.bc-account-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 92px;
+  padding: 15px;
+  border: 1px dashed rgba(255,213,224,.13);
+  border-radius: 12px;
+  background: rgba(255,255,255,.02);
+}
+.bc-account-empty-icon {
+  display: grid;
+  width: 33px;
+  height: 33px;
+  flex: 0 0 33px;
+  place-items: center;
+  border: 1px solid rgba(255,183,202,.16);
+  border-radius: 10px;
+  color: #f0a0b6;
+  font-size: 20px;
+}
+.bc-account-unavailable {
+  display: block;
+  min-height: auto;
+  color: rgba(255,239,243,.88);
+  font-size: 11px;
+}
+.bc-account-unavailable p {
+  margin: 7px 0 0;
+  color: rgba(255,222,231,.55);
+  font-size: 10px;
+  line-height: 1.55;
+}
+.bc-account-message {
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.bc-account-message.is-error {
+  border-color: rgba(255,108,130,.2);
+  color: #ffc2ce;
+  background: rgba(160,28,55,.13);
+}
+.bc-account-message.is-success {
+  border-color: rgba(110,220,165,.17);
+  color: #9de5bf;
+  background: rgba(30,110,75,.1);
+}
+.bc-account-footer {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding-top: 4px;
+}
+.bc-account-footer > span {
+  color: rgba(255,219,229,.36);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.bc-account-footer > div { gap: 9px; }
+.bc-account-signout { min-height: 40px; padding-inline: 14px; }
+.bc-account-footer .bc-primary-button { min-height: 40px; min-width: 86px; }
+@media (max-width: 760px) {
+  .bc-account-window { justify-content: flex-start; padding: 18px; }
+  .bc-account-grid { grid-template-columns: minmax(0,1fr); }
+  .bc-account-profile-panel { gap: 14px; }
+  .bc-account-profile-note { margin-top: 0; }
+  .bc-account-passkey-list { max-height: 210px; }
+}
+@media (max-width: 560px) {
+  .bc-account-topbar { align-items: flex-start; }
+  .bc-account-top-actions { flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+  .bc-account-protected { display: none; }
+  .bc-account-brand-mark { width: 34px; height: 34px; flex-basis: 34px; }
+  .bc-account-brand strong { font-size: 16px; }
+  .bc-account-profile-panel,
+  .bc-account-security-panel { padding: 15px; }
+  .bc-account-passkey-add { grid-template-columns: minmax(0,1fr); }
+  .bc-account-passkey-add .bc-primary-button { width: 100%; }
+  .bc-account-footer { align-items: flex-start; flex-direction: column; }
+  .bc-account-footer > div { width: 100%; justify-content: flex-end; }
+}
+@media (max-height: 720px) and (min-width: 761px) {
+  .bc-account-window { justify-content: flex-start; }
+  .bc-account-workspace { gap: 10px; }
+  .bc-account-grid { gap: 10px; }
+  .bc-account-profile-panel,
+  .bc-account-security-panel { padding: 15px; }
+  .bc-account-security-panel { gap: 11px; }
+  .bc-account-passkey-list { max-height: 195px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-account-remove,
+  .bc-account-signout { transition: none; }
+}
