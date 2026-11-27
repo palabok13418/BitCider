@@ -162,6 +162,19 @@ Security controls:
 
 The party Browser searches the existing `/bitmono/search` route. A host can prepare a result through `/bitmono/stream/:trackId`, which fully downloads and verifies the source into the BitMono audio cache, then start the returned same-origin `/bitmono/audio/:cacheKey` stream from the in-page audio element. The host publishes that audio element's captured audio track through the room's existing direct WebRTC transport; the backend does not relay the audio. The queue and playback state accept `bitmono` as a separate validated source. The current browser must support `HTMLMediaElement.captureStream()` for this host playback path; the existing BitChord tab-share path remains available separately.
 
+## Adaptive HLS and FairPlay playback
+
+The BitConnection host audio element now uses `src/bitconnection/stream-player.mjs`:
+
+- Progressive audio continues through the browser's native media element.
+- Clear HLS manifests use HLS.js when Media Source Extensions are supported, with native Safari HLS as the fallback.
+- FairPlay-protected HLS can be initialized through Shaka Player only when the content provider supplies its own HTTPS FairPlay license endpoint and server certificate. The adapter supports modern and legacy Apple FairPlay key-system identifiers and can apply a provider-specific SKD content-ID transform.
+- A FairPlay configuration is intentionally not inferred from an Apple Music User Media Token. That token is a subscriber credential, not a FairPlay content key or license. BitCider does not extract Apple Music license responses or decrypt protected Apple Music segments.
+
+The included player libraries are HLS.js (`hls.js`) and Shaka Player (`shaka-player`). They are playback engines, not FairPlay licensing servers. The FairPlay KSM sample is not installed as a production license server; a KSM requires the content provider's own authorized FPS credentials and license workflow.
+
+For Apple Music catalog playback, the existing personal addon continues to use the signed-in Cider browser bridge: it asks Cider to play the selected catalog song, reads the resulting Cider queue asset URL, and returns that authorized playback URL. This is separate from the subscriber Media-User-Token flow used for TTML lyrics and recommendation shelves.
+
 ## Apple Music account connection
 
 Users add their own Apple Music Music User Token (also referred to in the account UI as a User Media Token) in BitAccount Center. Deplexo stores that credential encrypted with the dedicated `BITCIDER_ENCRYPTION_KEY`; the plaintext token is never returned to the browser or written to logs.
