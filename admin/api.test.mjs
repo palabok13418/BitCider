@@ -163,6 +163,6 @@ test('separate admin workers preserve concurrent WebAuthn challenges in shared p
     verifyInvalidRegistration(secondWorker, secondCookie)
   ]);
   const results = await Promise.all([firstVerify.json(), secondVerify.json()]);
-  assert.notEqual(results[0].error, 'ADMIN_CHALLENGE_EXPIRED');
-  assert.notEqual(results[1].error, 'ADMIN_CHALLENGE_EXPIRED');
+  assert.equal(results[0].error, 'ADMIN_PASSKEY_ENROLLMENT_FAILED');
+  assert.equal(results[1].error, 'ADMIN_PASSKEY_ENROLLMENT_FAILED');
 });
