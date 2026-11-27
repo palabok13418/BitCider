@@ -874,3 +874,65 @@
   .bc-party-room-qr { width: 72px; height: 72px; }
   .bc-party-room-qr-placeholder { width: 72px; }
 }
+
+
+/* Top-level room sharing: no card, with the code and QR above both columns. */
+.bc-party-room {
+  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+}
+.bc-party-room-share {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.bc-party-playback-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+.bc-party-content-panel {
+  grid-column: 2;
+  grid-row: 2;
+}
+.bc-party-room-qr {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* Render the picker in a document-level portal so parent clipping/stacking
+   contexts cannot turn the viewport overlay into a small in-panel popup. */
+.bc-party-gif-overlay {
+  z-index: 2147483647;
+}
+@media (max-width: 900px) {
+  .bc-party-room {
+    grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+}
+@media (max-width: 680px) {
+  .bc-party-room {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+  .bc-party-room-share {
+    width: 100%;
+    grid-column: auto;
+    grid-row: auto;
+    margin: 0;
+    padding: 0;
+  }
+  .bc-party-playback-panel,
+  .bc-party-content-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
