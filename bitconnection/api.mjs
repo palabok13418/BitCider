@@ -794,7 +794,7 @@ export function createBitConnectionRouter({
         queue: { method: 'POST', path: '/rooms/{roomId}/queue' },
         autoMixStatus: { method: 'GET', path: '/rooms/{roomId}/automix/status' },
         autoMixPrepare: { method: 'POST', path: '/rooms/{roomId}/automix/prepare' },
-        autoMixAnalyze: { method: 'POST', path: '/rooms/{roomId}/automix/analyze/{queueItemId}', contentType: 'application/vnd.bitconnection.pcm-f32le' },
+        autoMixAnalyze: { method: 'POST', path: '/rooms/{roomId}/automix/analyze/{queueItemId}', contentType: 'application/vnd.bitconnection.pcm-f32le', sampleRate: 22050, channels: 1 },
         autoMixPlan: { method: 'POST', path: '/rooms/{roomId}/automix/plan' },
         chat: { method: 'POST', path: '/rooms/{roomId}/chat' },
         memberModeration: { method: 'POST', path: '/rooms/{roomId}/members/{participantId}/moderate' },
@@ -1629,9 +1629,6 @@ export function createBitConnectionRouter({
           error: 'AUTOMIX_PCM_REQUIRED',
           message: 'Send mono Float32 PCM in little-endian byte order using application/vnd.bitconnection.pcm-f32le.'
         });
-      }
-      if (String(req.get('x-audio-sample-rate') || '') !== '22050') {
-        return res.status(400).json({ error: 'AUTOMIX_SAMPLE_RATE_REQUIRED', message: 'AutoMix analysis requires 22050 Hz mono PCM.' });
       }
       const queueItemId = String(req.params.queueItemId || '');
       const queued = (room.queue || []).find(item => item.queueItemId === queueItemId);
