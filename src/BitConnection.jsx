@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
 import { startBitConnectionGuestTransport, startBitConnectionHostTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
+import { attachBitCiderStream } from './bitconnection/stream-player.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
@@ -1266,12 +1267,16 @@ function CreateRoomWindow() {
   const [hostAudioError, setHostAudioError] = useState('');
   const hostTransportRef = useRef(null);
   const hostPlayerRef = useRef(null);
+  const hostStreamEngineRef = useRef(null);
   const hostAudioModeRef = useRef('tab');
 
   useEffect(() => () => {
     const transport = hostTransportRef.current;
     const session = hostSession;
+    const streamEngine = hostStreamEngineRef.current;
     hostTransportRef.current = null;
+    hostStreamEngineRef.current = null;
+    if (streamEngine) void streamEngine.destroy().catch(() => {});
     if (transport) void transport.stop({ leave: true });
     else if (session) void session.leave().catch(() => {});
   }, [hostSession]);
@@ -1493,8 +1498,13 @@ function CreateRoomWindow() {
 
     setHostAudioError('');
     player.pause();
-    player.src = streamUrl;
-    player.load();
+    await hostStreamEngineRef.current?.destroy?.();
+    hostStreamEngineRef.current = null;
+    const streamEngine = await attachBitCiderStream(player, streamUrl, {
+      mimeType: track.mimeType || track.contentType || '',
+      onError: streamError => setHostAudioError(streamError.message || 'The HLS stream encountered an error.')
+    });
+    hostStreamEngineRef.current = streamEngine;
     const playPromise = player.play();
     let startedNewTransport = false;
     let transportPromise = Promise.resolve(hostTransportRef.current);
@@ -1573,6 +1583,8 @@ function CreateRoomWindow() {
     if (transport) await transport.stop({ leave: false });
     const player = hostPlayerRef.current;
     if (player) {
+      await hostStreamEngineRef.current?.destroy?.();
+      hostStreamEngineRef.current = null;
       const positionSeconds = Number(player.currentTime || 0);
       player.pause();
       player.removeAttribute('src');
@@ -1590,6 +1602,8 @@ function CreateRoomWindow() {
     hostTransportRef.current = null;
     const player = hostPlayerRef.current;
     if (player) {
+      await hostStreamEngineRef.current?.destroy?.();
+      hostStreamEngineRef.current = null;
       player.pause();
       player.removeAttribute('src');
       player.load();
