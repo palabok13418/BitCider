@@ -389,15 +389,12 @@ export function camelotDistance(left, right) {
   const a = parse(left);
   const b = parse(right);
   if (!a || !b) return 6;
-  if (a.number === b.number && a.mode === b.mode) return 0;
-  if (a.number === b.number && a.mode !== b.mode) return 0.35;
-  const adjacent = Math.min(
-    Math.abs(a.number - b.number),
-    12 - Math.abs(a.number - b.number)
-  ) === 1;
-  if (adjacent && a.mode === b.mode) return 0.55;
-  if (adjacent && a.mode !== b.mode) return 0.8;
-  return Math.min(1, Math.min(Math.abs(a.number - b.number), 12 - Math.abs(a.number - b.number)) / 6);
+  const steps = Math.min(Math.abs(a.number - b.number), 12 - Math.abs(a.number - b.number));
+  if (steps === 0 && a.mode === b.mode) return 0;
+  if (steps === 0 && a.mode !== b.mode) return 0.35;
+  if (steps === 1 && a.mode === b.mode) return 0.55;
+  if (steps === 1 && a.mode !== b.mode) return 0.8;
+  return 1;
 }
 
 function bestNextTrack(current, remaining) {
