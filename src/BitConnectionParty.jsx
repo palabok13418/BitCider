@@ -742,11 +742,14 @@ function PartyRoomExperience({
   const lyrics = appleMusicLyrics.length
     ? appleMusicLyrics
     : Array.isArray(roomState?.lyrics?.lines) ? roomState.lyrics.lines : [];
+  const appleTimedLineIndex = appleMusicLyrics.findIndex(line => (
+    progressSeconds >= Number(line.startSeconds || 0)
+    && progressSeconds < Number(line.endSeconds || Number.MAX_SAFE_INTEGER)
+  ));
   const currentLyricIndex = appleMusicLyrics.length
-    ? Math.max(0, appleMusicLyrics.findIndex((line, index) => (
-        progressSeconds >= Number(line.startSeconds || 0)
-        && (line.endSeconds == null || progressSeconds < Number(line.endSeconds) || index === appleMusicLyrics.length - 1)
-      )))
+    ? appleTimedLineIndex >= 0 ? appleTimedLineIndex
+      : progressSeconds >= Number(appleMusicLyrics[appleMusicLyrics.length - 1]?.startSeconds || 0)
+        ? appleMusicLyrics.length - 1 : -1
     : Number.isInteger(roomState?.lyrics?.currentIndex) ? roomState.lyrics.currentIndex : -1;
 
   return (
