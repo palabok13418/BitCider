@@ -70,6 +70,29 @@ test('room session sends its scoped credential and the correct account CSRF iden
   assert.deepEqual(JSON.parse(calls[0].options.body), { volume: 0.4 });
 });
 
+test('public-party join invokes browser fetch with the Window receiver', async () => {
+  const receivers = [];
+  const browserFetch = function (url, options) {
+    receivers.push({ receiver: this, url, options });
+    return Promise.resolve(new Response(JSON.stringify({
+      room: { roomId: 'public-room' },
+      participantId: 'guest-1',
+      participantCredential: 'guest-public-party-credential'
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
+  };
+  const client = new BitConnectionApiClient({ fetchImpl: browserFetch });
+  const joined = await client.joinRoom({ roomId: 'public-room' });
+
+  assert.equal(receivers.length, 1);
+  assert.equal(receivers[0].receiver, globalThis);
+  assert.equal(receivers[0].url, '/api/bitconnection/rooms/public-room/join');
+  assert.equal(joined.session.roomId, 'public-room');
+  assert.equal(joined.session.role, 'guest');
+});
+
 test('BitCider reuse sends its explicit identity and Cider CSRF token on host room calls', async () => {
   const calls = [];
   const client = new BitConnectionApiClient({
