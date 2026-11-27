@@ -734,7 +734,7 @@ export function createBitConnectionRouter({
       service: 'BitConnection Listening Party',
       protocolVersion: 1,
       apiVersion: BITCONNECTION_API_VERSION,
-      serviceUrl: origin ? origin + apiBase + '/party-service' : apiBase + '/party-service',
+      serviceUrl: origin ? origin + '/party' : '/party',
       apiBase: origin ? origin + apiBase : apiBase,
       source: 'YouTube Music through BitChord Web',
       authentication: {
