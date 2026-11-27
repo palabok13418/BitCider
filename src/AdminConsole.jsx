@@ -31,7 +31,6 @@ async function requestJson(path, options = {}) {
 
 async function runPersonalAddonChecks(stage = 'stream', query = 'Chicago Michael Jackson') {
   const checks = {};
-  const shouldSearch = stage !== 'manifest';
   const shouldStream = ['stream', 'renditions', 'all'].includes(stage);
   const shouldRenditions = ['renditions', 'all'].includes(stage);
   const checkedAt = new Date().toISOString();
@@ -48,7 +47,9 @@ async function runPersonalAddonChecks(stage = 'stream', query = 'Chicago Michael
     const started = performance.now();
     const status = await requestJson('/api/status');
     if (status.connected !== true || typeof status.addonUrl !== 'string' || !status.addonUrl) {
-      throw new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
+      const error = new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
+      error.state = 'idle';
+      throw error;
     }
     const addonUrl = new URL(status.addonUrl, window.location.origin);
     if (!/^\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(addonUrl.pathname)) {
@@ -70,8 +71,8 @@ async function runPersonalAddonChecks(stage = 'stream', query = 'Chicago Michael
   } catch (error) {
     record(
       'bc-addon-manifest',
-      error.status >= 500 || error.status === 404 ? 'offline' : 'degraded',
-      'MANIFEST FAILED',
+      error.state || (error.status >= 500 || error.status === 404 ? 'offline' : 'degraded'),
+      error.state === 'idle' ? 'CIDER REQUIRED' : 'MANIFEST FAILED',
       error.message || 'The personalized manifest could not be checked.',
       manifestPath || '/api/status',
       null,
