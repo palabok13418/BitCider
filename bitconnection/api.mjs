@@ -574,6 +574,47 @@ export function createBitConnectionRouter({
     };
   }
 
+  function cleanAppleMusicTrack(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const id = String(value.appleMusicSongId || value.trackId || value.id || '').trim();
+    const title = String(value.title || '').trim();
+    const artist = String(value.artist || '').trim();
+    const durationSeconds = Number(value.durationSeconds ?? 0);
+    if (!/^[0-9]{1,20}$/.test(id)
+      || !title || title.length > 180
+      || !artist || artist.length > 180
+      || !Number.isFinite(durationSeconds) || durationSeconds < 0 || durationSeconds > 24 * 60 * 60) return null;
+
+    const artworkCandidate = String(value.artworkUrl || value.thumbnailUrl || value.artwork || '').trim().slice(0, 2048);
+    let thumbnailUrl = '';
+    if (artworkCandidate) {
+      try {
+        const parsed = new URL(artworkCandidate);
+        if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) thumbnailUrl = parsed.toString();
+      } catch { /* Untrusted artwork is omitted. */ }
+    }
+    const storefront = String(value.appleMusicStorefront || value.storefront || '').trim().toLowerCase();
+    const urlCandidate = String(value.url || value.appleMusicUrl || '').trim().slice(0, 2048);
+    let appleMusicUrl = '';
+    if (urlCandidate) {
+      try {
+        const parsed = new URL(urlCandidate);
+        if (parsed.protocol === 'https:' && /(^|\\.)music\\.apple\\.com$/i.test(parsed.hostname)) appleMusicUrl = parsed.toString();
+      } catch { /* Untrusted catalog URL is omitted. */ }
+    }
+    return {
+      source: 'apple-music',
+      trackId: id,
+      appleMusicSongId: id,
+      title,
+      artist,
+      durationSeconds,
+      ...(thumbnailUrl ? { thumbnailUrl } : {}),
+      ...( /^[a-z]{2}$/.test(storefront) ? { appleMusicStorefront: storefront } : {}),
+      ...(appleMusicUrl ? { appleMusicUrl } : {})
+    };
+  }
+
   function cleanCoordinates(value) {
     const latitude = Number(value?.latitude);
     const longitude = Number(value?.longitude);
@@ -2516,7 +2557,7 @@ export function createBitConnectionRouter({
       const body = req.body || {};
       const next = { ...(room.playbackState || {}) };
       const nextSource = body.source === undefined ? (next.source || 'youtube-music') : String(body.source);
-      if (!['youtube-music', 'bitmono'].includes(nextSource)) {
+      if (!['youtube-music', 'bitmono', 'apple-music'].includes(nextSource)) {
         return { status: 400, error: 'UNSUPPORTED_MUSIC_SOURCE', message: 'Choose an available BitChord music source.' };
       }
       if (body.track !== undefined) {
@@ -2524,15 +2565,19 @@ export function createBitConnectionRouter({
         else {
           const track = nextSource === 'bitmono'
             ? cleanBitMonoTrack(body.track)
-            : cleanYouTubeTrack(body.track);
-          if (!track) return { status: 400, error: nextSource === 'bitmono' ? 'INVALID_BITMONO_TRACK' : 'INVALID_YOUTUBE_TRACK' };
+            : nextSource === 'apple-music'
+              ? cleanAppleMusicTrack(body.track)
+              : cleanYouTubeTrack(body.track);
+          if (!track) return { status: 400, error: nextSource === 'bitmono' ? 'INVALID_BITMONO_TRACK' : nextSource === 'apple-music' ? 'INVALID_APPLE_MUSIC_TRACK' : 'INVALID_YOUTUBE_TRACK' };
           next.track = track;
         }
       } else if (body.source !== undefined && nextSource !== (next.source || 'youtube-music')) {
         return { status: 400, error: 'TRACK_REQUIRED_FOR_SOURCE_CHANGE', message: 'Choose a valid track when changing the playback source.' };
       } else if (nextSource === 'bitmono' && next.track?.source !== 'bitmono') {
         return { status: 400, error: 'BITMONO_TRACK_REQUIRED' };
-      } else if (nextSource === 'youtube-music' && next.track?.source === 'bitmono') {
+      } else if (nextSource === 'apple-music' && next.track?.source !== 'apple-music') {
+        return { status: 400, error: 'APPLE_MUSIC_TRACK_REQUIRED' };
+      } else if (nextSource === 'youtube-music' && ['bitmono', 'apple-music'].includes(next.track?.source)) {
         return { status: 400, error: 'YOUTUBE_TRACK_REQUIRED' };
       }
       if (body.isPlaying !== undefined) {
