@@ -79,16 +79,62 @@ function writeState(file, state) {
   fs.renameSync(temporary, file);
 }
 
+async function acquireStateFileLock(file) {
+  const lockFile = file + '.lock';
+  const lockToken = crypto.randomBytes(24).toString('base64url');
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    try {
+      const descriptor = fs.openSync(lockFile, 'wx', 0o600);
+      fs.writeFileSync(descriptor, JSON.stringify({ token: lockToken, pid: process.pid, createdAt: Date.now() }));
+      return () => {
+        try {
+          fs.closeSync(descriptor);
+        } catch {}
+        try {
+          const current = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+          if (current.token === lockToken) fs.unlinkSync(lockFile);
+        } catch {}
+      };
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      try {
+        const stat = fs.statSync(lockFile);
+        // Recover a lock left behind by a crashed worker. Normal state
+        // mutations are synchronous and should never hold this for two minutes.
+        if (Date.now() - stat.mtimeMs > 120000) {
+          fs.unlinkSync(lockFile);
+          continue;
+        }
+      } catch (statError) {
+        if (statError.code === 'ENOENT') continue;
+        throw statError;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
+  throw new Error('Timed out waiting for the shared admin-state lock.');
+}
+
 function createStateStore(file) {
   let queue = Promise.resolve();
   return {
     read: () => readState(file),
     update(mutator) {
       const operation = queue.then(async () => {
-        const state = readState(file);
-        const result = await mutator(state);
-        if (result?.write !== false) writeState(file, state);
-        return result;
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        const release = await acquireStateFileLock(file);
+        try {
+          // Re-read only after acquiring the cross-process lock. This makes
+          // the single-owner credential write atomic across workers sharing
+          // the Deplexo persistent data volume, not just within one process.
+          const state = readState(file);
+          const result = await mutator(state);
+          if (result?.write !== false) writeState(file, state);
+          return result;
+        } finally {
+          release();
+        }
       });
       queue = operation.then(() => undefined, () => undefined);
       return operation;
