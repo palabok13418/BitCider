@@ -728,9 +728,12 @@ function PartyRoomExperience({
         </nav>
       </section>
 
-      <button className="bc-party-browser-button" type="button" onClick={openBrowser} aria-haspopup="dialog" aria-expanded={browserOpen}>
-        <Icon name="browser" size={18}/><span>Browser</span>
-      </button>
+      {createPortal(
+        <button className="bc-party-browser-button" type="button" onClick={openBrowser} aria-haspopup="dialog" aria-expanded={browserOpen}>
+          <Icon name="browser" size={18}/><span>Browser</span>
+        </button>,
+        document.body
+      )}
       {browserOpen && createPortal(
         <div className="bc-party-browser-overlay" role="dialog" aria-modal="true" aria-label="Apple Music Browser" onMouseDown={event => { if (event.target === event.currentTarget) setBrowserOpen(false); }}>
           <section className="bc-party-browser-panel">
