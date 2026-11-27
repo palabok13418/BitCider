@@ -1376,3 +1376,100 @@
 
 /* Hidden source element: audio remains active for host captureStream(). */
 audio.bc-party-audio-output { display: none !important; }
+
+
+/* Apple Music format availability; this is not the active stream codec. */
+.bc-party-quality-apple {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+  max-width: min(100%, 440px);
+  margin-top: 8px;
+  text-align: center;
+}
+.bc-party-quality-caption {
+  width: 100%;
+  color: rgba(255, 221, 232, .52);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .14em;
+}
+.bc-party-format-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 205, 222, .18);
+  border-radius: 999px;
+  color: #ffe4ed;
+  background: rgba(213, 89, 132, .12);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
+.bc-party-quality-note {
+  color: rgba(255, 225, 235, .46);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.bc-party-quality-apple .bc-party-quality-note {
+  width: 100%;
+}
+.bc-party-browser-format-filter {
+  display: grid;
+  grid-template-columns: auto minmax(130px, 190px);
+  align-items: center;
+  gap: 8px 12px;
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 220, 232, .1);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .025);
+}
+.bc-party-browser-format-filter label {
+  color: rgba(255, 228, 237, .67);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .1em;
+}
+.bc-party-browser-format-filter select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 210, 225, .18);
+  border-radius: 8px;
+  color: #fff0f5;
+  background: #26101b;
+  font-size: 11px;
+}
+.bc-party-browser-format-filter small {
+  grid-column: 1 / -1;
+  color: rgba(255, 225, 235, .42);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.bc-party-browser-track-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+.bc-party-browser-track-copy > strong,
+.bc-party-browser-track-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bc-party-format-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+@media (max-width: 560px) {
+  .bc-party-browser-format-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bc-party-browser-format-filter small { grid-column: 1; }
+}
