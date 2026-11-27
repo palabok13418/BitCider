@@ -161,6 +161,7 @@ Security controls:
 ## Apple Music account connection
 
 Set `APPLE_MUSIC_DEVELOPER_TOKEN` on Deplexo only. It is an Apple Music API developer JWT and must never be added to a frontend build variable. Users add their own Apple Music Music User Token (also referred to in the account UI as a User Media Token) in BitAccount Center. The backend validates that token against Apple Music's personalized-recommendations endpoint and stores it encrypted with the same dedicated `BITCIDER_ENCRYPTION_KEY`; the plaintext token is never returned to the browser or written to logs. The Browser panel retrieves recommendations through the authenticated BitConnection API. A valid Apple Music developer token and the Deplexo encryption key are both required before a user can connect.
+The account-scoped TTML endpoint first tries Apple's private `syllable-lyrics` response and falls back to `lyrics` for line-level timing. These lyrics routes are undocumented Apple web-player endpoints, not part of the stable public API, so they may change or stop working without notice. The official personalized-recommendations endpoint is used separately for the Browser feed.
 - The personal addon URL is a bearer-style secret. Do not post it publicly. It is never saved to browser localStorage; the website returns it to the matching browser session or signed-in account over a no-store API response.
 
 ## BitMono complete-audio cache
