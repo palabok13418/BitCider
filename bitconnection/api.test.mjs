@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicDeveloperToken = '', appleMusicWebPlayerToken = '', providerCredentialEncryptionConfigured = false } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicWebPlayerToken = '', providerCredentialEncryptionConfigured = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -23,7 +23,6 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     iceConfig,
     giphyApiKey,
     fetchImpl,
-    appleMusicDeveloperToken,
     appleMusicWebPlayerToken,
     encryptProviderCredential: value => ({ value: Buffer.from(value).toString('base64url'), iv: 'test-iv', tag: 'test-tag' }),
     decryptProviderCredential: box => Buffer.from(box.value, 'base64url').toString('utf8'),
@@ -986,43 +985,63 @@ test('GIF search returns a clear configuration response when the Deplexo key is 
 });
 
 
-test('Apple Music User Media Tokens are encrypted and used for the optional recommendations feed', async t => {
+test('Apple Music recommendations use the private web-player endpoint without a developer-token secret', async t => {
   const seenRequests = [];
+  const expiry = Math.floor(Date.now() / 1000) + 3600;
+  const webPlayerBearer = 'eyJhbGciOiJFUzI1NiJ9.'
+    + Buffer.from(JSON.stringify({ exp: expiry }), 'utf8').toString('base64url')
+    + '.signaturetoken';
   const fetchImpl = async (url, options = {}) => {
-    seenRequests.push({ url: String(url), headers: options.headers || {} });
-    if (String(url).endsWith('/v1/me/recommendations?limit=1')) {
-      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const target = String(url);
+    seenRequests.push({ url: target, headers: options.headers || {} });
+    if (target === 'https://music.apple.com/us/browse') {
+      return new Response(
+        '<html><script src="https://music.apple.com/assets/index-recommendations-test.js"></script></html>',
+        { status: 200, headers: { 'content-type': 'text/html' } }
+      );
     }
-    if (String(url).endsWith('/v1/me/recommendations?limit=8')) {
+    if (target === 'https://music.apple.com/assets/index-recommendations-test.js') {
+      return new Response('const bearer = "' + webPlayerBearer + '";', {
+        status: 200, headers: { 'content-type': 'application/javascript' }
+      });
+    }
+    if (target === 'https://amp-api-edge.music.apple.com/v1/recommendations/us?limit=8') {
       return new Response(JSON.stringify({
         data: [{
           id: 'personal-mix-1',
           type: 'personal-recommendation',
-          attributes: { title: 'Made for tonight', description: { standard: 'A personal mix' } }
-        }]
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    }
-    if (String(url).includes('/v1/me/recommendations/personal-mix-1/contents?')) {
-      return new Response(JSON.stringify({
-        data: [{
-          id: '12345',
-          type: 'songs',
           attributes: {
-            name: 'Example track',
-            artistName: 'Example artist',
-            albumName: 'Example album',
+            title: { stringForDisplay: 'Made for tonight' },
+            description: { standard: 'A personal mix' },
             artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.{f}' },
-            url: 'https://music.apple.com/us/song/example/12345',
-            durationInMillis: 180000
+            url: 'https://music.apple.com/us/playlist/made-for-tonight/pl.example'
+          },
+          relationships: {
+            contents: {
+              data: [{
+                id: '12345',
+                type: 'songs',
+                attributes: {
+                  name: 'Example track',
+                  artistName: 'Example artist',
+                  albumName: 'Example album',
+                  artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.{f}' },
+                  url: 'https://music.apple.com/us/song/example/12345',
+                  durationInMillis: 180000
+                }
+              }]
+            }
           }
         }]
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
-    return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ errors: [{ detail: 'Unexpected Apple Music test URL: ' + target }] }), {
+      status: 404, headers: { 'content-type': 'application/json' }
+    });
   };
 
+  // No developer-token option or environment secret is supplied to BitConnection.
   const client = await harness(t, {
-    appleMusicDeveloperToken: 'test-apple-developer-jwt',
     providerCredentialEncryptionConfigured: true,
     fetchImpl
   });
@@ -1054,6 +1073,7 @@ test('Apple Music User Media Tokens are encrypted and used for the optional reco
   const statusPayload = await status.json();
   assert.equal(statusPayload.connected, true);
   assert.equal(statusPayload.recommendationsConfigured, true);
+  assert.equal(statusPayload.recommendationsAuthentication, 'automatic-web-player-bearer-plus-user-media-token-private-endpoint-experimental');
   assert.equal(JSON.stringify(statusPayload).includes(token), false);
 
   const recommendations = await client.request('/account/providers/apple-music/recommendations', {
@@ -1061,12 +1081,23 @@ test('Apple Music User Media Tokens are encrypted and used for the optional reco
   });
   const recommendationPayload = await recommendations.json();
   assert.equal(recommendations.status, 200);
+  assert.equal(recommendationPayload.source, 'amp-api-edge');
+  assert.equal(recommendationPayload.authentication, 'web-player-bearer-plus-user-media-token');
   assert.equal(recommendationPayload.recommendations[0].title, 'Made for tonight');
   assert.equal(recommendationPayload.recommendations[0].items[0].title, 'Example track');
   assert.equal(recommendationPayload.recommendations[0].items[0].artist, 'Example artist');
   assert.equal(recommendationPayload.recommendations[0].items[0].artworkUrl, 'https://is1-ssl.mzstatic.com/image/600x600bb.jpg');
-  assert.ok(seenRequests.every(entry => entry.headers.Authorization === 'Bearer test-apple-developer-jwt'));
-  assert.ok(seenRequests.every(entry => entry.headers['Music-User-Token'] === token));
+
+  const privateRequest = seenRequests.find(entry => entry.url === 'https://amp-api-edge.music.apple.com/v1/recommendations/us?limit=8');
+  assert.ok(privateRequest, 'the feed must call the private amp-api-edge recommendation route');
+  assert.equal(privateRequest.headers.Authorization, 'Bearer ' + webPlayerBearer);
+  assert.equal(privateRequest.headers['Media-User-Token'], token);
+  assert.equal(privateRequest.headers['Music-User-Token'], token);
+  assert.equal(privateRequest.headers.Origin, 'https://music.apple.com');
+  assert.ok(seenRequests.some(entry => entry.url === 'https://music.apple.com/us/browse'));
+  assert.ok(seenRequests.some(entry => entry.url === 'https://music.apple.com/assets/index-recommendations-test.js'));
+  assert.equal(seenRequests.some(entry => entry.url.includes('api.music.apple.com/v1/me/recommendations')), false);
+  assert.equal(JSON.stringify(recommendationPayload).includes(token), false);
 
   const disconnected = await client.request('/account/providers/apple-music', {
     method: 'DELETE',
@@ -1099,7 +1130,6 @@ test('Apple Music account connection needs encryption but not a developer token'
   assert.equal(noDevPayload.validationDeferred, true);
 
   const noEncryption = await harness(t, {
-    appleMusicDeveloperToken: 'test-apple-developer-jwt',
     providerCredentialEncryptionConfigured: false,
     fetchImpl: async () => new Response(JSON.stringify({ data: [] }), { status: 200 })
   });
