@@ -89,6 +89,9 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   }
 }));
 
+// Short, stable BitChord setup URL. Keep the full API route working for older clients.
+app.get(['/party', '/party/'], (_req, res) => res.redirect(308, '/api/bitconnection/party-service'));
+
 // Preserve the smaller JSON limit for all other BitCider API routes.
 app.use(express.json({ limit: '256kb' }));
 
