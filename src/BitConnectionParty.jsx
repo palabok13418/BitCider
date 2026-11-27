@@ -153,6 +153,8 @@ function PartyRoomExperience({
   onSeekBitMono = async () => {},
   onPlayAppleMusicTrack = async () => {},
   onSearchAppleMusicCatalog = async () => [],
+  appleMusicPlaybackStatus = 'checking',
+  appleMusicPlaybackError = '',
   onControlAppleMusic = async () => {},
   onSeekAppleMusic = async () => {}
 }) {
@@ -1044,6 +1046,15 @@ function PartyRoomExperience({
               <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
+            {appleMusicPlaybackStatus === 'ready' && (
+              <div className="bc-party-inline-status" role="status">Direct Apple Music playback is ready in this browser.</div>
+            )}
+            {appleMusicPlaybackStatus === 'checking' && (
+              <div className="bc-party-inline-status" role="status">Initializing Apple's direct playback engine…</div>
+            )}
+            {appleMusicPlaybackStatus === 'unavailable' && (
+              <div className="bc-party-inline-status" role="status">{appleMusicPlaybackError || 'Direct playback is not configured on Deplexo yet.'}</div>
+            )}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
               <Icon name="music" size={17}/>
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
