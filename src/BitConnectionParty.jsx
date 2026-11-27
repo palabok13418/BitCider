@@ -758,6 +758,7 @@ function PartyRoomExperience({
       if (result?.playbackMode === 'embed' && result.embedUrl) {
         setAppleMusicEmbed({
           url: result.embedUrl,
+          openUrl: String(item.url || item.appleMusicUrl || result.embedUrl.replace('https://embed.music.apple.com/', 'https://music.apple.com/')),
           title: String(item.title || 'Apple Music track'),
           artist: String(item.artist || '')
         });
@@ -1116,7 +1117,7 @@ function PartyRoomExperience({
                   loading="lazy"
                   referrerPolicy="strict-origin-when-cross-origin"
                 />
-                <p>Sign in to Apple Music in the player for full-length playback. The host must share this browser tab for party guests to hear it.</p>
+                <p>Sign in to Apple Music in the player for full-length playback. The host must share this browser tab for party guests to hear it. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
               </section>
             )}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
