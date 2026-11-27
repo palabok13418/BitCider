@@ -70,6 +70,18 @@ test('normalizes Apple Music catalog metadata without retaining credentials', ()
   assert.equal(JSON.stringify(track).includes('userMediaToken'), false);
 });
 
+test('preserves the no-developer-token embedded playback mode', () => {
+  const track = normalizeAppleCatalogTrack({
+    id: '123456789',
+    title: 'Embedded Song',
+    artist: 'Example Artist',
+    url: 'https://music.apple.com/us/song/embedded-song/123456789',
+    playbackMode: 'embed'
+  });
+  assert.equal(track.playbackMode, 'embed');
+  assert.equal(track.url, 'https://music.apple.com/us/song/embedded-song/123456789');
+});
+
 test('rejects non-catalog IDs when normalizing Apple Music tracks', () => {
   assert.throws(() => normalizeAppleCatalogTrack({ id: 'mono_abc' }), /catalog song ID/);
 });
