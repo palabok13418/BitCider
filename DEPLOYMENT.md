@@ -79,7 +79,7 @@ If `/api/status` or `/api/connect` returns `403 LOCAL_ONLY`, redeploy the latest
 The current BitCider backend should report these API versions after deploying the latest `main` branch:
 
 - `GET https://YOUR-DEPLEXO-APP/health` should return `"apiVersion":"2026-11-24-account-center-v13"` and `"browserCiderBridgeSupported":true`.
-- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-26-listening-party-workspace-v2"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
+- `GET https://YOUR-DEPLEXO-APP/api/bitconnection/health` should return `"apiVersion":"2026-11-26-bitmono-party-playback-v3"` and `"passkeyListing":"enabled"`. The `GET /api/bitconnection/passkeys` route should return HTTP 200 with an authenticated BitConnection session.
 - The `/api/status` response reports the active browser bridge under `ciderRelay.online`.
 
 A 404 from `/api/bitconnection/passkeys` means the Deplexo backend is still running an older build without the current passkey-listing route. Redeploy the latest `main` branch on Deplexo.
@@ -158,6 +158,10 @@ Security controls:
 - State-changing account, connect, and disconnect requests require the session-bound `X-BitCider-CSRF` HMAC token returned by `GET /api/status`.
 - Account Key sign-in, passkey sign-in, and recovery are independently rate-limited and protected by session-bound CSRF. Cider connection matching is a separate flow. Store writes are serialized within the Node process to avoid concurrent JSON updates overwriting account data.
 - Cider app tokens are encrypted with AES-256-GCM using the dedicated Deplexo `BITCIDER_ENCRYPTION_KEY`, separate from the persistent data volume. The key must be backed up securely and never committed. The `connection.json` store and legacy `encryption.key` remain under `/data/bitcider` with restrictive file permissions. Protect and back up the full volume as well; runtime/server compromise can still expose decrypted credentials.
+
+## BitMono playback in parties
+
+The party Browser searches the existing `/bitmono/search` route. A host can prepare a result through `/bitmono/stream/:trackId`, which fully downloads and verifies the source into the BitMono audio cache, then start the returned same-origin `/bitmono/audio/:cacheKey` stream from the in-page audio element. The host publishes that audio element's captured audio track through the room's existing direct WebRTC transport; the backend does not relay the audio. The queue and playback state accept `bitmono` as a separate validated source. The current browser must support `HTMLMediaElement.captureStream()` for this host playback path; the existing BitChord tab-share path remains available separately.
 
 ## Apple Music account connection
 
