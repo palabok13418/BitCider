@@ -95,7 +95,7 @@ The descriptor currently reports source playback commands, synchronized lyrics, 
 
 ## Listening Party GIF search
 
-The Listening Party chat can search and send GIFs through GIPHY. Create a free GIPHY API beta key and configure it as the frontend build variable `VITE_GIPHY_API_KEY` on every deployment that builds the site: Deplexo, Netlify, and Cloudflare. This is a public browser key by design, so do not reuse a private server credential. The chat picker includes GIPHY attribution. Without the key, text and image chat still work, but GIF search displays a setup notice.
+The Listening Party chat searches GIPHY through the Deplexo endpoint `GET /api/bitconnection/gifs/search?q={query}`. Create a free GIPHY API beta key and set `BITCONNECTION_GIPHY_API_KEY` as a **Deplexo-only server environment variable**. Do not expose it in a `VITE_` variable or copy it to Netlify/Cloudflare. The endpoint enforces a per-IP search limit and the UI includes GIPHY attribution. Without the key, text and image chat still work, but GIF search returns a configuration message.
 
 Images sent directly in chat are restricted to PNG, JPEG, and WebP, with a 512 KB maximum. Voice input uses the browser's speech-recognition feature and inserts editable text into the composer; raw voice recordings are not uploaded.
 
