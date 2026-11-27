@@ -279,6 +279,8 @@ export function createBitConnectionRouter({
   dataFile,
   maxPartySize = 30,
   iceConfig = {},
+  giphyApiKey = process.env.BITCONNECTION_GIPHY_API_KEY || '',
+  fetchImpl = globalThis.fetch,
   exposeAdminStore = null
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
@@ -329,6 +331,7 @@ export function createBitConnectionRouter({
   const ratePasskey = createRateLimit(8);
   const rateJoin = createRateLimit(24, 60 * 1000);
   const ratePublicDiscovery = createRateLimit(120, 60 * 1000);
+  const rateGifSearch = createRateLimit(30, 60 * 1000);
   const rateSignal = createRateLimit(180, 60 * 1000);
   const hostLocations = new Map();
   const pendingVerificationCodes = new Map();
@@ -658,6 +661,64 @@ export function createBitConnectionRouter({
     return res.status(204).end();
   });
 
+  router.get('/gifs/search', rateGifSearch, async (req, res) => {
+    if (!String(giphyApiKey || '').trim()) {
+      return res.status(503).json({
+        error: 'GIF_SEARCH_NOT_CONFIGURED',
+        message: 'GIF search is not configured on this BitConnection deployment.'
+      });
+    }
+    if (typeof fetchImpl !== 'function') {
+      return res.status(503).json({ error: 'GIF_SEARCH_UNAVAILABLE' });
+    }
+    const query = typeof req.query?.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
+    if (!query) return res.status(400).json({ error: 'GIF_SEARCH_QUERY_REQUIRED' });
+    try {
+      const params = new URLSearchParams({
+        api_key: String(giphyApiKey).trim(),
+        q: query,
+        limit: '18',
+        rating: 'pg-13',
+        lang: 'en',
+        bundle: 'messaging_non_clips'
+      });
+      const response = await fetchImpl('https://api.giphy.com/v1/gifs/search?' + params.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(payload?.data)) {
+        return res.status(502).json({
+          error: 'GIF_PROVIDER_ERROR',
+          message: 'GIPHY could not complete this search. Try again in a moment.'
+        });
+      }
+      const safeMediaUrl = value => {
+        try {
+          const parsed = new URL(String(value || ''));
+          return parsed.protocol === 'https:' && !parsed.username && !parsed.password
+            && /(^|\.)giphy\.com$/i.test(parsed.hostname) ? parsed.toString() : '';
+        } catch {
+          return '';
+        }
+      };
+      const gifs = payload.data.map(item => ({
+        id: String(item?.id || '').slice(0, 80),
+        preview: safeMediaUrl(item?.images?.fixed_width_small?.webp || item?.images?.fixed_width_small?.url),
+        url: safeMediaUrl(item?.images?.original?.url || item?.images?.downsized_large?.url || item?.images?.downsized?.url),
+        title: String(item?.title || '').slice(0, 120)
+      })).filter(item => item.id && item.preview && item.url);
+      res.set('Cache-Control', 'private, max-age=30');
+      return res.json({ gifs, attribution: 'Powered by GIPHY' });
+    } catch {
+      return res.status(502).json({
+        error: 'GIF_PROVIDER_UNAVAILABLE',
+        message: 'Could not reach GIPHY right now.'
+      });
+    }
+  });
+
   router.get('/party-service', (req, res) => {
     const forwardedProtocol = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
     const forwardedHost = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
@@ -692,6 +753,7 @@ export function createBitConnectionRouter({
           images: ['image/png', 'image/jpeg', 'image/webp'],
           maximumImageBytes: 524288,
           gifs: 'GIPHY HTTPS media URLs only',
+          gifSearch: { method: 'GET', path: '/gifs/search', apiKey: 'server-side-only' },
           voice: 'browser speech transcription to editable text; raw audio is not uploaded'
         }
       },
@@ -724,6 +786,7 @@ export function createBitConnectionRouter({
         queue: { method: 'POST', path: '/rooms/{roomId}/queue' },
         chat: { method: 'POST', path: '/rooms/{roomId}/chat' },
         memberModeration: { method: 'POST', path: '/rooms/{roomId}/members/{participantId}/moderate' },
+        gifSearch: { method: 'GET', path: '/gifs/search?q={query}' },
         signaling: { method: 'POST', path: '/rooms/{roomId}/signals' },
         leave: { method: 'POST', path: '/rooms/{roomId}/leave' },
         close: { method: 'POST', path: '/rooms/{roomId}/close' }
