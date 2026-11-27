@@ -150,7 +150,10 @@ function PartyRoomExperience({
   onResumeAudio = () => {},
   onPlayBitMonoTrack = async () => {},
   onControlBitMono = async () => {},
-  onSeekBitMono = async () => {}
+  onSeekBitMono = async () => {},
+  onPlayAppleMusicTrack = async () => {},
+  onControlAppleMusic = async () => {},
+  onSeekAppleMusic = async () => {}
 }) {
   const [activeTab, setActiveTab] = useState('lyrics');
   const [volume, setVolume] = useState(1);
@@ -328,7 +331,11 @@ function PartyRoomExperience({
           track
         }, window.location.origin);
       }
-      if (track?.source === 'bitmono') {
+      if (track?.source === 'apple-music') {
+        if (!isHost) throw new Error('Only the host can control the Apple Music playback session.');
+        await onControlAppleMusic(action);
+        setPlaybackMessage('Apple Music playback control updated.');
+      } else if (track?.source === 'bitmono') {
         if (!isHost) throw new Error('Only the host can control the active Bit Mono audio stream.');
         if (action === 'next' || action === 'previous') {
           setPlaybackMessage('Queue-based next and previous playback will be connected in the next player pass.');
@@ -349,7 +356,8 @@ function PartyRoomExperience({
     const next = Math.max(0, Math.min(duration || 86400, Number(value) || 0));
     setProgressSeconds(next);
     try {
-      if (track?.source === 'bitmono' && isHost) await onSeekBitMono(next);
+      if (track?.source === 'apple-music' && isHost) await onSeekAppleMusic(next);
+      else if (track?.source === 'bitmono' && isHost) await onSeekBitMono(next);
       else await session?.updatePlayback?.({ positionSeconds: next });
       window.dispatchEvent(new CustomEvent('bitconnection:playback-control', {
         detail: { roomId: room?.roomId, action: 'seek', positionSeconds: next }
@@ -687,6 +695,27 @@ function PartyRoomExperience({
     }
   }
 
+  async function playRecommendedAppleMusicItem(item) {
+    if (!isHost) {
+      setPlaybackMessage('Only the host can start Apple Music playback for this party.');
+      return;
+    }
+    if (item?.type !== 'songs' || !/^[0-9]{1,20}$/.test(String(item.id || ''))) {
+      setPlaybackMessage('This recommendation does not include a playable Apple Music catalog song ID.');
+      return;
+    }
+    setQueueBusy(true);
+    setPlaybackMessage('Opening Apple Music authorization and starting the full-length track…');
+    try {
+      await onPlayAppleMusicTrack(item);
+      setPlaybackMessage('Apple Music is playing directly in BitCider. Start tab-audio sharing to include party guests.');
+    } catch (error) {
+      setPlaybackMessage(error.message || 'Apple Music could not start this track.');
+    } finally {
+      setQueueBusy(false);
+    }
+  }
+
   async function startPreparedBitMonoTrack(track) {
     const prepared = bitMonoPrepared[String(track.id || '')];
     if (!prepared) return;
@@ -803,9 +832,9 @@ function PartyRoomExperience({
         </div>
         <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
         <div className="bc-party-transport-controls">
-          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
-          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
-          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
+          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || (track?.source === 'apple-music' && !isHost)} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
         </div>
         <div className="bc-party-volume">
           <Icon name="volume" size={17}/>
@@ -1047,6 +1076,11 @@ function PartyRoomExperience({
                             <div className="bc-party-browser-track" key={key}>
                               {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
                               <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
+                              {item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) && (
+                                <button type="button" onClick={() => void playRecommendedAppleMusicItem(item)} disabled={!isHost || queueBusy} title={isHost ? 'Play the full-length song through Apple Music' : 'Only the host can start Apple Music playback'}>
+                                  {queueBusy ? 'Starting…' : 'Play Apple Music'}
+                                </button>
+                              )}
                               <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in Bit Mono'}</button>
                               {search && (
                                 <div className="bc-party-browser-mono-results">
@@ -1078,7 +1112,7 @@ function PartyRoomExperience({
                     )}
                   </article>
                 ))}
-                <p className="bc-party-browser-footnote">Bit Mono matches are catalogue results only. Synchronized in-party playback is being integrated separately.</p>
+                <p className="bc-party-browser-footnote">Play Apple Music catalog songs directly through MusicKit, or find a compatible Bit Mono source. For party audio, the host can share this browser tab.</p>
               </div>
             )}
           </section>
