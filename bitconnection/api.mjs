@@ -1125,6 +1125,101 @@ export function createBitConnectionRouter({
     }
   });
 
+
+
+  router.get('/account/providers/apple-music/lyrics', rateAppleMusic, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) {
+      return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to fetch Apple Music lyrics.' });
+    }
+    if (!String(appleMusicDeveloperToken || '').trim()) {
+      return res.status(503).json({ error: 'APPLE_MUSIC_DEVELOPER_TOKEN_NOT_CONFIGURED', message: 'Apple Music lyrics are not configured on the backend yet.' });
+    }
+    if (typeof decryptProviderCredential !== 'function' || typeof fetchImpl !== 'function') {
+      return res.status(503).json({ error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE', message: 'Secure Apple Music credentials cannot be read on this backend.' });
+    }
+    const songId = String(req.query.songId || '').trim();
+    const storefront = String(req.query.storefront || 'us').trim().toLowerCase();
+    if (!/^[0-9]{1,20}$/.test(songId) || !/^[a-z]{2}$/.test(storefront)) {
+      return res.status(400).json({ error: 'INVALID_APPLE_MUSIC_TRACK', message: 'Provide a valid Apple Music song ID and two-letter storefront.' });
+    }
+
+    const connection = storedAppleMusicConnection(store.read(), identity.identityId);
+    if (!connection?.userMediaTokenEncrypted) {
+      return res.status(409).json({ error: 'APPLE_MUSIC_NOT_CONNECTED', message: 'Connect Apple Music in BitAccount Center first.' });
+    }
+    let userMediaToken;
+    try { userMediaToken = decryptProviderCredential(connection.userMediaTokenEncrypted); }
+    catch {
+      return res.status(503).json({ error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE', message: 'The saved Apple Music connection could not be decrypted.' });
+    }
+    if (!validAppleMusicUserToken(userMediaToken)) {
+      return res.status(409).json({ error: 'APPLE_MUSIC_RECONNECT_REQUIRED', message: 'Reconnect Apple Music in BitAccount Center.' });
+    }
+
+    async function fetchTtml(endpoint) {
+      const url = 'https://amp-api.music.apple.com/v1/catalog/'
+        + encodeURIComponent(storefront) + '/songs/' + encodeURIComponent(songId) + '/'
+        + endpoint + '?extend=ttmlLocalizations';
+      const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer ' + String(appleMusicDeveloperToken || '').trim(),
+          Origin: 'https://music.apple.com',
+          'Media-User-Token': userMediaToken
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      const attributes = payload?.data?.[0]?.attributes || {};
+      const localizations = attributes.ttmlLocalizations || null;
+      let ttml = typeof attributes.ttml === 'string' ? attributes.ttml : '';
+      if (!ttml && localizations && typeof localizations === 'object') {
+        const values = Array.isArray(localizations) ? localizations : Object.values(localizations);
+        ttml = values.find(value => typeof value === 'string' && value.trim().startsWith('<')) || '';
+      }
+      return { ok: response.ok, status: response.status, ttml, localizations };
+    }
+
+    try {
+      let result = await fetchTtml('syllable-lyrics');
+      let source = 'syllable-lyrics';
+      if (result.status === 401 || result.status === 403) {
+        return res.status(401).json({
+          error: 'APPLE_MUSIC_RECONNECT_REQUIRED',
+          message: 'Apple Music rejected the saved connection. Reconnect your User Media Token.'
+        });
+      }
+      if (!result.ok || (!result.ttml && !result.localizations)) {
+        result = await fetchTtml('lyrics');
+        source = 'lyrics';
+      }
+      if (!result.ok || (!result.ttml && !result.localizations)) {
+        return res.status(result.status === 401 || result.status === 403 ? 401 : 404).json({
+          error: 'APPLE_MUSIC_TTML_UNAVAILABLE',
+          message: 'Apple Music did not provide TTML lyrics for this song.'
+        });
+      }
+      res.set('Cache-Control', 'private, no-store');
+      return res.json({
+        provider: 'Apple Music',
+        songId,
+        storefront,
+        format: 'ttml',
+        source,
+        ttml: result.ttml || null,
+        ttmlLocalizations: result.localizations
+      });
+    } catch {
+      return res.status(502).json({
+        error: 'APPLE_MUSIC_LYRICS_FAILED',
+        message: 'Apple Music lyrics could not be fetched right now.'
+      });
+    }
+  });
+
   router.get('/passkeys', (req, res) => {
     const session = activeSession(req, res);
     if (!session.authenticated) return res.status(401).json({ error: 'SIGN_IN_REQUIRED' });
