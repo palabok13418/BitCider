@@ -484,7 +484,27 @@ export function createBitConnectionRouter({
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId) || !title || title.length > 180
       || !artist || artist.length > 180 || !Number.isFinite(durationSeconds)
       || durationSeconds < 0 || durationSeconds > 24 * 60 * 60) return null;
-    return { videoId, title, artist, durationSeconds };
+    const artworkCandidate = String(value.thumbnailUrl || value.artwork || '').trim().slice(0, 2048);
+    let artworkUrl = '';
+    if (artworkCandidate) {
+      try {
+        const parsedArtwork = new URL(artworkCandidate);
+        if (parsedArtwork.protocol === 'https:' && !parsedArtwork.username && !parsedArtwork.password) {
+          artworkUrl = parsedArtwork.toString();
+        }
+      } catch {
+        artworkUrl = '';
+      }
+    }
+    const qualityCandidate = String(value.audioQuality || value.quality || '').trim().slice(0, 40);
+    const quality = /dolby\s*atmos|\bjoc\b/i.test(qualityCandidate) ? 'Dolby Atmos'
+      : /hi[\s-]?res/i.test(qualityCandidate) ? 'Hi-Res Lossless'
+        : /lossless/i.test(qualityCandidate) ? 'Lossless' : '';
+    return {
+      videoId, title, artist, durationSeconds,
+      ...(artworkUrl ? { artwork: artworkUrl } : {}),
+      ...(quality ? { audioQuality: quality } : {})
+    };
   }
 
   function cleanCoordinates(value) {
