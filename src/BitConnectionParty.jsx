@@ -534,8 +534,8 @@ function PartyRoomExperience({
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || payload.error || 'Bit Mono could not prepare this track.');
       const resolved = new URL(payload.url || '', window.location.origin);
-      if (resolved.origin !== window.location.origin || !resolved.pathname.startsWith('/bitmono/audio/')) {
-        throw new Error('Bit Mono returned an audio URL outside this service.');
+      if (!resolved.pathname.startsWith('/bitmono/audio/')) {
+        throw new Error('Bit Mono returned an invalid audio cache URL.');
       }
       const stream = {
         url: resolved.pathname + resolved.search,
