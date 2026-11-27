@@ -235,10 +235,15 @@ function PartyRoomExperience({
           track
         }, window.location.origin);
       }
-      if (action === 'toggle') {
-        await session?.updatePlayback?.({ isPlaying: !isPlaying });
+      if (track?.source === 'bitmono') {
+        if (!isHost) throw new Error('Only the host can control the active Bit Mono audio stream.');
+        await onControlBitMono(action);
+        await session?.updatePlayback?.({ isPlaying: action === 'toggle' ? !isPlaying : action === 'play', positionSeconds: progressSeconds });
+        setPlaybackMessage('Bit Mono playback control updated.');
+      } else {
+        if (action === 'toggle') await session?.updatePlayback?.({ isPlaying: !isPlaying });
+        setPlaybackMessage('Party playback state was sent. Direct BitChord source controls still need the player bridge.');
       }
-      setPlaybackMessage('Party playback state was sent. Direct BitChord source controls still need the player bridge.');
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not update party playback.');
     }
@@ -249,6 +254,7 @@ function PartyRoomExperience({
     setProgressSeconds(next);
     try {
       await session?.updatePlayback?.({ positionSeconds: next });
+      if (track?.source === 'bitmono' && isHost) await onSeekBitMono(next);
       window.dispatchEvent(new CustomEvent('bitconnection:playback-control', {
         detail: { roomId: room?.roomId, action: 'seek', positionSeconds: next }
       }));
@@ -864,6 +870,33 @@ function PartyRoomExperience({
               <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
+            <form className="bc-party-browser-search" onSubmit={searchBitMonoCatalog}>
+              <Icon name="browser" size={17}/>
+              <input value={browserQuery} onChange={event => setBrowserQuery(event.target.value)} placeholder="Search songs in Bit Mono…" aria-label="Search Bit Mono songs"/>
+              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search'}</button>
+            </form>
+            {(browserSearchResults.length > 0 || browserSearchError) && (
+              <section className="bc-party-browser-search-results">
+                <div className="bc-party-browser-search-title">BIT MONO RESULTS {browserSearchResults.length ? '· ' + browserSearchResults.length : ''}</div>
+                {browserSearchError && <p>{browserSearchError}</p>}
+                {browserSearchResults.map(item => {
+                  const id = String(item.id || '');
+                  const prepared = bitMonoPrepared[id];
+                  return (
+                    <article className="bc-party-browser-search-track" key={id}>
+                      {item.artworkURL ? <img src={item.artworkURL} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
+                      <div><strong>{item.title}</strong><small>{[item.artist, item.album, item.audioQuality].filter(Boolean).join(' · ')}</small></div>
+                      <div className="bc-party-browser-search-actions">
+                        <button type="button" onClick={() => void addBitMonoTrackToQueue(item)}>Queue</button>
+                        {!prepared
+                          ? <button type="button" onClick={() => void prepareBitMonoTrack(item)} disabled={Boolean(bitMonoPrepareBusy[id])}>{bitMonoPrepareBusy[id] ? 'Preparing…' : 'Prepare'}</button>
+                          : <button type="button" onClick={() => void startPreparedBitMonoTrack(item)} disabled={!isHost || queueBusy}>{isHost ? 'Play in party' : 'Host only'}</button>}
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
             {browserLoading && <div className="bc-party-browser-state"><span className="bc-party-browser-spinner"/><strong>Loading your recommendations</strong><small>Checking your connected Apple Music account</small></div>}
             {!browserLoading && browserError && <div className="bc-party-browser-state is-error"><strong>Could not load Browser</strong><small>{browserError}</small><button type="button" onClick={() => void loadAppleMusicBrowser()}>Try again</button></div>}
             {!browserLoading && !browserError && browserMessage && (
@@ -898,7 +931,21 @@ function PartyRoomExperience({
                                   {search.error
                                     ? <small className="is-error">{search.error}</small>
                                     : search.tracks.length
-                                      ? search.tracks.slice(0, 4).map(track => <div key={track.id}><strong>{track.title}</strong><small>{track.artist}{track.audioQuality ? ' · ' + track.audioQuality : ''}</small></div>)
+                                      ? search.tracks.slice(0, 4).map(track => {
+                                          const id = String(track.id || '');
+                                          const prepared = bitMonoPrepared[id];
+                                          return (
+                                            <div className="bc-party-browser-mono-result" key={id}>
+                                              <span><strong>{track.title}</strong><small>{track.artist}{track.audioQuality ? ' · ' + track.audioQuality : ''}</small></span>
+                                              <div>
+                                                <button type="button" onClick={() => void addBitMonoTrackToQueue(track)}>Queue</button>
+                                                {!prepared
+                                                  ? <button type="button" onClick={() => void prepareBitMonoTrack(track)} disabled={Boolean(bitMonoPrepareBusy[id])}>{bitMonoPrepareBusy[id] ? 'Preparing…' : 'Prepare'}</button>
+                                                  : <button type="button" onClick={() => void startPreparedBitMonoTrack(track)} disabled={!isHost || queueBusy}>{isHost ? 'Play' : 'Host only'}</button>}
+                                              </div>
+                                            </div>
+                                          );
+                                        })
                                       : <small>No Bit Mono matches were found.</small>}
                                 </div>
                               )}
