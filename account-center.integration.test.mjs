@@ -98,77 +98,40 @@ async function jsonRequest(origin, route, { method = 'GET', cookie, csrf, body }
   return { response, payload };
 }
 
-test('Account Center removes the fixed profile row and global password banner while keeping passkey gates', async () => {
-  const appSource = await fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8');
-  const styleSource = await fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8');
+test('BitAccount Center shares BitCider account deletion across both product settings while keeping passkey gates', async () => {
+  const [appSource, connectionSource, deletionSource, styleSource] = await Promise.all([
+    fs.readFile(path.join(ROOT, 'src', 'App.jsx'), 'utf8'),
+    fs.readFile(path.join(ROOT, 'src', 'BitConnection.jsx'), 'utf8'),
+    fs.readFile(path.join(ROOT, 'src', 'AccountDeletionSection.jsx'), 'utf8'),
+    fs.readFile(path.join(ROOT, 'src', 'styles.css'), 'utf8')
+  ]);
   const panelStart = appSource.indexOf('function AccountManagementOverlay(');
-  const panelEnd = appSource.indexOf('\nexport default function App()', panelStart);
+  const panelEnd = appSource.indexOf('export default function App()', panelStart);
   assert.ok(panelStart >= 0 && panelEnd > panelStart);
   const panel = appSource.slice(panelStart, panelEnd);
 
   assert.doesNotMatch(panel, /Profile image|CONFIRM YOUR PASSWORD FOR SECURITY CHANGES/);
   assert.doesNotMatch(panel, /Enter your current password.*before deleting/i);
-  assert.doesNotMatch(panel, /account-delete-inline|Catch the delete button|Any other click resets/);
-  assert.ok(panel.includes('body: JSON.stringify({})'));
+  assert.ok(panel.includes('<AccountDeletionSection status={status} csrfToken={csrfToken} onDeleted={onDeleted} />'));
+  assert.ok(connectionSource.includes('<AccountDeletionSection />'));
   assert.ok(panel.includes('startAuthentication({ optionsJSON })'));
   assert.ok(panel.includes("disabled={!(status.passkeys || []).length || busyAction === 'account-key'}"));
   assert.ok(panel.includes("disabled={!(status.passkeys || []).length || busyAction === 'backup-codes'}"));
   assert.doesNotMatch(panel, /Add a passkey to this account first\./);
   assert.ok(panel.includes('startRegistration({ optionsJSON })'));
   assert.ok(panel.includes("'/api/account/passkeys/register/options', { password: passkeyPassword }"));
-  assert.ok(panel.includes("deleteStage !== 'hands'"));
-  assert.ok(panel.includes("setDeleteStage('hands')"));
-  assert.ok(panel.includes("setTimeout(() => setDeleteStage('hands'), 850)"));
-  assert.ok(panel.includes("setTimeout(() => setDeleteStage('game'), 2000)"));
-  assert.ok(panel.includes("setDeleteStage('intro')"));
-  assert.ok(panel.includes("Let's play a little game before you terminate the account."));
-  assert.ok(panel.includes("buffer.indexOf('\\n\\n')"));
-  assert.ok(panel.includes('if (nextCatch >= 5)'));
-  assert.ok(panel.includes('account-delete-start'));
-  assert.ok(panel.includes('account-peekaboo-blink'));
-  assert.ok(panel.includes('account-peekaboo-lid eyelid-top'));
-  assert.ok(panel.includes('className="account-danger-button account-delete-target"'));
-  assert.ok(panel.includes("left: deleteSpot.x + 'px'"));
-  assert.doesNotMatch(panel, /account-peekaboo-hand|clipPath|deletePeekSide/);
-  assert.ok(panel.includes("setDeleteStage('hands')"));
-  assert.ok(panel.includes("const grid = panel?.querySelector('.account-center-grid')"));
-  assert.ok(panel.includes("const cards = Array.from(panel.querySelectorAll('.account-center-grid > .account-center-card')).slice(0, 3)"));
-  assert.ok(panel.includes('const chosenCard = candidates[Math.floor(Math.random() * candidates.length)]'));
-  assert.ok(panel.includes('const gridRect = grid.getBoundingClientRect()'));
-  assert.ok(panel.includes('const cardLeft = rect.left - gridRect.left'));
-  assert.doesNotMatch(panel, /scrollTop|scrollIntoView/);
-  assert.ok(panel.includes('const side = Math.floor(Math.random() * 4)'));
-  assert.ok(panel.includes("if (side === 0) { // top edge"));
-  assert.ok(panel.includes("} else if (side === 1) { // right edge"));
-  assert.ok(panel.includes("} else if (side === 2) { // bottom edge"));
-  assert.ok(panel.includes("} else { // left edge"));
-  assert.ok(panel.includes('x: Math.round(x)'));
-  assert.ok(panel.includes('y: Math.round(y)'));
-  assert.ok(panel.includes('cardRight - buttonWidth * 0.2'));
-  assert.ok(panel.includes('cardBottom - buttonHeight * 0.2'));
-  assert.ok(styleSource.includes('.account-center-grid {\n  position: relative;'));
-  assert.ok(styleSource.includes('.account-center-content {'));
-  assert.ok(styleSource.includes('scrollbar-width: none;'));
-  assert.ok(styleSource.includes('.account-center-content::-webkit-scrollbar'));
-  assert.ok(styleSource.includes('.account-center-password-label input'));
-  const movingButtonStyles = styleSource.slice(styleSource.indexOf('.account-delete-target {'), styleSource.indexOf('.account-delete-cinema {'));
-  assert.ok(movingButtonStyles.includes('position: absolute'));
-  assert.ok(movingButtonStyles.includes('z-index: 4'));
-  assert.ok(styleSource.includes('.account-center-card {\n  position: relative;\n  z-index: 5;'));
-  assert.ok(styleSource.includes('.account-center-overlay.is-delete-hunt { pointer-events: none; }'));
-  assert.ok(styleSource.includes('.account-center-overlay.is-delete-hunt .account-center-panel { pointer-events: auto; }'));
-  assert.ok(styleSource.includes('transform: scale(0,0)'));
-  assert.ok(styleSource.includes('@keyframes account-crt-beam-off'));
-  assert.ok(styleSource.includes('@keyframes peekaboo-blink-top'));
-  assert.ok(styleSource.includes('@keyframes peekaboo-eyes-mark'));
-  assert.ok(styleSource.includes('.account-delete-start:hover::before'));
-  assert.ok(styleSource.includes('.account-delete-start.is-launching::before'));
-  assert.ok(styleSource.includes('@keyframes account-delete-bubble-launch'));
-  assert.ok(styleSource.includes('@keyframes account-delete-button-launch'));
-  const crtBeam = styleSource.slice(styleSource.indexOf('html.bitcider-crt-off::before'), styleSource.indexOf('html.bitcider-crt-off::after'));
-  assert.doesNotMatch(crtBeam, /linear-gradient\(to bottom/);
-});
 
+  assert.ok(deletionSource.includes("fetch('/api/account/delete'"));
+  assert.ok(deletionSource.includes("'X-BitCider-CSRF': token"));
+  assert.ok(deletionSource.includes("confirmation.trim() !== 'DELETE'"));
+  assert.ok(deletionSource.includes("response.body?.getReader()"));
+  assert.ok(deletionSource.includes("event.type === 'complete'"));
+  assert.ok(deletionSource.includes('Your separate BitConnection account is not deleted.'));
+  assert.ok(deletionSource.includes('bitaccount-delete-dialog'));
+
+  assert.ok(styleSource.includes('.account-center-content {'));
+  assert.ok(styleSource.includes('.account-center-password-label input'));
+});
 
 test('account center rotates secrets and permanently deletes the account and origin session', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-center-'));
