@@ -723,8 +723,8 @@ function PartyRoomExperience({
       setPlaybackMessage('Only the host can start Apple Music playback for this party.');
       return;
     }
-    if (item?.type !== 'songs' || !/^[0-9]{1,20}$/.test(String(item.id || ''))) {
-      setPlaybackMessage('This recommendation does not include a playable Apple Music catalog song ID.');
+    if (!/^[0-9]{1,20}$/.test(String(item?.id || item?.appleMusicSongId || ''))) {
+      setPlaybackMessage('This item does not include a playable Apple Music catalog song ID.');
       return;
     }
     setQueueBusy(true);
