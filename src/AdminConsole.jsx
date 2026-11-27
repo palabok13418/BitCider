@@ -579,7 +579,7 @@ function SiteNode({ site, status, openSite, runTest }) {
 
 const TOPOLOGY_NODES = [
   { id: 'deplexo', type: 'backend', title: 'Deplexo', subtitle: 'Primary API · persistent data', x: 620, y: 18 },
-  { id: 'site-bitcider', parentId: 'deplexo', type: 'page', title: 'BitCider', subtitle: 'Cider source + account center', x: 28, y: 142, probeKey: 'site-bitcider' },
+  { id: 'site-bitcider', parentId: 'deplexo', type: 'page', title: 'BitCider', subtitle: 'Cider source + BitAccount Center', x: 28, y: 142, probeKey: 'site-bitcider' },
   { id: 'site-bitmono', parentId: 'deplexo', type: 'page', title: 'BitMono', subtitle: 'Monochrome music source', x: 518, y: 142, probeKey: 'site-bitmono' },
   { id: 'site-bitconnection', parentId: 'deplexo', type: 'page', title: 'BitConnection', subtitle: 'Rooms + realtime sync', x: 1008, y: 142, probeKey: 'site-bitconnection' },
 
@@ -588,7 +588,7 @@ const TOPOLOGY_NODES = [
   { id: 'bc-browser-relay', parentId: 'bc-connect', type: 'check', title: 'Browser relay', subtitle: 'Local Cider bridge', x: 250, y: 330, probeKey: 'bc-browser-relay' },
   { id: 'bc-auth-flow', parentId: 'bc-connect', type: 'check', title: 'Authorization', subtitle: 'Browser auth support', x: 250, y: 402, probeKey: 'bc-auth-flow' },
 
-  { id: 'bc-identity', parentId: 'site-bitcider', type: 'feature', title: 'Account center', subtitle: 'Sessions + credentials', x: 28, y: 522 },
+  { id: 'bc-identity', parentId: 'site-bitcider', type: 'feature', title: 'BitAccount Center', subtitle: 'Shared identity + credentials', x: 28, y: 522 },
   { id: 'bc-account-state', parentId: 'bc-identity', type: 'check', title: 'Account session', subtitle: 'Signed-in state', x: 250, y: 486, probeKey: 'bc-account-state' },
   { id: 'bc-passkeys', parentId: 'bc-identity', type: 'check', title: 'Passkeys', subtitle: 'Credential inventory', x: 250, y: 558, probeKey: 'bc-passkeys' },
   { id: 'bc-recovery', parentId: 'bc-identity', type: 'check', title: 'Recovery codes', subtitle: 'Unused recovery inventory', x: 250, y: 630, probeKey: 'bc-recovery' },
