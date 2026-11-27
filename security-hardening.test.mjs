@@ -12,12 +12,12 @@ test('security policy permits the required app, local Cider, and Apple MusicKit 
   assert.match(CONTENT_SECURITY_POLICY, /http:\/\/127\.0\.0\.1:10767/);
   assert.match(CONTENT_SECURITY_POLICY, /https:\/\/fonts\.googleapis\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /https:\/\/fonts\.gstatic\.com/);
-  assert.match(CONTENT_SECURITY_POLICY, /img-src[^;]*https:\/\/\\*\.mzstatic\.com/);
+  assert.ok(CONTENT_SECURITY_POLICY.includes("img-src 'self' data: blob: https://*.apple.com https://*.mzstatic.com"));
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/js-cdn\.music\.apple\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\*\.apple\.com/);
-  assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\*\.mzstatic\.com/);
+  assert.ok(CONTENT_SECURITY_POLICY.includes("media-src 'self' blob: data: https://*.apple.com https://*.itunes.apple.com https://*.mzstatic.com"));
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);
