@@ -978,12 +978,6 @@ function AccountManagementWindow() {
             </div>
             {!appleMusicStatus?.secureStorageConfigured && (
               <div className="bc-account-unavailable">
-                <strong>Apple Music backend setup is incomplete</strong>
-                <p>The Deplexo backend needs its Apple Music developer token before user connections can be validated. Your personal token is not submitted until this is configured.</p>
-              </div>
-            )}
-            {!appleMusicStatus?.secureStorageConfigured && (
-              <div className="bc-account-unavailable">
                 <strong>Encrypted provider storage is unavailable</strong>
                 <p>Configure the dedicated Deplexo BITCIDER_ENCRYPTION_KEY before saving an Apple Music token.</p>
               </div>
@@ -1012,7 +1006,7 @@ function AccountManagementWindow() {
                   spellCheck={false}
                   placeholder="Paste your Apple Music User Media Token"
                   aria-label="Apple Music User Media Token"
-                  disabled={!appleMusicStatus?.secureStorageConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
+                  disabled={!appleMusicStatus?.secureStorageConfigured || appleMusicBusy}
                 />
               </label>
               <button className="bc-primary-button" type="submit" disabled={!appleMusicUserToken.trim() || !appleMusicStatus?.secureStorageConfigured || !appleMusicStatus?.secureStorageConfigured || appleMusicBusy}>
