@@ -289,6 +289,7 @@ export function createBitConnectionRouter({
   giphyApiKey = process.env.BITCONNECTION_GIPHY_API_KEY || '',
   fetchImpl = globalThis.fetch,
   appleMusicWebPlayerToken = process.env.APPLE_MUSIC_WEB_PLAYER_TOKEN || '',
+  appleMusicPlaybackDeveloperToken = process.env.APPLE_MUSICKIT_DEVELOPER_TOKEN || '',
   encryptProviderCredential = null,
   decryptProviderCredential = null,
   providerCredentialEncryptionConfigured = () => false,
@@ -1099,10 +1100,37 @@ export function createBitConnectionRouter({
       connected: Boolean(connection?.userMediaTokenEncrypted),
       connectedAt: connection?.connectedAt || null,
       recommendationsConfigured: typeof fetchImpl === 'function',
+      musicKitPlaybackConfigured: Boolean(String(appleMusicPlaybackDeveloperToken || '').trim()),
+      musicKitPlayback: 'official-musickit-web-v3',
       recommendationsAuthentication: 'automatic-web-player-bearer-plus-user-media-token-private-endpoint-experimental',
       lyricsAuthentication: 'automatic-web-player-bearer-plus-user-media-token',
       webPlayerTokenOverrideConfigured: Boolean(String(appleMusicWebPlayerToken || '').trim()),
       secureStorageConfigured: Boolean(providerCredentialEncryptionConfigured())
+    });
+  });
+
+  router.get('/account/providers/apple-music/playback-config', (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) {
+      return res.status(401).json({
+        error: 'SIGN_IN_REQUIRED',
+        message: 'Sign in to BitAccount Center before starting Apple Music playback.'
+      });
+    }
+    const developerToken = String(appleMusicPlaybackDeveloperToken || '').trim();
+    res.set('Cache-Control', 'private, no-store');
+    if (!developerToken) {
+      return res.status(503).json({
+        error: 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED',
+        configured: false,
+        message: 'Direct browser playback requires an Apple MusicKit developer token. Configure APPLE_MUSICKIT_DEVELOPER_TOKEN on Deplexo; the subscriber Media-User-Token remains separate.'
+      });
+    }
+    return res.json({
+      provider: 'musickit-web-v3',
+      configured: true,
+      developerToken,
+      scriptUrl: 'https://js-cdn.music.apple.com/musickit/v3/musickit.js'
     });
   });
 
