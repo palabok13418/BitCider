@@ -696,8 +696,10 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   const roomPayload = await created.json();
   assert.equal(created.status, 201);
 
-  const guestClient = await harness(t);
-  const guestCsrf = await csrfContext(guestClient);
+  // Reuse this test server and its session cookie; the room-scoped bearer token
+  // distinguishes the anonymous guest participant from the host participant.
+  const guestClient = hostClient;
+  const guestCsrf = hostCsrf;
   const guestJoin = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
     headers: guestCsrf.headers,
