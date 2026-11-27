@@ -83,6 +83,47 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.limits.maxPartySize, 30);
 });
 
+test('Apple Music song search works without a MusicKit developer token', async t => {
+  let requestedUrl = '';
+  const client = await harness(t, {
+    fetchImpl: async (url, options) => {
+      requestedUrl = String(url);
+      assert.equal(options.method, 'GET');
+      assert.equal(options.headers.Accept, 'application/json');
+      return {
+        ok: true,
+        async json() {
+          return {
+            resultCount: 1,
+            results: [{
+              wrapperType: 'track',
+              kind: 'song',
+              trackId: 123456789,
+              trackName: 'Example Song',
+              artistName: 'Example Artist',
+              collectionName: 'Example Album',
+              artworkUrl100: 'https://is1-ssl.mzstatic.com/image/100x100bb.jpg',
+              trackViewUrl: 'https://music.apple.com/us/album/example-album/987654321?i=123456789',
+              trackTimeMillis: 203000
+            }]
+          };
+        }
+      };
+    }
+  });
+  const response = await client.request('/account/providers/apple-music/catalog-search?term=Example%20Artist&storefront=us');
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.developerTokenRequired, false);
+  assert.equal(payload.tracks.length, 1);
+  assert.equal(payload.tracks[0].id, '123456789');
+  assert.equal(payload.tracks[0].title, 'Example Song');
+  assert.equal(payload.tracks[0].url, 'https://music.apple.com/us/album/example-album/987654321?i=123456789');
+  assert.equal(payload.tracks[0].durationSeconds, 203);
+  assert.match(requestedUrl, /^https:\/\/itunes\.apple\.com\/search\?/);
+  assert.match(requestedUrl, /entity=song/);
+});
+
 test('native registration creates a separate BitConnection identity and never calls BitCider auth', async t => {
   const client = await harness(t);
   const csrf = await csrfContext(client);
