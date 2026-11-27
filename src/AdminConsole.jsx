@@ -66,8 +66,8 @@ function AddonTrackTest() {
         throw new Error('Link Cider in this browser first. The personal BitChord add-on is not available in this session.');
       }
       const manifestUrl = new URL(status.addonUrl, window.location.origin);
-      if (manifestUrl.origin !== window.location.origin || !/\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(manifestUrl.pathname)) {
-        throw new Error('The personal add-on URL did not match the expected same-origin manifest route.');
+      if (!/^\/[A-Za-z0-9_-]{1,100}\/manifest\.json$/.test(manifestUrl.pathname)) {
+        throw new Error('The personal add-on URL did not match the expected proxied manifest route.');
       }
       const manifest = await requestJson(manifestUrl.pathname);
       if (!Array.isArray(manifest.resources) || !manifest.resources.includes('search')) {
