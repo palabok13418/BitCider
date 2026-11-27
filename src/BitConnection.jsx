@@ -16,6 +16,7 @@ import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
 import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
+import AccountDeletionSection from './AccountDeletionSection.jsx';
 import AdminConsole from './AdminConsole.jsx';
 
 const Grainient = lazy(() => import('./Grainient.jsx'));
@@ -1019,6 +1020,8 @@ function AccountManagementWindow() {
             </form>
             <small className="bc-account-provider-footnote">Your token is encrypted on Deplexo and never shown again or stored in browser storage. It is paired with Apple's automatically discovered web-player Bearer for subscriber-only lyrics and recommendation requests. Only connect an account you own.</small>
           </section>
+
+          <AccountDeletionSection productLabel="BitCider" />
 
           {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
           {notice && <div className="bc-account-message is-success" role="status">{notice}</div>}
