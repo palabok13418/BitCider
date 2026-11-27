@@ -69,7 +69,8 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
   assert.equal(payload.capabilities.playbackSourceBridge, 'not-connected');
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
-  assert.equal(payload.capabilities.serverSideAutoMix, 'not-configured');
+  assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
+  assert.equal(payload.capabilities.serverSideAudioAnalysis, 'host-uploaded-to-deplexo-not-relayed');
   assert.equal(payload.limits.maxPartySize, 30);
 });
 
@@ -756,7 +757,7 @@ test('party chat, queue settings, and host moderation are authenticated by the r
     body: JSON.stringify({ action: 'settings', settings: { loop: true, shuffle: true, autoMix: true } })
   });
   assert.equal(autoMix.status, 503);
-  assert.equal((await autoMix.json()).error, 'AUTOMIX_NOT_CONFIGURED');
+  assert.equal((await autoMix.json()).error, 'AUTOMIX_PLAYER_BRIDGE_REQUIRED');
 
   const queuedTrack = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/queue', {
     method: 'POST',
@@ -840,7 +841,9 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
   assert.equal(manifest.capabilities.memberModeration, true);
   assert.equal(manifest.capabilities.sourcePlaybackCommands, false);
   assert.equal(manifest.capabilities.synchronizedLyrics, false);
+  assert.equal(manifest.capabilities.serverSideOnnxAnalysis, true);
   assert.equal(manifest.capabilities.serverSideOnnxAutoMix, false);
+  assert.match(manifest.unavailableFeatures.serverSideOnnxAutoMix, /player-control bridge/i);
   assert.equal(manifest.partyRules.maximumParticipants, 4);
 
   const preflight = await client.request('/party-service', { method: 'OPTIONS' });
