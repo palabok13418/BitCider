@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicWebPlayerToken = '', providerCredentialEncryptionConfigured = false } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicWebPlayerToken = '', appleMusicPlaybackDeveloperToken = '', providerCredentialEncryptionConfigured = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -24,6 +24,7 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     giphyApiKey,
     fetchImpl,
     appleMusicWebPlayerToken,
+    appleMusicPlaybackDeveloperToken,
     encryptProviderCredential: value => ({ value: Buffer.from(value).toString('base64url'), iv: 'test-iv', tag: 'test-tag' }),
     decryptProviderCredential: box => Buffer.from(box.value, 'base64url').toString('utf8'),
     providerCredentialEncryptionConfigured: () => providerCredentialEncryptionConfigured,
@@ -1304,4 +1305,51 @@ test('BitMono search results can enter the shared queue and become synchronized 
   });
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).error, 'INVALID_BITMONO_TRACK');
+});
+
+
+test('MusicKit playback config is available only to signed-in accounts and returns the optional developer token', async t => {
+  const client = await harness(t, {
+    appleMusicPlaybackDeveloperToken: 'eyJhbGciOiJFUzI1NiJ9.test.signature'
+  });
+  const anonymous = await client.request('/account/providers/apple-music/playback-config');
+  assert.equal(anonymous.status, 401);
+
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'MusicKit Listener', password: 'music-kit-listener-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const configured = await client.request('/account/providers/apple-music/playback-config', {
+    headers: { Cookie: csrf.cookie }
+  });
+  const payload = await configured.json();
+  assert.equal(configured.status, 200);
+  assert.equal(payload.configured, true);
+  assert.equal(payload.provider, 'musickit-web-v3');
+  assert.equal(payload.developerToken, 'eyJhbGciOiJFUzI1NiJ9.test.signature');
+  assert.equal(payload.scriptUrl, 'https://js-cdn.music.apple.com/musickit/v3/musickit.js');
+  assert.equal(configured.headers.get('cache-control'), 'private, no-store');
+});
+
+test('MusicKit playback config clearly reports when its separate developer token is not configured', async t => {
+  const client = await harness(t);
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'No MusicKit Key', password: 'no-music-kit-key-secret' })
+  });
+  assert.equal(registration.status, 201);
+
+  const response = await client.request('/account/providers/apple-music/playback-config', {
+    headers: { Cookie: csrf.cookie }
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.configured, false);
+  assert.equal(payload.error, 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED');
 });
