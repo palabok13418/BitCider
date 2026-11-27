@@ -1179,7 +1179,13 @@ function JoinPublicPartyWindow({ roomId }) {
     transportRef.current = null;
     if (transport) await transport.stop({ leave: false });
     const player = hostPlayerRef.current;
-    if (player) { player.pause(); player.removeAttribute('src'); player.load(); }
+    if (player) {
+      const positionSeconds = Number(player.currentTime || 0);
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds }).catch(() => {});
+    }
     hostAudioModeRef.current = 'tab';
     setHostAudioState('idle');
   }
@@ -1293,6 +1299,21 @@ function CreateRoomWindow() {
     void transport.stop({ leave: false });
     setHostAudioState('idle');
   }, [roomState?.participant?.role]);
+
+  useEffect(() => {
+    const player = hostPlayerRef.current;
+    if (!player || !hostSession) return undefined;
+    const handleEnded = async () => {
+      try {
+        await hostSession.updatePlayback({ isPlaying: false, positionSeconds: Number(player.duration || player.currentTime || 0) });
+        setRoomState(await hostSession.getState());
+      } catch (error) {
+        setHostAudioError(error.message || 'Could not sync the end of the BitMono track.');
+      }
+    };
+    player.addEventListener('ended', handleEnded);
+    return () => player.removeEventListener('ended', handleEnded);
+  }, [hostSession, stage]);
 
   async function loadAccount(mode = 'bitconnection') {
     const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
