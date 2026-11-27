@@ -119,3 +119,50 @@ test('the persisted owner slot stays globally closed after the first passkey is 
     assert.equal((await response.json()).error, 'ADMIN_ALREADY_INITIALIZED');
   }
 });
+
+
+test('separate admin workers preserve concurrent WebAuthn challenges in shared persistent state', async t => {
+  const original = process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+  process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = 'shared-worker-test-secret-with-more-than-thirty-two-bytes';
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-admin-shared-workers-'));
+  const dataFile = path.join(directory, 'admin.json');
+  t.after(async () => {
+    if (original === undefined) delete process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+    else process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  const firstWorker = await withAdminServer(t, dataFile);
+  const secondWorker = await withAdminServer(t, dataFile);
+  const [firstOptions, secondOptions] = await Promise.all([firstWorker, secondWorker].map(origin =>
+    fetch(origin + '/api/admin/bootstrap/options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE })
+    })
+  ));
+  assert.equal(firstOptions.status, 200);
+  assert.equal(secondOptions.status, 200);
+
+  const firstCookie = firstOptions.headers.get('set-cookie')?.match(/bitcider_admin_challenge=([^;]+)/)?.[1];
+  const secondCookie = secondOptions.headers.get('set-cookie')?.match(/bitcider_admin_challenge=([^;]+)/)?.[1];
+  assert.ok(firstCookie);
+  assert.ok(secondCookie);
+  assert.notEqual(firstCookie, secondCookie);
+
+  const verifyInvalidRegistration = origin => fetch(origin + '/api/admin/bootstrap/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: 'bitcider_admin_challenge=' + origin.cookie
+    },
+    body: JSON.stringify({})
+  });
+  const [firstVerify, secondVerify] = await Promise.all([
+    verifyInvalidRegistration({ toString: () => firstWorker, cookie: firstCookie }),
+    verifyInvalidRegistration({ toString: () => secondWorker, cookie: secondCookie })
+  ]);
+  const results = await Promise.all([firstVerify.json(), secondVerify.json()]);
+  assert.notEqual(results[0].error, 'ADMIN_CHALLENGE_EXPIRED');
+  assert.notEqual(results[1].error, 'ADMIN_CHALLENGE_EXPIRED');
+});
