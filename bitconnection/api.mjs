@@ -1009,7 +1009,7 @@ export function createBitConnectionRouter({
       method: 'GET',
       headers: appleMusicAuthHeaders(userMediaToken, bearer),
       cache: 'no-store',
-      redirect: 'follow',
+      redirect: 'manual',
       signal: AbortSignal.timeout(12000)
     });
 
@@ -1265,7 +1265,6 @@ export function createBitConnectionRouter({
           : Array.isArray(response?.results?.data) ? response.results.data
             : Array.isArray(response?.recommendations?.data) ? response.recommendations.data
               : [];
-      const included = includedResources(response);
       const recommendations = await Promise.all(rows.slice(0, 8).map(async row => {
         const attributes = row?.attributes || {};
         const title = displayText(attributes.title, displayText(attributes.name, 'For you'));
