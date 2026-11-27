@@ -1512,17 +1512,40 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       'site-bitcider': 'all'
     };
     const addonStage = addonStages[node.id];
+    const monoStages = {
+      'mono-manifest': 'manifest',
+      'mono-search': 'search',
+      'mono-primary': 'search',
+      'mono-fallback': 'search',
+      'mono-stream': 'stream',
+      'mono-cache': 'stream',
+      'mono-lossless': 'quality',
+      'mono-hires-atmos': 'quality',
+      'mono-source': 'search',
+      'mono-playback': 'stream',
+      'mono-quality': 'quality',
+      'site-bitmono': 'all'
+    };
+    const monoStage = monoStages[node.id];
     const needsCiderResolve = addonStage === 'stream' || addonStage === 'renditions' || addonStage === 'all';
+    const needsBitMonoCache = ['stream', 'quality', 'all'].includes(monoStage);
     const targets = node.type === 'check'
       ? [node]
       : descendants.filter(candidate => candidate.type === 'check');
     const addonNodeIds = new Set(['bc-addon-manifest', 'bc-addon-search', 'bc-addon-stream', 'bc-renditions']);
+    const monoNodeIds = new Set(['mono-manifest', 'mono-search', 'mono-primary', 'mono-fallback', 'mono-stream', 'mono-cache', 'mono-lossless', 'mono-hires-atmos']);
     const results = {};
     try {
       if (needsCiderResolve && !window.confirm(
         'This test asks Cider to resolve the sample track “Chicago” by Michael Jackson. Cider temporarily selects the track in its queue and pauses after resolving the media URL. It does not play or download the song. Continue?'
       )) {
         setNotice('Test cancelled. No Cider playback or queue request was made.');
+        return;
+      }
+      if (needsBitMonoCache && !window.confirm(
+        'This BitMono test downloads the complete sample track “Chicago” by Michael Jackson into the Deplexo audio cache before verifying the stream. This uses network bandwidth and persistent cache storage. Continue?'
+      )) {
+        setNotice('Test cancelled. No BitMono audio file was downloaded or cached.');
         return;
       }
       if (node.type === 'page') {
@@ -1533,7 +1556,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
         setNotice(node.title + ' has no independently testable child endpoints.');
         return;
       }
-      const endpointTargets = targets.filter(target => !addonNodeIds.has(target.id));
+      const endpointTargets = targets.filter(target => !addonNodeIds.has(target.id) && !monoNodeIds.has(target.id));
       await Promise.all(endpointTargets.map(async target => {
         const previous = topologyStatuses[target.id] || {};
         const endpoint = previous.endpoint;
@@ -1675,16 +1698,25 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
           setNotice(node.title + ': ' + (report.error.message || 'The personal add-on test did not complete.') + ' See the subfeature results for details.');
         }
       }
+      if (monoStage) {
+        const report = await runBitMonoChecks(monoStage);
+        Object.assign(results, report.checks);
+        if (report.error) {
+          setNotice(node.title + ': ' + (report.error.message || 'The BitMono test did not complete.') + ' See the subfeature results for details.');
+        }
+      }
 
       setTopologyStatuses(current => buildTopologyStatuses({ ...current, ...results }));
       const tested = Object.keys(results).length;
       const waiting = Object.values(results).filter(result =>
         result.state === 'idle' || result.state === 'advertised' || result.state === 'unverified' || result.state === 'partial'
       ).length;
-      if (!addonStage || !Object.keys(results).some(id => addonNodeIds.has(id))) {
+      const testedAddon = Object.keys(results).some(id => addonNodeIds.has(id));
+      const testedMono = Object.keys(results).some(id => monoNodeIds.has(id));
+      if (!testedAddon && !testedMono) {
         setNotice(node.title + ': ' + tested + ' check(s) run. ' + waiting + ' still require a real session, track, or active room.');
       } else if (!Object.values(results).some(result => result.state === 'degraded' || result.state === 'offline')) {
-        setNotice(node.title + ': ' + tested + ' live checks completed. ' + waiting + ' are conditional on the sample track or session.');
+        setNotice(node.title + ': ' + tested + ' live checks completed. ' + waiting + ' remain conditional on the sample track, output, or session.');
       }
     } catch (testError) {
       setError(node.title + ': ' + (testError.message || 'Feature test failed.'));
