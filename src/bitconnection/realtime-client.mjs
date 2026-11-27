@@ -195,6 +195,22 @@ export class BitConnectionRoomSession {
     });
   }
 
+  sendChat(message) {
+    return this.client.request('/rooms/' + encodeSegment(this.roomId) + '/chat', {
+      method: 'POST',
+      body: message,
+      session: this
+    });
+  }
+
+  moderateMember(participantId, action) {
+    return this.client.request('/rooms/' + encodeSegment(this.roomId) + '/members/' + encodeSegment(participantId) + '/moderate', {
+      method: 'POST',
+      body: { action },
+      session: this
+    });
+  }
+
   setVolume(volume) {
     return this.client.request('/rooms/' + encodeSegment(this.roomId) + '/volume', {
       method: 'POST',
