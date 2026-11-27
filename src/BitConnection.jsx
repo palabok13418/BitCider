@@ -1512,6 +1512,7 @@ function CreateRoomWindow() {
     player.src = streamUrl;
     player.load();
     const playPromise = player.play();
+    let startedNewTransport = false;
     let transportPromise = Promise.resolve(hostTransportRef.current);
     if (!hostTransportRef.current || hostAudioModeRef.current !== 'bitmono') {
       if (hostTransportRef.current) {
@@ -1519,20 +1520,22 @@ function CreateRoomWindow() {
         hostTransportRef.current = null;
         await old.stop({ leave: false });
       }
+      startedNewTransport = true;
       setHostAudioState('requesting');
-      // Capture the player synchronously before this function reaches its first
-      // network await so its audio track is present in the WebRTC runtime.
-      transportPromise = playPromise.then(() => startBitConnectionHostMediaTransport({
-        session: hostSession,
-        audioElement: player,
-        onRoomState: setRoomState,
-        onError: transportError => setHostAudioError(transportError.message || 'The room audio connection encountered an error.')
-      }));
+      transportPromise = playPromise.then(async () => {
+        const transport = await startBitConnectionHostMediaTransport({
+          session: hostSession,
+          audioElement: player,
+          onRoomState: setRoomState,
+          onError: transportError => setHostAudioError(transportError.message || 'The room audio connection encountered an error.')
+        });
+        hostTransportRef.current = transport;
+        return transport;
+      });
     }
 
     try {
-      const [transport] = await Promise.all([transportPromise, playPromise]);
-      if (transport && transport !== hostTransportRef.current) hostTransportRef.current = transport;
+      await Promise.all([transportPromise, playPromise]);
       hostAudioModeRef.current = 'bitmono';
       setHostAudioState('streaming');
       const result = await hostSession.updatePlayback({
@@ -1541,10 +1544,12 @@ function CreateRoomWindow() {
       setRoomState(await hostSession.getState());
       return result;
     } catch (error) {
-      if (hostTransportRef.current && hostAudioModeRef.current !== 'bitmono') {
-        await hostTransportRef.current.stop({ leave: false }).catch(() => {});
+      if (startedNewTransport && hostTransportRef.current) {
+        const failedTransport = hostTransportRef.current;
         hostTransportRef.current = null;
+        await failedTransport.stop({ leave: false }).catch(() => {});
       }
+      if (startedNewTransport) hostAudioModeRef.current = 'tab';
       player.pause();
       setHostAudioState('idle');
       setHostAudioError(error.message || 'Could not start Bit Mono audio for the party.');
@@ -1582,6 +1587,16 @@ function CreateRoomWindow() {
     const transport = hostTransportRef.current;
     hostTransportRef.current = null;
     if (transport) await transport.stop({ leave: false });
+    const player = hostPlayerRef.current;
+    if (player) {
+      const positionSeconds = Number(player.currentTime || 0);
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds });
+      if (hostSession?.getState) setRoomState(await hostSession.getState());
+    }
+    hostAudioModeRef.current = 'tab';
     setHostAudioState('idle');
   }
 
@@ -1589,6 +1604,13 @@ function CreateRoomWindow() {
     const transport = hostTransportRef.current;
     const session = hostSession;
     hostTransportRef.current = null;
+    const player = hostPlayerRef.current;
+    if (player) {
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+    }
+    hostAudioModeRef.current = 'tab';
     if (transport) await transport.stop({ leave: true });
     else if (session) await session.leave().catch(() => {});
     closeWindow();
