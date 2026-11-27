@@ -1317,10 +1317,23 @@ export function createBitConnectionRouter({
     try {
       let result = await fetchTtml('syllable-lyrics');
       let source = 'syllable-lyrics';
+      if (result.status === 401 && !String(appleMusicWebPlayerToken || '').trim()) {
+        // Apple web-player Bearer tokens are short-lived. Refresh the public
+        // bundle token once before asking the subscriber to reconnect.
+        cachedAppleWebPlayerToken = '';
+        cachedAppleWebPlayerTokenExpiresAt = 0;
+        try {
+          webPlayerBearer = await resolveAppleMusicWebPlayerToken();
+          result = await fetchTtml('syllable-lyrics');
+        } catch {
+          // The response below will report an authentication failure without
+          // exposing Apple token material or upstream response details.
+        }
+      }
       if (result.status === 401 || result.status === 403) {
         return res.status(401).json({
           error: 'APPLE_MUSIC_RECONNECT_REQUIRED',
-          message: 'Apple Music rejected the saved connection. Reconnect your User Media Token.'
+          message: 'Apple Music rejected the saved subscriber token or current web-player authorization. Check the subscription token, then retry.'
         });
       }
       if (!result.ok || !result.ttml) {
