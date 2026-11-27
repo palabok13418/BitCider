@@ -1021,7 +1021,7 @@ function AccountManagementWindow() {
             <small className="bc-account-provider-footnote">Your token is encrypted on Deplexo and never shown again or stored in browser storage. It is paired with Apple's automatically discovered web-player Bearer for subscriber-only lyrics and recommendation requests. Only connect an account you own.</small>
           </section>
 
-          <AccountDeletionSection productLabel="BitCider" />
+          <AccountDeletionSection />
 
           {error && <div className="bc-account-message is-error" role="alert">{error}</div>}
           {notice && <div className="bc-account-message is-success" role="status">{notice}</div>}
