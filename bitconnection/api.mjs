@@ -421,7 +421,7 @@ export function createBitConnectionRouter({
   }
 
   function isRoomOwner(room, participant) {
-    return Boolean(participant && participant.role === 'host' && participant.identityId === room.hostIdentityId);
+    return Boolean(participant && participant.role === 'host' && participant.participantId === room.hostParticipantId);
   }
 
   function participantCount(room) {
@@ -432,7 +432,7 @@ export function createBitConnectionRouter({
     )).length;
   }
 
-  function createParticipant(room, { username, role = 'guest', identityId = null }) {
+  function createParticipant(room, { username, role = 'guest', identityId = null, avatarDataUrl = null }) {
     const credential = crypto.randomBytes(32).toString('base64url');
     const participantId = crypto.randomBytes(12).toString('hex');
     const participant = {
@@ -440,6 +440,7 @@ export function createBitConnectionRouter({
       username,
       role,
       identityId,
+      avatarDataUrl: typeof avatarDataUrl === 'string' ? avatarDataUrl : null,
       credentialHash: sha256(credential),
       volume: 1,
       status: 'connected',
@@ -515,7 +516,9 @@ export function createBitConnectionRouter({
       status: item.status === 'left'
         ? 'left'
         : Date.parse(item.lastSeenAt || 0) > now - PRESENCE_TTL_MS ? 'connected' : 'disconnected',
-      joinedAt: item.joinedAt
+      joinedAt: item.joinedAt,
+      avatarDataUrl: typeof item.avatarDataUrl === 'string' && item.avatarDataUrl.length <= 180000 ? item.avatarDataUrl : null,
+      canBan: Boolean(item.identityId)
     };
   }
 
@@ -1065,6 +1068,9 @@ export function createBitConnectionRouter({
       inviteTokenHash: inviteToken ? sha256(inviteToken) : null,
       participants: {},
       queue: [],
+      queueSettings: { loop: false, shuffle: false, autoMix: false },
+      chat: [],
+      bannedIdentityIds: [],
       playbackState: {
         source: 'youtube-music',
         track: null,
@@ -1082,7 +1088,8 @@ export function createBitConnectionRouter({
     const host = createParticipant(room, {
       username: profile.username,
       role: 'host',
-      identityId: identity.identityId
+      identityId: identity.identityId,
+      avatarDataUrl: profile.avatarDataUrl || null
     });
     room.hostParticipantId = host.participant.participantId;
 
@@ -1150,6 +1157,11 @@ export function createBitConnectionRouter({
       item?.roomId === roomPathValue || item?.roomCode === requestedRoomCode
     ));
     if (!room || room.status !== 'open') return res.status(404).json({ error: 'ROOM_NOT_FOUND', message: 'That room is not available.' });
+    const joiningIdentity = identityForRequest(req, res);
+    if (joiningIdentity?.identityId && (room.bannedIdentityIds || []).includes(joiningIdentity.identityId)) {
+      return res.status(403).json({ error: 'ROOM_BANNED', message: 'Your account is banned from this listening party.' });
+    }
+    const joiningProfile = joiningIdentity ? profileFor(snapshot, joiningIdentity.identityId) : null;
     if (room.visibility === 'private') {
       const inviteToken = String(req.body?.inviteToken || '');
       if (!inviteToken || !room.inviteTokenHash || !secureEqual(room.inviteTokenHash, sha256(inviteToken))) {
@@ -1183,7 +1195,9 @@ export function createBitConnectionRouter({
         createdAt: new Date().toISOString(),
         hostReceivedAt: null,
         expiresAt: null,
-        guestName: temporaryGuestName(room)
+        guestName: joiningProfile?.username || temporaryGuestName(room),
+        identityId: joiningIdentity?.identityId || null,
+        avatarDataUrl: joiningProfile?.avatarDataUrl || null
       };
       await store.update(data => {
         const current = data.rooms[room.roomId];
@@ -1207,8 +1221,12 @@ export function createBitConnectionRouter({
       if (!current || current.status !== 'open') return { status: 404 };
       if (participantCount(current) >= current.partySize) return { status: 409 };
       current.participants ||= {};
-      const username = temporaryGuestName(current);
-      const created = createParticipant(current, { username });
+      const username = joiningProfile?.username || temporaryGuestName(current);
+      const created = createParticipant(current, {
+        username,
+        identityId: joiningIdentity?.identityId || null,
+        avatarDataUrl: joiningProfile?.avatarDataUrl || null
+      });
       return { ok: true, participant: created.participant, credential: created.credential, room: current };
     });
     if (joined.status) return res.status(joined.status).json({ error: joined.status === 409 ? 'ROOM_FULL' : 'ROOM_NOT_FOUND' });
@@ -1299,8 +1317,13 @@ export function createBitConnectionRouter({
         return { status: 401, error: 'INVALID_VERIFICATION_CODE' };
       }
       if (participantCount(room) >= room.partySize) return { status: 409, error: 'ROOM_FULL' };
+      if (request.identityId && (room.bannedIdentityIds || []).includes(request.identityId)) return { status: 403, error: 'ROOM_BANNED' };
       delete room.joinRequests[requestId];
-      const created = createParticipant(room, { username: request.guestName });
+      const created = createParticipant(room, {
+        username: request.guestName,
+        identityId: request.identityId || null,
+        avatarDataUrl: request.avatarDataUrl || null
+      });
       return { ok: true, participant: created.participant, credential: created.credential, room };
     });
     if (verified.status) {
@@ -1352,6 +1375,8 @@ export function createBitConnectionRouter({
         source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0
       },
       queue: Array.isArray(room.queue) ? room.queue : [],
+      queueSettings: room.queueSettings || { loop: false, shuffle: false, autoMix: false },
+      chat: Array.isArray(room.chat) ? room.chat.slice(-80) : [],
       participants
     });
   });
@@ -1384,7 +1409,16 @@ export function createBitConnectionRouter({
 
       room.queue = Array.isArray(room.queue) ? room.queue : [];
       const action = String(req.body?.action || '');
-      if (action === 'add') {
+      if (action === 'settings') {
+        const settings = req.body?.settings || {};
+        if (typeof settings.loop !== 'boolean' || typeof settings.shuffle !== 'boolean') {
+          return { status: 400, error: 'INVALID_QUEUE_SETTINGS', message: 'Loop and shuffle must be boolean values.' };
+        }
+        if (settings.autoMix === true) {
+          return { status: 503, error: 'AUTOMIX_NOT_CONFIGURED', message: 'Server-side AutoMix is not configured on this deployment yet.' };
+        }
+        room.queueSettings = { loop: settings.loop, shuffle: settings.shuffle, autoMix: false };
+      } else if (action === 'add') {
         if (room.queue.length >= 100) return { status: 409, error: 'QUEUE_FULL', message: 'The shared queue can contain up to 100 songs.' };
         const track = cleanYouTubeTrack(req.body?.track);
         if (!track) return { status: 400, error: 'INVALID_YOUTUBE_TRACK' };
@@ -1425,6 +1459,103 @@ export function createBitConnectionRouter({
     });
     if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
     return res.json({ ok: true, queue: result.queue });
+  });
+
+  router.post('/rooms/:roomId/chat', identityCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const participant = participantForRoom(room, req, res);
+      if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
+
+      const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 1000) : '';
+      const imageDataUrl = req.body?.imageDataUrl;
+      const imageUrl = req.body?.imageUrl;
+      let safeImageDataUrl = null;
+      let safeImageUrl = null;
+      if (imageDataUrl != null) {
+        if (typeof imageDataUrl !== 'string') return { status: 400, error: 'INVALID_CHAT_IMAGE' };
+        const match = imageDataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+=*)$/);
+        if (!match || Buffer.from(match[2], 'base64').length > 512 * 1024) {
+          return { status: 400, error: 'INVALID_CHAT_IMAGE', message: 'Images must be PNG, JPEG, or WebP and no larger than 512 KB.' };
+        }
+        safeImageDataUrl = imageDataUrl;
+      }
+      if (imageUrl != null) {
+        try {
+          const parsed = new URL(String(imageUrl));
+          if (parsed.protocol !== 'https:' || !/(^|\.)giphy\.com$/i.test(parsed.hostname) || String(imageUrl).length > 2000) {
+            return { status: 400, error: 'INVALID_CHAT_GIF', message: 'GIFs must use a valid HTTPS GIPHY media URL.' };
+          }
+          safeImageUrl = parsed.toString();
+        } catch {
+          return { status: 400, error: 'INVALID_CHAT_GIF' };
+        }
+      }
+      if (!text && !safeImageDataUrl && !safeImageUrl) {
+        return { status: 400, error: 'EMPTY_CHAT_MESSAGE' };
+      }
+      room.chat ||= [];
+      const message = {
+        messageId: crypto.randomBytes(12).toString('hex'),
+        participantId: participant.participantId,
+        username: participant.username,
+        avatarDataUrl: participant.avatarDataUrl || null,
+        text,
+        imageDataUrl: safeImageDataUrl,
+        imageUrl: safeImageUrl,
+        imageType: safeImageUrl ? 'gif' : safeImageDataUrl ? 'image' : null,
+        createdAt: new Date().toISOString()
+      };
+      room.chat.push(message);
+      room.chat = room.chat.slice(-80);
+      room.updatedAt = message.createdAt;
+      return { ok: true, message };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.status(201).json({ ok: true, message: result.message });
+  });
+
+  router.post('/rooms/:roomId/members/:participantId/moderate', identityCsrf, async (req, res) => {
+    const result = await store.update(data => {
+      const room = data.rooms[String(req.params.roomId || '')];
+      if (!room || room.status !== 'open') return { status: 404, error: 'ROOM_NOT_FOUND' };
+      const host = participantForRoom(room, req, res);
+      if (!isRoomOwner(room, host)) return { status: 403, error: 'ROOM_OWNER_REQUIRED' };
+      const participantId = String(req.params.participantId || '');
+      const target = room.participants?.[participantId];
+      if (!target || target.status === 'left') return { status: 404, error: 'PARTICIPANT_NOT_FOUND' };
+      if (participantId === host.participantId) return { status: 400, error: 'CANNOT_MODERATE_SELF' };
+      const action = String(req.body?.action || '');
+      if (action === 'kick') {
+        delete room.participants[participantId];
+      } else if (action === 'ban') {
+        if (!target.identityId) {
+          return { status: 409, error: 'ACCOUNT_REQUIRED_FOR_BAN', message: 'A persistent ban requires the member to have a signed-in BitConnection or BitCider identity. You can still kick this guest.' };
+        }
+        room.bannedIdentityIds ||= [];
+        if (!room.bannedIdentityIds.includes(target.identityId)) room.bannedIdentityIds.push(target.identityId);
+        delete room.participants[participantId];
+      } else if (action === 'promote') {
+        const previousHost = room.participants?.[room.hostParticipantId];
+        if (previousHost) previousHost.role = 'guest';
+        target.role = 'host';
+        room.hostParticipantId = target.participantId;
+        room.hostIdentityId = target.identityId || null;
+        room.hostIdentityType = target.identityId?.startsWith('cider:') ? 'bitcider' : target.identityId ? 'bitconnection' : null;
+        room.hostUsername = target.username;
+      } else {
+        return { status: 400, error: 'INVALID_MEMBER_ACTION', message: 'Choose kick, ban, or promote.' };
+      }
+      room.updatedAt = new Date().toISOString();
+      return {
+        ok: true,
+        action,
+        participants: Object.values(room.participants || {}).filter(item => item?.status !== 'left').map(item => publicParticipant(item))
+      };
+    });
+    if (result.status) return res.status(result.status).json({ error: result.error, message: result.message });
+    return res.json({ ok: true, action: result.action, participants: result.participants });
   });
 
   router.post('/rooms/:roomId/playback', identityCsrf, async (req, res) => {
