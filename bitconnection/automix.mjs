@@ -34,8 +34,8 @@ export const AUTOMIX_MODEL_MANIFEST = Object.freeze({
 });
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const CAMELOT_MAJOR = [8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7];
-const CAMELOT_MINOR = [5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4];
+const CAMELOT_MAJOR = [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1];
+const CAMELOT_MINOR = [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10];
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
@@ -172,16 +172,32 @@ function sigmoid(value) {
   return 1 / (1 + Math.exp(-bounded));
 }
 
-function pickPeaks(logits, threshold = 0.5) {
+function pickPeaks(logits, radius = 3) {
+  const candidates = [];
+  for (let frame = 0; frame < logits.length; frame += 1) {
+    const value = Number(logits[frame]);
+    if (!Number.isFinite(value) || value <= 0) continue;
+    let isMaximum = true;
+    for (let offset = -radius; offset <= radius; offset += 1) {
+      if (!offset) continue;
+      const neighbour = Number(logits[frame + offset]);
+      if (Number.isFinite(neighbour) && (neighbour > value || (neighbour === value && offset < 0))) {
+        isMaximum = false;
+        break;
+      }
+    }
+    if (isMaximum) candidates.push({ frame, logit: value, confidence: Number(sigmoid(value).toFixed(4)) });
+  }
   const peaks = [];
-  for (let frame = 1; frame < logits.length - 1; frame += 1) {
-    const value = sigmoid(logits[frame]);
-    if (value < threshold) continue;
-    if (value >= sigmoid(logits[frame - 1]) && value > sigmoid(logits[frame + 1])) {
-      peaks.push({ frame, confidence: Number(value.toFixed(4)) });
+  for (const candidate of candidates) {
+    const previous = peaks.at(-1);
+    if (previous && candidate.frame - previous.frame <= radius) {
+      if (candidate.logit > previous.logit) peaks[peaks.length - 1] = candidate;
+    } else {
+      peaks.push(candidate);
     }
   }
-  return peaks;
+  return peaks.map(({ frame, confidence }) => ({ frame, confidence }));
 }
 
 function estimateBpm(beats) {
@@ -348,7 +364,16 @@ function analysisFromPredictions({ samples, beatPeaks, downbeatPeaks, modelDurat
     time: Number((item.frame / AUTOMIX_FRAME_RATE).toFixed(3)),
     confidence: item.confidence
   }));
-  const downbeats = downbeatPeaks.map(item => ({
+  const alignedDownbeatPeaks = downbeatPeaks.map(downbeat => {
+    const nearestBeat = beatPeaks.reduce((best, beat) => {
+      const distance = Math.abs(beat.frame - downbeat.frame);
+      return !best || distance < best.distance ? { beat, distance } : best;
+    }, null);
+    return nearestBeat && nearestBeat.distance <= 3
+      ? { frame: nearestBeat.beat.frame, confidence: downbeat.confidence }
+      : downbeat;
+  }).filter((item, index, values) => values.findIndex(other => other.frame === item.frame) === index);
+  const downbeats = alignedDownbeatPeaks.map(item => ({
     time: Number((item.frame / AUTOMIX_FRAME_RATE).toFixed(3)),
     confidence: item.confidence
   }));
@@ -600,7 +625,7 @@ export function createAutoMixService({ directory }) {
     const inputMetadata = logMelSession.inputMetadata[0];
     const inputName = logMelSession.inputNames[0];
     const logMelOutputName = logMelSession.outputNames[0];
-    const audioShapeHint = metadataShape(inputMetadata, [1, 661059]);
+    const audioShapeHint = metadataShape(inputMetadata, [661059]);
     const audioSampleLength = audioShapeHint[audioShapeHint.length - 1] || 661059;
     const audioFrames = Math.ceil(samples.length / AUTOMIX_HOP_SAMPLES);
     const windowStepFrames = AUTOMIX_WINDOW_FRAMES - 12;
@@ -612,7 +637,7 @@ export function createAutoMixService({ directory }) {
       const globalFrameStart = windowIndex * windowStepFrames;
       const sampleStart = globalFrameStart * AUTOMIX_HOP_SAMPLES - 6 * AUTOMIX_HOP_SAMPLES;
       const audio = audioWindow(samples, sampleStart, audioSampleLength);
-      const audioShape = metadataShape(inputMetadata, [1, audioSampleLength]);
+      const audioShape = inputMetadata?.shape?.length ? metadataShape(inputMetadata, [audioSampleLength]) : [audioSampleLength];
       const audioTensor = new runtime.Tensor('float32', audio, audioShape);
       const melResult = await logMelSession.run({ [inputName]: audioTensor });
       const melTensor = melResult[logMelOutputName];
@@ -627,7 +652,7 @@ export function createAutoMixService({ directory }) {
       const downbeatValues = vectorFromTensor(beatResult[downbeatOutputName], 'downbeat');
       const beatCount = Math.min(AUTOMIX_WINDOW_FRAMES, beatValues.length);
       const downbeatCount = Math.min(AUTOMIX_WINDOW_FRAMES, downbeatValues.length);
-      const firstFrame = windowIndex === 0 ? 6 : 6;
+      const firstFrame = 6;
       const lastFrame = Math.min(AUTOMIX_WINDOW_FRAMES - 6, beatCount, downbeatCount);
       for (let localFrame = firstFrame; localFrame < lastFrame; localFrame += 1) {
         const globalFrame = globalFrameStart + localFrame - 6;
