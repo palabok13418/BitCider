@@ -79,6 +79,7 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   csrfTokenForCiderSession: csrfTokenForSession,
   webAuthnContext,
   appleMusicDeveloperToken: process.env.APPLE_MUSIC_DEVELOPER_TOKEN || '',
+  appleMusicWebPlayerToken: process.env.APPLE_MUSIC_WEB_PLAYER_TOKEN || '',
   encryptProviderCredential: encryptToken,
   decryptProviderCredential: decryptToken,
   providerCredentialEncryptionConfigured: () => {
