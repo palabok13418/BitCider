@@ -8,7 +8,8 @@ import {
   normalizeAppleCatalogTrack,
   musicKitPlaybackSnapshot,
   subscribeAppleMusicPlayback,
-  controlAppleMusicPlayback as controlMusicKitPlayback
+  controlAppleMusicPlayback as controlMusicKitPlayback,
+  searchAppleMusicSongs
 } from './bitconnection/musickit-player.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
@@ -1384,6 +1385,14 @@ function CreateRoomWindow() {
     return result;
   }
 
+  async function searchAppleMusicCatalog(term) {
+    const music = appleMusicPlayerRef.current;
+    if (!music || appleMusicPlaybackStatus !== 'ready') {
+      throw new Error(appleMusicPlaybackError || 'Apple Music catalog search is not configured. Add the MusicKit developer token on Deplexo.');
+    }
+    return searchAppleMusicSongs(music, term, 25);
+  }
+
   async function playAppleMusicTrack(item) {
     const music = appleMusicPlayerRef.current;
     if (!music || appleMusicPlaybackStatus !== 'ready') {
@@ -1880,6 +1889,7 @@ function CreateRoomWindow() {
           onControlBitMono={controlBitMonoPlayback}
           onSeekBitMono={seekBitMonoPlayback}
           onPlayAppleMusicTrack={playAppleMusicTrack}
+          onSearchAppleMusicCatalog={searchAppleMusicCatalog}
           onControlAppleMusic={controlAppleMusic}
           onSeekAppleMusic={seekAppleMusic}
         />
