@@ -152,6 +152,7 @@ function PartyRoomExperience({
   onControlBitMono = async () => {},
   onSeekBitMono = async () => {},
   onPlayAppleMusicTrack = async () => {},
+  onSearchAppleMusicCatalog = async () => [],
   onControlAppleMusic = async () => {},
   onSeekAppleMusic = async () => {}
 }) {
@@ -178,6 +179,10 @@ function PartyRoomExperience({
   const [browserSearchResults, setBrowserSearchResults] = useState([]);
   const [browserSearchBusy, setBrowserSearchBusy] = useState(false);
   const [browserSearchError, setBrowserSearchError] = useState('');
+  const [appleCatalogQuery, setAppleCatalogQuery] = useState('');
+  const [appleCatalogResults, setAppleCatalogResults] = useState([]);
+  const [appleCatalogBusy, setAppleCatalogBusy] = useState(false);
+  const [appleCatalogError, setAppleCatalogError] = useState('');
   const [bitMonoPrepared, setBitMonoPrepared] = useState({});
   const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
   const [appleMusicLyrics, setAppleMusicLyrics] = useState([]);
@@ -606,6 +611,24 @@ function PartyRoomExperience({
   }
 
 
+  async function searchAppleCatalog(event) {
+    event.preventDefault();
+    const query = appleCatalogQuery.trim();
+    if (!query || appleCatalogBusy) return;
+    setAppleCatalogBusy(true);
+    setAppleCatalogError('');
+    setAppleCatalogResults([]);
+    try {
+      const tracks = await onSearchAppleMusicCatalog(query);
+      setAppleCatalogResults(Array.isArray(tracks) ? tracks.slice(0, 25) : []);
+      if (!tracks?.length) setAppleCatalogError('No Apple Music catalog songs matched that search.');
+    } catch (error) {
+      setAppleCatalogError(error.message || 'Apple Music catalog search failed.');
+    } finally {
+      setAppleCatalogBusy(false);
+    }
+  }
+
   async function searchBitMonoCatalog(event) {
     event?.preventDefault?.();
     const query = browserQuery.trim();
@@ -1021,10 +1044,33 @@ function PartyRoomExperience({
               <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
+            <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
+              <Icon name="music" size={17}/>
+              <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
+              <button type="submit" disabled={appleCatalogBusy || !appleCatalogQuery.trim()}>{appleCatalogBusy ? 'Searching…' : 'Search Apple Music'}</button>
+            </form>
+            {(appleCatalogResults.length > 0 || appleCatalogError) && (
+              <section className="bc-party-browser-search-results">
+                <div className="bc-party-browser-search-title">APPLE MUSIC RESULTS {appleCatalogResults.length ? '· ' + appleCatalogResults.length : ''}</div>
+                {appleCatalogError && <p>{appleCatalogError}</p>}
+                {appleCatalogResults.map(item => {
+                  const id = String(item.id || '');
+                  return (
+                    <article className="bc-party-browser-search-track" key={id}>
+                      {item.artworkUrl ? <img src={item.artworkUrl.replace('{w}', '160').replace('{h}', '160')} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
+                      <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
+                      <div className="bc-party-browser-search-actions">
+                        <button type="button" onClick={() => void playRecommendedAppleMusicItem(item)} disabled={!isHost || queueBusy}>{queueBusy ? 'Starting…' : 'Play full song'}</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
             <form className="bc-party-browser-search" onSubmit={searchBitMonoCatalog}>
               <Icon name="browser" size={17}/>
               <input value={browserQuery} onChange={event => setBrowserQuery(event.target.value)} placeholder="Search songs in Bit Mono…" aria-label="Search Bit Mono songs"/>
-              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search'}</button>
+              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search Bit Mono'}</button>
             </form>
             {(browserSearchResults.length > 0 || browserSearchError) && (
               <section className="bc-party-browser-search-results">
