@@ -72,7 +72,7 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.ciderAddonCreation, 'never');
   assert.equal(payload.capabilities.partyChat, 'text-images-and-giphy-gifs-enabled');
   assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
-  assert.equal(payload.capabilities.playbackSourceBridge, 'bitmono-in-page-audio-enabled-youtube-player-bridge-pending');
+  assert.equal(payload.capabilities.playbackSourceBridge, 'apple-musickit-web-v3-bitmono-in-page-audio-and-youtube-player-bridge-pending');
   assert.equal(payload.capabilities.appleMusicRecommendations, 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental');
   assert.equal(payload.capabilities.bitMonoPlayback, 'host-audio-element-captured-and-published-over-webrtc');
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
@@ -774,10 +774,10 @@ test('party chat, queue settings, and host moderation are authenticated by the r
   const roomPayload = await created.json();
   assert.equal(created.status, 201);
 
-  // Reuse this test server and its session cookie; the room-scoped bearer token
-  // distinguishes the anonymous guest participant from the host participant.
+  // Keep the anonymous guest in a separate browser session. Reusing the host
+  // account cookie would intentionally associate both participants with one identity.
   const guestClient = hostClient;
-  const guestCsrf = hostCsrf;
+  const guestCsrf = await csrfContext(guestClient);
   const guestJoin = await guestClient.request('/rooms/' + roomPayload.room.roomId + '/join', {
     method: 'POST',
     headers: guestCsrf.headers,
@@ -1358,8 +1358,8 @@ test('BitMono search results can enter the shared queue and become synchronized 
   assert.equal(payload.playbackState.source, 'bitmono');
   assert.equal(payload.playbackState.track.trackId, 'mono_123456789');
   assert.equal(payload.playbackState.track.audioQuality, 'Lossless');
-  assert.equal(payload.playbackState.track.appleMusicSongId, '12345678901');
-  assert.equal(payload.playbackState.track.appleMusicStorefront, 'us');
+  assert.equal(payload.playbackState.track.appleMusicSongId, undefined);
+  assert.equal(payload.playbackState.track.appleMusicStorefront, undefined);
   assert.equal(payload.playbackState.isPlaying, true);
 
   const invalid = await client.request('/rooms/' + room.room.roomId + '/playback', {
