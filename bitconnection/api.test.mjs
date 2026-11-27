@@ -1332,6 +1332,46 @@ test('BitMono search results can enter the shared queue and become synchronized 
 });
 
 
+test('Apple Music room playback preserves only known audio variant availability labels', async t => {
+  const client = await harness(t);
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Format Host', password: 'format-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ roomName: 'Format Party', visibility: 'public', partySize: 4, ownerOnlyControls: false })
+  });
+  const room = await created.json();
+  assert.equal(created.status, 201);
+  const hostHeaders = { ...csrf.headers, Authorization: 'Bearer ' + room.hostCredential };
+  const playback = await client.request('/rooms/' + room.room.roomId + '/playback', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({
+      source: 'apple-music',
+      track: {
+        id: '123456789',
+        title: 'Format Test',
+        artist: 'BitCider Test',
+        durationSeconds: 180,
+        audioVariants: ['dolby-atmos', 'lossless', 'hi-res-lossless', 'not-a-real-format']
+      },
+      isPlaying: true,
+      positionSeconds: 0
+    })
+  });
+  assert.equal(playback.status, 200);
+  const state = await client.request('/rooms/' + room.room.roomId + '/state', { headers: hostHeaders });
+  const payload = await state.json();
+  assert.equal(state.status, 200);
+  assert.deepEqual(payload.playbackState.track.audioVariants, ['dolby-atmos', 'lossless', 'hi-res-lossless']);
+});
+
 test('MusicKit playback config is available only to signed-in accounts and returns the optional developer token', async t => {
   const client = await harness(t, {
     appleMusicPlaybackDeveloperToken: 'eyJhbGciOiJFUzI1NiJ9.test.signature'
