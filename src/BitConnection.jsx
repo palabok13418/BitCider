@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
 import { startBitConnectionGuestTransport, startBitConnectionHostTransport } from './bitconnection/audio-transport.mjs';
+import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
 import UnifiedAccountCenterIdentity from './UnifiedAccountCenter.jsx';
@@ -32,7 +33,7 @@ function openCreateWindow() {
   const popup = window.open(
     CREATE_URL,
     'bitconnection-create-room',
-    'popup=yes,width=620,height=780,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
+    'popup=yes,width=1280,height=820,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
   );
   if (!popup) window.location.assign(CREATE_URL);
 }
@@ -50,7 +51,7 @@ function openJoinWindow(roomId) {
   const popup = window.open(
     '/bitconnection/?join=' + encodeURIComponent(roomId),
     'bitconnection-join-' + String(roomId).slice(0, 16),
-    'popup=yes,width=560,height=700,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
+    'popup=yes,width=1280,height=820,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no'
   );
   if (!popup) window.location.assign('/bitconnection/?join=' + encodeURIComponent(roomId));
 }
@@ -932,6 +933,8 @@ function JoinPublicPartyWindow({ roomId }) {
   const [stage, setStage] = useState('loading');
   const [error, setError] = useState('');
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [hostAudioState, setHostAudioState] = useState('idle');
+  const [hostAudioError, setHostAudioError] = useState('');
   const audioRef = useRef(null);
   const sessionRef = useRef(null);
   const transportRef = useRef(null);
@@ -994,6 +997,7 @@ function JoinPublicPartyWindow({ roomId }) {
         onRoomState: state => {
           setRoomState(state);
           if (state.room) setRoom(state.room);
+          if (state.participant?.role) joined.session.role = state.participant.role;
         },
         onAudioPlaybackBlocked: () => setAudioBlocked(true),
         onError: transportError => setError(transportError.message || 'The party connection encountered an error.')
@@ -1014,6 +1018,46 @@ function JoinPublicPartyWindow({ roomId }) {
       setAudioBlocked(true);
     }
   }
+  async function startPromotedHostAudio() {
+    const session = sessionRef.current;
+    if (!session || hostAudioState === 'requesting' || hostAudioState === 'streaming') return;
+    session.role = 'host';
+    setHostAudioState('requesting');
+    setHostAudioError('');
+    // Start the native tab picker before awaiting anything so the click gesture is preserved.
+    const startPromise = startBitConnectionHostTransport({
+      session,
+      onRoomState: state => {
+        setRoomState(state);
+        if (state.room) setRoom(state.room);
+      },
+      onError: transportError => setHostAudioError(transportError.message || 'The room connection encountered an error.'),
+      onCaptureEnded: () => {
+        transportRef.current = null;
+        setHostAudioState('idle');
+        setHostAudioError('BitChord tab sharing stopped. Start sharing again to resume the room audio.');
+      }
+    });
+    const previousTransport = transportRef.current;
+    transportRef.current = null;
+    try {
+      if (previousTransport) await previousTransport.stop({ leave: false });
+      const transport = await startPromise;
+      transportRef.current = transport;
+      setHostAudioState('streaming');
+    } catch (transportError) {
+      setHostAudioState('idle');
+      setHostAudioError(transportError.message || 'Could not start BitChord tab audio.');
+    }
+  }
+
+  async function stopPromotedHostAudio() {
+    const transport = transportRef.current;
+    transportRef.current = null;
+    if (transport) await transport.stop({ leave: false });
+    setHostAudioState('idle');
+  }
+
 
   async function leaveParty() {
     const transport = transportRef.current;
@@ -1041,7 +1085,24 @@ function JoinPublicPartyWindow({ roomId }) {
           variation={28} interactive stir={0.7} clickSwirl intro lightMode={false} dpr={1.2}
         />
       </Suspense>
-      <section className="bc-window-state">
+      {stage === 'connected' && room && roomState && sessionRef.current && (
+        <PartyRoomExperience
+          room={room}
+          roomState={roomState}
+          session={sessionRef.current}
+          role="guest"
+          onRoomState={setRoomState}
+          onLeave={leaveParty}
+          audioRef={audioRef}
+          hostAudioState={hostAudioState}
+          hostAudioError={hostAudioError}
+          onStartHostAudio={startPromotedHostAudio}
+          onStopHostAudio={stopPromotedHostAudio}
+          audioBlocked={audioBlocked}
+          onResumeAudio={playAudio}
+        />
+      )}
+      {stage !== 'connected' && <section className="bc-window-state">
         <div className="bc-window-kicker">{stage === 'connected' ? 'CONNECTED TO PUBLIC PARTY' : 'PUBLIC LISTENING PARTY'}</div>
         <h1>{room?.roomName || (stage === 'loading' ? 'Finding the party…' : 'Join the party.')}</h1>
         {room && <p>Hosted by <strong>{room.hostUsername}</strong> · {room.participantCount || roomState?.participants?.length || 0} / {room.partySize} people</p>}
@@ -1063,8 +1124,7 @@ function JoinPublicPartyWindow({ roomId }) {
         {(stage === 'error' || stage === 'ready' || stage === 'connected') && (
           <div className="bc-window-actions"><button className="bc-secondary-button" type="button" onClick={leaveParty}>{stage === 'connected' ? 'Leave party' : 'Close'}</button></div>
         )}
-        <audio ref={audioRef} autoPlay playsInline />
-      </section>
+      </section>}
     </main>
   );
 }
@@ -1083,15 +1143,27 @@ function CreateRoomWindow() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [createdRoom, setCreatedRoom] = useState(null);
+  const [hostSession, setHostSession] = useState(null);
+  const [roomState, setRoomState] = useState(null);
   const [hostAudioState, setHostAudioState] = useState('idle');
   const [hostAudioError, setHostAudioError] = useState('');
   const hostTransportRef = useRef(null);
 
   useEffect(() => () => {
     const transport = hostTransportRef.current;
+    const session = hostSession;
     hostTransportRef.current = null;
     if (transport) void transport.stop({ leave: true });
-  }, []);
+    else if (session) void session.leave().catch(() => {});
+  }, [hostSession]);
+
+  useEffect(() => {
+    if (roomState?.participant?.role === 'host' || !hostTransportRef.current) return;
+    const transport = hostTransportRef.current;
+    hostTransportRef.current = null;
+    void transport.stop({ leave: false });
+    setHostAudioState('idle');
+  }, [roomState?.participant?.role]);
 
   async function loadAccount(mode = 'bitconnection') {
     const headers = mode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
@@ -1221,7 +1293,16 @@ function CreateRoomWindow() {
         body: JSON.stringify({ roomName, visibility, partySize: requestedPartySize, ownerOnlyControls })
       });
       const payload = await readResponse(response, 'Could not create the room.');
+      const client = new BitConnectionApiClient({
+        csrfToken: identityMode === 'bitconnection' ? account?.csrfToken : '',
+        identityMode,
+        ciderCsrfToken: identityMode === 'bitcider' ? account?.csrfToken : ''
+      });
+      const session = client.createHostSession(payload);
+      const initialState = await session.getState();
       setCreatedRoom(payload);
+      setHostSession(session);
+      setRoomState(initialState);
       setStage('created');
     } catch (createError) {
       if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
@@ -1232,18 +1313,13 @@ function CreateRoomWindow() {
   }
 
   async function startHostAudio() {
-    if (!createdRoom?.room?.roomId || hostAudioState === 'requesting' || hostTransportRef.current) return;
+    if (!createdRoom?.room?.roomId || !hostSession || hostAudioState === 'requesting' || hostTransportRef.current) return;
     setHostAudioState('requesting');
     setHostAudioError('');
     try {
-      const client = new BitConnectionApiClient({
-        csrfToken: identityMode === 'bitconnection' ? account?.csrfToken : '',
-        identityMode,
-        ciderCsrfToken: identityMode === 'bitcider' ? account?.csrfToken : ''
-      });
-      const session = client.createHostSession(createdRoom);
       const transport = await startBitConnectionHostTransport({
-        session,
+        session: hostSession,
+        onRoomState: setRoomState,
         onError: transportError => setHostAudioError(transportError.message || 'The room connection encountered an error.'),
         onCaptureEnded: () => {
           hostTransportRef.current = null;
@@ -1264,6 +1340,15 @@ function CreateRoomWindow() {
     hostTransportRef.current = null;
     if (transport) await transport.stop({ leave: false });
     setHostAudioState('idle');
+  }
+
+  async function leaveCreatedRoom() {
+    const transport = hostTransportRef.current;
+    const session = hostSession;
+    hostTransportRef.current = null;
+    if (transport) await transport.stop({ leave: true });
+    else if (session) await session.leave().catch(() => {});
+    closeWindow();
   }
 
   return (
@@ -1379,28 +1464,19 @@ function CreateRoomWindow() {
         </form>
       )}
 
-      {stage === 'created' && createdRoom && (
-        <section className="bc-window-state">
-          <div className="bc-window-kicker">LIVE ROOM READY</div>
-          <h1>{createdRoom.room.roomName}</h1>
-          <p>The room is active on Deplexo. Start host audio by selecting the BitChord Web browser tab and enabling “Share tab audio”. Only that tab’s audio is sent. Desktop, window, and monitor capture are rejected.</p>
-          <div className="bc-created-code"><small>ROOM CODE</small><strong>{createdRoom.room.roomCode}</strong></div>
-          {hostAudioState === 'streaming' && <p role="status">Host audio is connected. Waiting for guests to join…</p>}
-          {hostAudioError && <div className="bc-form-error" role="alert">{hostAudioError}</div>}
-          <div className="bc-window-actions">
-            {hostAudioState === 'streaming' ? (
-              <button className="bc-secondary-button" type="button" onClick={stopHostAudio}>Stop audio</button>
-            ) : (
-              <button className="bc-primary-button" type="button" disabled={hostAudioState === 'requesting'} onClick={startHostAudio}>
-                {hostAudioState === 'requesting' ? 'Opening browser picker…' : 'Share BitChord tab audio'}
-              </button>
-            )}
-            <button className="bc-secondary-button" type="button" onClick={closeWindow}>Close</button>
-            <button className="bc-secondary-button" type="button" onClick={() => {
-              navigator.clipboard?.writeText(createdRoom.room.roomCode).catch(() => {});
-            }}>Copy room code</button>
-          </div>
-        </section>
+      {stage === 'created' && createdRoom && hostSession && roomState && (
+        <PartyRoomExperience
+          room={createdRoom.room}
+          roomState={roomState}
+          session={hostSession}
+          role="host"
+          onRoomState={setRoomState}
+          onLeave={leaveCreatedRoom}
+          hostAudioState={hostAudioState}
+          hostAudioError={hostAudioError}
+          onStartHostAudio={startHostAudio}
+          onStopHostAudio={stopHostAudio}
+        />
       )}
 
       {stage === 'error' && (
