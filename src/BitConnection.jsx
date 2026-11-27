@@ -144,7 +144,7 @@ function ProfileSetup({ account, identityMode, onSaved, onBack }) {
 
   return (
     <form className="bc-window-form" onSubmit={saveProfile}>
-      <div className="bc-window-kicker">BITCONNECTION ACCOUNT CENTER</div>
+      <div className="bc-window-kicker">BITACCOUNT CENTER · BITCONNECTION PROFILE</div>
       <h1>Make it yours.</h1>
       <p className="bc-window-copy">
         {identityMode === 'bitcider'
@@ -611,7 +611,7 @@ function AccountManagementWindow() {
       });
       if (passkeyResponse.status === 404) {
         // Older Deplexo deployments may not yet expose passkey listing. Keep
-        // Account Center usable instead of failing the entire account load.
+        // BitAccount Center usable instead of failing the entire account load.
         setPasskeys([]);
         setPasskeysUnavailable(true);
       } else {
@@ -809,10 +809,10 @@ function AccountManagementWindow() {
         <div className="bc-account-workspace">
           <header className="bc-account-topbar">
             <div className="bc-account-brand">
-              <span className="bc-account-brand-mark" aria-hidden="true">BC</span>
+              <span className="bc-account-brand-mark" aria-hidden="true">BA</span>
               <div>
-                <span>BITCONNECTION</span>
-                <strong>Account center</strong>
+                <span>BITACCOUNT</span>
+                <strong>BitAccount Center</strong>
               </div>
             </div>
             <div className="bc-account-top-actions">
@@ -823,7 +823,7 @@ function AccountManagementWindow() {
 
           <div className="bc-account-grid">
             <aside className="bc-account-profile-panel">
-              <div className="bc-account-panel-kicker">YOUR ACCOUNT</div>
+              <div className="bc-account-panel-kicker">YOUR BITACCOUNT</div>
               <UnifiedAccountCenterIdentity currentProduct="bitconnection" profile={profile} createdAt={profile.createdAt} />
               <div className="bc-account-profile-note">
                 <span className="bc-account-note-icon" aria-hidden="true">
@@ -1491,7 +1491,7 @@ export default function BitConnection() {
         const payload = await readResponse(await fetch('/api/bitconnection/account', {
           cache: 'no-store', credentials: 'same-origin'
         }), 'Could not check account availability.');
-        // Match Account Center identity precedence: an active BitCider login
+        // Match BitAccount identity precedence: an active BitCider login
         // is used before an independent BitConnection session.
         let activeIdentity = payload;
         if (payload.bitCiderAccountAvailable) {
