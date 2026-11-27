@@ -1421,7 +1421,7 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
                     </article>;
                   })}
                 </div>
-                <div className="admin-security-note"><strong>ADMIN SECURITY</strong><span>One owner passkey is registered. Bootstrap is consumed. Admin sessions are short-lived, same-site, HttpOnly cookies and require fresh passkey verification whenever admin mode is opened.</span></div>
+                <div className="admin-security-note"><strong>ADMIN OWNER SECURITY</strong><span>One owner credential is stored in Deplexo's shared persistent state. First-owner enrollment is permanently consumed, and every additional owner-passkey registration is rejected across backend workers and devices. Regular BitCider and BitConnection account passkeys remain separate.</span></div>
               </section>
             )}
             {error && <div className="admin-console-error admin-console-global-message" role="alert">{error}<button type="button" onClick={() => setError('')}>×</button></div>}
