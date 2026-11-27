@@ -207,3 +207,73 @@ export async function startBitConnectionGuestTransport({
     }
   };
 }
+
+
+/**
+ * Publish an in-page audio element (for example a fully resolved BitMono
+ * stream) to party guests without opening the tab-capture permission picker.
+ * The caller must invoke this directly from the host's explicit Play action.
+ */
+export async function startBitConnectionHostMediaTransport({
+  session,
+  audioElement,
+  MediaStreamCtor = globalThis.MediaStream,
+  rtcConfiguration = {},
+  onRoomState,
+  onRemoteStream,
+  onPeerState,
+  onError = () => {},
+  runtimeFactory = options => new BitConnectionPartyRuntime(options)
+} = {}) {
+  if (!session || session.role !== 'host' || typeof session.getIceConfiguration !== 'function') {
+    throw new TypeError('An authenticated BitConnection host session is required.');
+  }
+  if (!audioElement || typeof audioElement.captureStream !== 'function') {
+    throw new Error('This browser cannot publish in-page audio to the party.');
+  }
+  if (typeof MediaStreamCtor !== 'function') {
+    throw new Error('This browser does not support MediaStream audio sharing.');
+  }
+
+  const capturedStream = audioElement.captureStream();
+  const audioTracks = capturedStream?.getAudioTracks?.() || [];
+  if (!audioTracks.length) {
+    stopTracks(capturedStream);
+    throw new Error('The BitMono audio player has no audio track to share. Start playback and try again.');
+  }
+  const audioStream = new MediaStreamCtor(audioTracks);
+  let iceConfiguration;
+  let runtime;
+  try {
+    iceConfiguration = await session.getIceConfiguration();
+    runtime = runtimeFactory({
+      session,
+      rtcConfiguration: rtcOptions(iceConfiguration, rtcConfiguration),
+      localStream: audioStream,
+      onRoomState,
+      onRemoteStream,
+      onPeerState,
+      onError
+    });
+    runtime.start();
+  } catch (error) {
+    stopTracks(capturedStream);
+    if (audioStream !== capturedStream) stopTracks(audioStream);
+    throw error;
+  }
+
+  let stopped = false;
+  return {
+    runtime,
+    capture: { stream: audioStream, captureStream: capturedStream },
+    iceConfiguration,
+    async stop({ leave = false } = {}) {
+      if (stopped) return null;
+      stopped = true;
+      stopTracks(capturedStream);
+      if (audioStream !== capturedStream) stopTracks(audioStream);
+      await runtime.stop({ leave });
+      return null;
+    }
+  };
+}
