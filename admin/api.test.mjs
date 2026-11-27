@@ -6,11 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { createAdminRouter } from './api.mjs';
 
-async function withAdminServer(t, dataFile) {
+async function withAdminServer(t, dataFile, webauthn = {}) {
   const app = express();
   app.use(express.json());
   app.use('/api/admin', createAdminRouter({
     dataFile,
+    webauthn,
     webAuthnContext: () => ({ origin: 'https://bitcider.example', rpID: 'bitcider.example' })
   }));
   const server = await new Promise((resolve, reject) => {
@@ -165,4 +166,75 @@ test('separate admin workers preserve concurrent WebAuthn challenges in shared p
   const results = await Promise.all([firstVerify.json(), secondVerify.json()]);
   assert.equal(results[0].error, 'ADMIN_PASSKEY_ENROLLMENT_FAILED');
   assert.equal(results[1].error, 'ADMIN_PASSKEY_ENROLLMENT_FAILED');
+});
+
+
+test('only one owner passkey can win two simultaneous first-enrollment requests', async t => {
+  const original = process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+  process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = 'simultaneous-owner-enrollment-test-secret-over-32-bytes';
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-admin-owner-race-'));
+  const dataFile = path.join(directory, 'admin.json');
+  let challengeNumber = 0;
+  const fakeWebAuthn = {
+    generateRegistrationOptions: async () => ({
+      challenge: 'owner-race-challenge-' + (++challengeNumber)
+    }),
+    verifyRegistrationResponse: async ({ response }) => ({
+      verified: true,
+      registrationInfo: {
+        credential: {
+          id: String(response.id),
+          publicKey: Buffer.from('test-public-key-' + String(response.id)),
+          counter: 0,
+          transports: []
+        }
+      }
+    })
+  };
+  t.after(async () => {
+    if (original === undefined) delete process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE;
+    else process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  const firstWorker = await withAdminServer(t, dataFile, fakeWebAuthn);
+  const secondWorker = await withAdminServer(t, dataFile, fakeWebAuthn);
+  const [firstOptions, secondOptions] = await Promise.all([firstWorker, secondWorker].map(origin =>
+    fetch(origin + '/api/admin/bootstrap/options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: process.env.BITCIDER_ADMIN_BOOTSTRAP_CODE })
+    })
+  ));
+  assert.equal(firstOptions.status, 200);
+  assert.equal(secondOptions.status, 200);
+
+  const firstCookie = firstOptions.headers.get('set-cookie')?.match(/bitcider_admin_challenge=([^;]+)/)?.[1];
+  const secondCookie = secondOptions.headers.get('set-cookie')?.match(/bitcider_admin_challenge=([^;]+)/)?.[1];
+  assert.ok(firstCookie);
+  assert.ok(secondCookie);
+
+  const verify = (origin, cookie, id) => fetch(origin + '/api/admin/bootstrap/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: 'bitcider_admin_challenge=' + cookie
+    },
+    body: JSON.stringify({ id })
+  });
+  const [firstVerify, secondVerify] = await Promise.all([
+    verify(firstWorker, firstCookie, 'owner-credential-one'),
+    verify(secondWorker, secondCookie, 'owner-credential-two')
+  ]);
+
+  assert.deepEqual([firstVerify.status, secondVerify.status].sort((a, b) => a - b), [201, 409]);
+  const persisted = JSON.parse(await fs.readFile(dataFile, 'utf8'));
+  assert.equal(persisted.bootstrapConsumed, true);
+  assert.ok(['owner-credential-one', 'owner-credential-two'].includes(persisted.credential?.id));
+  assert.equal(persisted.sessions && Object.keys(persisted.sessions).length, 1);
+
+  const status = await (await fetch(firstWorker + '/api/admin/status')).json();
+  assert.equal(status.initialized, true);
+  assert.equal(status.passkeyCount, 1);
+  assert.equal(status.bootstrapAvailable, false);
 });
