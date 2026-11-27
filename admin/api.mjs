@@ -166,11 +166,16 @@ function createRateLimit(maxAttempts = 8, windowMs = 15 * 60 * 1000) {
 export function createAdminRouter({
   dataFile,
   webAuthnContext,
-  controller = {}
+  controller = {},
+  webauthn = {}
 } = {}) {
   if (!dataFile) throw new TypeError('Admin dataFile is required.');
   if (typeof webAuthnContext !== 'function') throw new TypeError('Admin WebAuthn context is required.');
   const state = createStateStore(dataFile);
+  const createRegistrationOptions = webauthn.generateRegistrationOptions || generateRegistrationOptions;
+  const createAuthenticationOptions = webauthn.generateAuthenticationOptions || generateAuthenticationOptions;
+  const verifyRegistration = webauthn.verifyRegistrationResponse || verifyRegistrationResponse;
+  const verifyAuthentication = webauthn.verifyAuthenticationResponse || verifyAuthenticationResponse;
   const router = express.Router();
   const rateBootstrap = createRateLimit(5);
   const rateAuthentication = createRateLimit(8);
@@ -301,7 +306,7 @@ export function createAdminRouter({
     try { context = webAuthnContext(req); }
     catch (error) { return res.status(400).json({ error: 'ADMIN_PASSKEY_ORIGIN_INVALID', message: error.message }); }
     const sessionId = challengeSession(req, res);
-    const options = await generateRegistrationOptions({
+    const options = await createRegistrationOptions({
       rpName: 'BitCider Admin',
       rpID: context.rpID,
       userID: crypto.randomBytes(32),
@@ -339,7 +344,7 @@ export function createAdminRouter({
       return res.status(400).json({ error: 'ADMIN_PASSKEY_ORIGIN_MISMATCH', message: 'Finish setup on the same BitCider site.' });
     }
     try {
-      const verification = await verifyRegistrationResponse({
+      const verification = await verifyRegistration({
         response: req.body,
         expectedChallenge: challenge.challenge,
         expectedOrigin: challenge.origin,
@@ -385,7 +390,7 @@ export function createAdminRouter({
     try { context = webAuthnContext(req); }
     catch (error) { return res.status(400).json({ error: 'ADMIN_PASSKEY_ORIGIN_INVALID', message: error.message }); }
     const sessionId = challengeSession(req, res);
-    const options = await generateAuthenticationOptions({
+    const options = await createAuthenticationOptions({
       rpID: context.rpID,
       allowCredentials: [{
         id: credential.id,
@@ -422,7 +427,7 @@ export function createAdminRouter({
       if (String(req.body?.id || '') !== credential.id) {
         return res.status(401).json({ error: 'ADMIN_PASSKEY_MISMATCH', message: 'That is not the registered admin passkey.' });
       }
-      const verification = await verifyAuthenticationResponse({
+      const verification = await verifyAuthentication({
         response: req.body,
         expectedChallenge: challenge.challenge,
         expectedOrigin: challenge.origin,
