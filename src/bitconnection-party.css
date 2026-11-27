@@ -746,3 +746,12 @@
   .bc-party-header-actions { gap: 7px; }
   .bc-party-copy-code { padding: 6px 7px; }
 }
+
+.bc-party-quality img {
+  display: block;
+  width: auto;
+  max-width: 112px;
+  height: 16px;
+  object-fit: contain;
+  object-position: center;
+}
