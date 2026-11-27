@@ -1170,7 +1170,7 @@ export function createBitConnectionRouter({
       return res.status(503).json({
         error: 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED',
         configured: false,
-        message: 'Direct browser playback requires an Apple MusicKit developer token. Configure APPLE_MUSICKIT_DEVELOPER_TOKEN on Deplexo; the subscriber Media-User-Token remains separate.'
+        message: 'Integrated MusicKit playback requires APPLE_MUSICKIT_DEVELOPER_TOKEN on Deplexo. Apple embedded-player playback remains available without it; the subscriber Media-User-Token is a separate credential.'
       });
     }
     return res.json({
