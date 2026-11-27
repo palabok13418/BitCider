@@ -454,7 +454,11 @@ function aggregateTopologyStatus(children) {
 
   const operational = states.filter(state => state === 'operational');
   const advertised = states.filter(state => state === 'advertised');
+  const partial = states.filter(state => state === 'partial');
   const waiting = states.filter(state => state === 'idle' || state === 'unverified');
+  if (partial.length) {
+    return { state: 'partial', label: 'PARTIAL', detail: partial.length + ' child check(s) are only partially available for the selected sample or test conditions.' };
+  }
   if (operational.length && (advertised.length || waiting.length)) {
     return { state: 'partial', label: 'PARTIAL', detail: operational.length + ' child checks are operational; ' + (advertised.length + waiting.length) + ' are capability-only, session-gated, or not independently verified.' };
   }
@@ -1292,11 +1296,28 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
       }
       return false;
     });
+    const addonStages = {
+      'bc-addon-manifest': 'manifest',
+      'bc-addon-search': 'search',
+      'bc-addon-stream': 'stream',
+      'bc-renditions': 'renditions',
+      'bc-addon': 'all',
+      'site-bitcider': 'all'
+    };
+    const addonStage = addonStages[node.id];
+    const needsCiderResolve = addonStage === 'stream' || addonStage === 'renditions' || addonStage === 'all';
     const targets = node.type === 'check'
       ? [node]
       : descendants.filter(candidate => candidate.type === 'check');
+    const addonNodeIds = new Set(['bc-addon-manifest', 'bc-addon-search', 'bc-addon-stream', 'bc-renditions']);
     const results = {};
     try {
+      if (needsCiderResolve && !window.confirm(
+        'This test asks Cider to resolve the sample track “Chicago” by Michael Jackson. Cider temporarily selects the track in its queue and pauses after resolving the media URL. It does not play or download the song. Continue?'
+      )) {
+        setNotice('Test cancelled. No Cider playback or queue request was made.');
+        return;
+      }
       if (node.type === 'page') {
         const site = SITE_DEFINITIONS.find(item => item.id === node.id.replace('site-', ''));
         if (site) await runTest(site);
@@ -1305,7 +1326,8 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
         setNotice(node.title + ' has no independently testable child endpoints.');
         return;
       }
-      await Promise.all(targets.map(async target => {
+      const endpointTargets = targets.filter(target => !addonNodeIds.has(target.id));
+      await Promise.all(endpointTargets.map(async target => {
         const previous = topologyStatuses[target.id] || {};
         const endpoint = previous.endpoint;
         if (!endpoint || !endpoint.startsWith('/') || endpoint.includes('<personal-key>')) {
@@ -1354,10 +1376,25 @@ export default function AdminConsole({ bootstrapCode = '', onBootstrapConsumed =
           window.clearTimeout(timeout);
         }
       }));
+
+      if (addonStage) {
+        const report = await runPersonalAddonChecks(addonStage);
+        Object.assign(results, report.checks);
+        if (report.error) {
+          setNotice(node.title + ': ' + (report.error.message || 'The personal add-on test did not complete.') + ' See the subfeature results for details.');
+        }
+      }
+
       setTopologyStatuses(current => buildTopologyStatuses({ ...current, ...results }));
       const tested = Object.keys(results).length;
-      const blocked = Object.values(results).filter(result => result.label === 'SESSION / LIVE TEST REQUIRED' || result.state === 'idle' || result.state === 'advertised' || result.state === 'unverified').length;
-      setNotice(node.title + ': ' + tested + ' check(s) run. ' + blocked + ' still require a real session, track, or active room.');
+      const waiting = Object.values(results).filter(result =>
+        result.state === 'idle' || result.state === 'advertised' || result.state === 'unverified' || result.state === 'partial'
+      ).length;
+      if (!addonStage || !Object.keys(results).some(id => addonNodeIds.has(id))) {
+        setNotice(node.title + ': ' + tested + ' check(s) run. ' + waiting + ' still require a real session, track, or active room.');
+      } else if (!Object.values(results).some(result => result.state === 'degraded' || result.state === 'offline')) {
+        setNotice(node.title + ': ' + tested + ' live checks completed. ' + waiting + ' are conditional on the sample track or session.');
+      }
     } catch (testError) {
       setError(node.title + ': ' + (testError.message || 'Feature test failed.'));
     } finally {
