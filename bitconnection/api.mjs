@@ -559,6 +559,8 @@ export function createBitConnectionRouter({
       : /hi[\s-]?res/i.test(qualityCandidate) ? 'Hi-Res Lossless'
         : /lossless/i.test(qualityCandidate) ? 'Lossless'
           : /high|320|256/i.test(qualityCandidate) ? 'High Quality' : '';
+    const appleMusicSongId = String(value.appleMusicSongId || '').trim();
+    const appleMusicStorefront = String(value.appleMusicStorefront || '').trim().toLowerCase();
     return {
       source: 'bitmono',
       trackId: id,
@@ -566,7 +568,9 @@ export function createBitConnectionRouter({
       artist,
       durationSeconds,
       ...(artworkUrl ? { thumbnailUrl: artworkUrl } : {}),
-      ...(quality ? { audioQuality: quality } : {})
+      ...(quality ? { audioQuality: quality } : {}),
+      ...( /^[0-9]{1,20}$/.test(appleMusicSongId) ? { appleMusicSongId } : {}),
+      ...( /^[a-z]{2}$/.test(appleMusicStorefront) ? { appleMusicStorefront } : {})
     };
   }
 
