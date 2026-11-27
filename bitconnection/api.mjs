@@ -259,6 +259,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       memberModeration: 'kick-ban-and-host-promotion-enabled',
       privateRoomVerification: 'proximity-or-host-one-time-code',
       playbackSourceBridge: 'not-connected',
+      appleMusicRecommendations: 'encrypted-user-token-and-developer-token-required',
       synchronizedLyrics: 'not-connected',
       serverSideAutoMix: 'onnx-analysis-and-dj-planning-ready-player-bridge-required',
       serverSideAudioAnalysis: 'host-uploaded-to-deplexo-not-relayed',
