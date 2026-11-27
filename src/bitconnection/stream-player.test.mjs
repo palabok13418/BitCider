@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   chooseStreamEngine,
   isHlsStream,
-  validateFairPlayConfig
+  validateFairPlayConfig,
+  normalizeFairPlayLicenseHeaders
 } from './stream-player.mjs';
 
 test('recognizes HLS manifest URLs regardless of query parameters', () => {
@@ -41,6 +42,34 @@ test('rejects a Music User Token as a FairPlay license credential', () => {
     licenseServerUri: 'https://license.example.test/fps',
     serverCertificateUri: 'https://license.example.test/fps.cer'
   }), /subscriber authentication, not a FairPlay license/);
+});
+
+test('validates provider-issued FairPlay license authorization headers', () => {
+  assert.deepEqual(normalizeFairPlayLicenseHeaders({
+    Authorization: 'Bearer provider-issued-short-lived-token',
+    'X-License-Session': 'session-123'
+  }), {
+    Authorization: 'Bearer provider-issued-short-lived-token',
+    'X-License-Session': 'session-123'
+  });
+  assert.throws(() => normalizeFairPlayLicenseHeaders({ 'Media-User-Token': 'subscriber-token' }), /cannot authenticate a FairPlay license/);
+  assert.throws(() => normalizeFairPlayLicenseHeaders({ Cookie: 'session=secret' }), /cannot authenticate a FairPlay license/);
+  assert.throws(() => normalizeFairPlayLicenseHeaders({ Authorization: 'Bearer bad\\r\\nInjected: yes' }), /single-line strings/);
+  assert.throws(() => normalizeFairPlayLicenseHeaders(['not', 'an', 'object']), /must be an object/);
+});
+
+test('validates asynchronous provider FairPlay authorization hooks', () => {
+  const config = validateFairPlayConfig({
+    licenseServerUri: 'https://license.example.test/fps',
+    serverCertificateUri: 'https://license.example.test/fps.cer',
+    getLicenseRequestHeaders: async () => ({ Authorization: 'Bearer short-lived-provider-token' }),
+    transformLicenseRequest: async () => ({ body: new Uint8Array([1, 2, 3]) }),
+    transformLicenseResponse: async () => new Uint8Array([4, 5, 6])
+  });
+  assert.equal(typeof config.getLicenseRequestHeaders, 'function');
+  assert.equal(typeof config.transformLicenseRequest, 'function');
+  assert.equal(typeof config.transformLicenseResponse, 'function');
+  assert.equal(config.licenseRequestHeaders.Authorization, undefined);
 });
 
 test('accepts an HTTPS provider certificate and license endpoint', () => {
