@@ -11,7 +11,7 @@ import {
   BITCONNECTION_API_VERSION
 } from './api.mjs';
 
-async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicDeveloperToken = '', providerCredentialEncryptionConfigured = false } = {}) {
+async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = {}, giphyApiKey = '', fetchImpl = globalThis.fetch, appleMusicDeveloperToken = '', appleMusicWebPlayerToken = '', providerCredentialEncryptionConfigured = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bitconnection-test-'));
   const dataFile = path.join(directory, 'bitconnection.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -24,6 +24,7 @@ async function harness(t, { ciderAccount = false, maxPartySize = 4, iceConfig = 
     giphyApiKey,
     fetchImpl,
     appleMusicDeveloperToken,
+    appleMusicWebPlayerToken,
     encryptProviderCredential: value => ({ value: Buffer.from(value).toString('base64url'), iv: 'test-iv', tag: 'test-tag' }),
     decryptProviderCredential: box => Buffer.from(box.value, 'base64url').toString('utf8'),
     providerCredentialEncryptionConfigured: () => providerCredentialEncryptionConfigured,
@@ -1114,12 +1115,25 @@ test('Apple Music connection fails closed when developer token or encrypted stor
 });
 
 
-test('Apple Music TTML lyrics prefer syllable timing and use the saved subscriber token', async t => {
+test('Apple Music TTML lyrics work without a developer token by discovering the public web-player Bearer', async t => {
   const requests = [];
+  const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+  const jwt = [
+    Buffer.from(JSON.stringify({ alg: 'ES256', kid: 'web-player-key' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ exp, iss: 'apple-web-player' })).toString('base64url'),
+    Buffer.from('web-player-signature').toString('base64url')
+  ].join('.');
   const fetchImpl = async (url, options = {}) => {
     requests.push({ url: String(url), headers: options.headers || {} });
-    if (String(url).includes('/v1/me/recommendations?limit=1')) {
-      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (String(url) === 'https://music.apple.com/us/browse') {
+      return new Response('<html><script type="module" src="/assets/index~test.js"></script></html>', {
+        status: 200, headers: { 'content-type': 'text/html' }
+      });
+    }
+    if (String(url) === 'https://music.apple.com/assets/index~test.js') {
+      return new Response('window.appleToken = "' + jwt + '";', {
+        status: 200, headers: { 'content-type': 'application/javascript' }
+      });
     }
     if (String(url).includes('/syllable-lyrics?extend=ttmlLocalizations')) {
       return new Response(JSON.stringify({
@@ -1129,7 +1143,6 @@ test('Apple Music TTML lyrics prefer syllable timing and use the saved subscribe
     throw new Error('Unexpected Apple Music endpoint: ' + url);
   };
   const client = await harness(t, {
-    appleMusicDeveloperToken: 'test-apple-developer-jwt',
     providerCredentialEncryptionConfigured: true,
     fetchImpl
   });
@@ -1146,6 +1159,18 @@ test('Apple Music TTML lyrics prefer syllable timing and use the saved subscribe
     body: JSON.stringify({ userMediaToken: token })
   });
   assert.equal(connected.status, 200);
+  const connectPayload = await connected.json();
+  assert.equal(connectPayload.connected, true);
+  assert.equal(connectPayload.validationDeferred, true);
+  assert.equal(JSON.stringify(connectPayload).includes(token), false);
+  assert.equal(requests.length, 0, 'saving a subscriber token must not call an endpoint requiring a developer token');
+
+  const status = await client.request('/account/providers/apple-music', { headers: { Cookie: csrf.cookie } });
+  const statusPayload = await status.json();
+  assert.equal(status.status, 200);
+  assert.equal(statusPayload.connected, true);
+  assert.equal(statusPayload.recommendationsConfigured, false);
+  assert.equal(statusPayload.lyricsAuthentication, 'automatic-web-player-bearer-plus-user-media-token');
 
   const lyrics = await client.request('/account/providers/apple-music/lyrics?songId=123456789&storefront=us', {
     headers: { Cookie: csrf.cookie }
@@ -1159,11 +1184,12 @@ test('Apple Music TTML lyrics prefer syllable timing and use the saved subscribe
   assert.ok(lyricsRequest);
   assert.equal(lyricsRequest.headers['Media-User-Token'], token);
   assert.equal(lyricsRequest.headers['Music-User-Token'], undefined);
-  assert.equal(lyricsRequest.headers.Authorization, 'Bearer test-apple-developer-jwt');
+  assert.equal(lyricsRequest.headers.Authorization, 'Bearer ' + jwt);
   assert.equal(lyricsRequest.headers.Origin, 'https://music.apple.com');
+  assert.equal(lyricsRequest.headers.Referer, 'https://music.apple.com/');
+  assert.ok(requests.some(request => request.url === 'https://music.apple.com/us/browse'));
+  assert.ok(requests.some(request => request.url === 'https://music.apple.com/assets/index~test.js'));
 });
-
-
 
 test('BitMono search results can enter the shared queue and become synchronized party playback', async t => {
   const client = await harness(t);
