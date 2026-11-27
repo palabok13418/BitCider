@@ -34,7 +34,7 @@ For a larger structural-analysis option, evaluate the ONNX All-In-One exports us
 
 For vocal-aware transitions, evaluate [HTDemucs FT ONNX](https://github.com/StemSplit/demucs-onnx). The complete specialist bag is approximately 1.26 GB FP32 or 660 MB with the published FP16-weight variant; a single specialist is substantially smaller. This enables vocal, drums, bass and other-stem awareness, but costs more storage, RAM and offline CPU/GPU time. It should be an optional model pack, not a mandatory first download.
 
-Do not choose [SongFormer](https://huggingface.co/) as the default for this project without a separate licensing decision: its strongest published checkpoint has non-commercial restrictions. Model benchmark performance is not enough if the weights cannot be used for the product's intended distribution.
+Model benchmark performance is not enough on its own: verify both the model's evaluation scope and the exact weight license before selecting a checkpoint for the product.
 
 Recommended progression: Beat This! for beat/downbeat grids, LinkSeg for full-mix semantic sections, a validated trained key/loudness model for harmonic and gain matching, then optional HTDemucs/All-In-One analysis for vocal-aware and finer structural transitions. Finally, the player bridge must execute the automation. These analysis models alone cannot make a complete live DJ.
 
