@@ -173,6 +173,25 @@ The BitConnection host audio element now uses `src/bitconnection/stream-player.m
 
 The included player libraries are HLS.js (`hls.js`) and Shaka Player (`shaka-player`). They are playback engines, not FairPlay licensing servers. The FairPlay KSM sample is not installed as a production license server; a KSM requires the content provider's own authorized FPS credentials and license workflow.
 
+The Shaka adapter supports provider-authenticated license exchanges. Supply the content provider's FairPlay license URL and server certificate to `attachBitCiderStream`, plus provider-issued license headers such as a short-lived bearer token. For providers that mint a new authorization token per request, provide `getLicenseRequestHeaders`. Providers with a non-standard SPC/CKC envelope can supply `transformLicenseRequest` and `transformLicenseResponse`; the response transform must return binary CKC bytes. The default exchange sends Shaka's binary SPC request and expects a binary CKC response. Header values are validated, and `Media-User-Token`, `Music-User-Token`, cookies, and host-controlled transport headers are rejected.
+
+Example for a licensed third-party content provider:
+
+```js
+await attachBitCiderStream(audioElement, manifestUrl, {
+  mimeType: 'application/vnd.apple.mpegurl',
+  fairPlay: {
+    licenseServerUri: 'https://license.your-provider.example/fairplay',
+    serverCertificateUri: 'https://license.your-provider.example/fairplay.cer',
+    getLicenseRequestHeaders: async () => ({
+      Authorization: 'Bearer ' + await getShortLivedProviderLicenseToken()
+    })
+  }
+});
+```
+
+This is a general FairPlay Streaming client integration, not an Apple Music license integration. Apple does not expose the Apple Music FairPlay license endpoint, server certificate, or CKC exchange to third-party apps through the Music User Token. The Music User Token cannot be substituted for the content-provider-issued license authorization. Apple Music playback must continue through MusicKit's authorized playback session.
+
 The personal BitCider addon still supports its existing signed-in Cider browser bridge. BitConnection now also has a separate direct Apple Music playback path described below; it does not route playback through Cider.
 
 ## Direct Apple Music playback through MusicKit Web
