@@ -241,19 +241,27 @@ export async function playAppleMusicSong(track, options) {
   return { music, snapshot: musicKitPlaybackSnapshot(music) };
 }
 
+function invokeWithReceiver(receiver, methodName, args = []) {
+  const method = receiver?.[methodName];
+  if (typeof method !== 'function') {
+    throw new Error('Apple Music playback does not support ' + methodName + ' in this browser.');
+  }
+  return Reflect.apply(method, receiver, args);
+}
+
 export async function controlAppleMusicPlayback(music, action, value) {
   if (!music?.player) throw new Error('Apple Music playback has not been initialized.');
   const player = music.player;
-  if (action === 'play') await music.play();
-  else if (action === 'pause') await music.pause();
-  else if (action === 'stop') await music.stop();
-  else if (action === 'next') await music.skipToNextItem();
-  else if (action === 'previous') await music.skipToPreviousItem();
+  if (action === 'play') await invokeWithReceiver(music, 'play');
+  else if (action === 'pause') await invokeWithReceiver(music, 'pause');
+  else if (action === 'stop') await invokeWithReceiver(music, 'stop');
+  else if (action === 'next') await invokeWithReceiver(music, 'skipToNextItem');
+  else if (action === 'previous') await invokeWithReceiver(music, 'skipToPreviousItem');
   else if (action === 'seek') {
     const position = Number(value);
     if (!Number.isFinite(position) || position < 0) throw new TypeError('Seek position must be a non-negative number.');
-    if (typeof music.seekToTime === 'function') await music.seekToTime(position);
-    else if (typeof player.seekToTime === 'function') await player.seekToTime(position);
+    if (typeof music.seekToTime === 'function') await invokeWithReceiver(music, 'seekToTime', [position]);
+    else if (typeof player.seekToTime === 'function') await invokeWithReceiver(player, 'seekToTime', [position]);
     else throw new Error('This MusicKit version does not expose seeking.');
   } else if (action === 'volume') {
     const volume = Number(value);
