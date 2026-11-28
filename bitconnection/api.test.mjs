@@ -1506,7 +1506,8 @@ test('MusicKit playback config clearly reports when its separate developer token
     headers: { Cookie: csrf.cookie }
   });
   const payload = await response.json();
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
   assert.equal(payload.configured, false);
-  assert.equal(payload.error, 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED');
+  assert.equal(payload.playbackMode, 'apple-music-embed');
+  assert.match(payload.message, /embedded player remains available/);
 });
