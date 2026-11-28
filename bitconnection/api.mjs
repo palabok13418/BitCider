@@ -1226,7 +1226,7 @@ export function createBitConnectionRouter({
       if (url.protocol !== 'https:' || url.username || url.password) return '';
       // Public iTunes Search uses 100x100/200x200 artwork derivatives. Ask
       // the Apple CDN for the larger cover used in the full-screen Browser.
-      url.pathname = url.pathname.replace(/\\/\\d{2,4}x\\d{2,4}(?=bb)/i, '/600x600');
+      url.pathname = url.pathname.replace(new RegExp('/[0-9]{2,4}x[0-9]{2,4}(?=bb)', 'i'), '/600x600');
       return url.toString();
     } catch {
       return '';
