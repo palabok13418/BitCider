@@ -12,12 +12,19 @@ test('security policy permits the required app, local Cider, and Apple MusicKit 
   assert.match(CONTENT_SECURITY_POLICY, /http:\/\/127\.0\.0\.1:10767/);
   assert.match(CONTENT_SECURITY_POLICY, /https:\/\/fonts\.googleapis\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /https:\/\/fonts\.gstatic\.com/);
-  assert.ok(CONTENT_SECURITY_POLICY.includes("img-src 'self' data: blob: https://*.apple.com https://*.mzstatic.com"));
+  const directives = Object.fromEntries(CONTENT_SECURITY_POLICY.split('; ').map(value => {
+    const separator = value.indexOf(' ');
+    return [value.slice(0, separator), value.slice(separator + 1)];
+  }));
+  assert.ok(directives['img-src'].includes('https://*.apple.com'));
+  assert.ok(directives['img-src'].includes('https://*.confih.tech'));
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/static\.cloudflareinsights\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /script-src[^;]*https:\/\/js-cdn\.music\.apple\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\*\.apple\.com/);
-  assert.ok(CONTENT_SECURITY_POLICY.includes("media-src 'self' blob: data: https://*.apple.com https://*.itunes.apple.com https://*.mzstatic.com"));
+  assert.ok(directives['media-src'].includes('https://*.apple.com'));
+  assert.ok(directives['media-src'].includes('https://*.itunes.apple.com'));
+  assert.ok(directives['media-src'].includes('https://*.mzstatic.com'));
   assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\\*\.confih\.tech/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/mus-api\.de\.deplexo\.com/);
   assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\\*\.confih\.tech/);

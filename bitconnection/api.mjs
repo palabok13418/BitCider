@@ -1223,7 +1223,11 @@ export function createBitConnectionRouter({
       .replaceAll('{f}', 'jpg');
     try {
       const url = new URL(expanded);
-      return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : '';
+      if (url.protocol !== 'https:' || url.username || url.password) return '';
+      // Public iTunes Search uses 100x100/200x200 artwork derivatives. Ask
+      // the Apple CDN for the larger cover used in the full-screen Browser.
+      url.pathname = url.pathname.replace(/\\/\\d{2,4}x\\d{2,4}(?=bb)/i, '/600x600');
+      return url.toString();
     } catch {
       return '';
     }
