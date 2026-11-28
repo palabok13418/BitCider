@@ -167,11 +167,7 @@ function PartyRoomExperience({
   onPlayPartySourceTrack = async () => {},
   onControlPartySource = async () => {},
   onSeekPartySource = async () => {},
-  onSearchAppleMusicCatalog = async () => [],
-  appleMusicPlaybackStatus = 'checking',
-  appleMusicPlaybackError = '',
-  onControlAppleMusic = async () => {},
-  onSeekAppleMusic = async () => {}
+  onSearchAppleMusicCatalog = async () => []
 }) {
   const [activeTab, setActiveTab] = useState('lyrics');
   const [volume, setVolume] = useState(1);
@@ -372,9 +368,7 @@ function PartyRoomExperience({
         if (!isHost) throw new Error('Only the host can control the Apple Music embedded player.');
         setPlaybackMessage('Use the Apple Music player in the Browser panel for playback controls.');
       } else if (track?.source === 'apple-music') {
-        if (!isHost) throw new Error('Only the host can control the Apple Music playback session.');
-        await onControlAppleMusic(action);
-        setPlaybackMessage('Apple Music playback control updated.');
+        throw new Error('Apple Music is available for catalogue discovery and lyrics. Find the track in ' + sourceLabel + ' to play it for the party.');
       } else if (['bitmono', 'ccustom', 'cider'].includes(track?.source)) {
         if (!isHost) throw new Error('Only the host can control the active party audio source.');
         if (action === 'next' || action === 'previous') {
@@ -394,8 +388,8 @@ function PartyRoomExperience({
 
   async function seekTo(value) {
     const next = Math.max(0, Math.min(duration || 86400, Number(value) || 0));
-    if (track?.source === 'apple-music' && track?.playbackMode === 'embed') {
-      setPlaybackMessage('Use the Apple Music player in the Browser panel to seek.');
+    if (track?.source === 'apple-music') {
+      setPlaybackMessage('Apple Music is not a party playback source. Find this track in ' + sourceLabel + ' to stream it to guests.');
       return;
     }
     setProgressSeconds(next);
@@ -750,6 +744,7 @@ function PartyRoomExperience({
       } else {
         const base = selectedSourceBaseUrl();
         if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
+        if (playbackSource === 'ccustom' && !customSourceManifestUrl.trim()) throw new Error('Add your CCustom manifest URL in BitAccount Center.');
         if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
           throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
         }
@@ -933,7 +928,7 @@ function PartyRoomExperience({
             onPointerUp={() => void seekTo(progressSeconds)}
             onKeyUp={() => void seekTo(progressSeconds)}
             aria-label="Playback position"
-            disabled={!duration || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))}
+            disabled={!duration || track?.source === 'apple-music'}
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
@@ -949,7 +944,7 @@ function PartyRoomExperience({
           <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
         )}
         <div className="bc-party-transport-controls">
-          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || track?.source === 'apple-music'} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
           <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
           <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
         </div>
@@ -1197,18 +1192,7 @@ function PartyRoomExperience({
               <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
-            {appleMusicPlaybackStatus === 'ready' && (
-              <div className="bc-party-inline-status" role="status">Direct Apple Music playback is ready in this browser.</div>
-            )}
-            {appleMusicPlaybackStatus === 'checking' && (
-              <div className="bc-party-inline-status" role="status">Initializing Apple's direct playback engine…</div>
-            )}
-            {appleMusicPlaybackStatus === 'embed-ready' && (
-              <div className="bc-party-inline-status" role="status">No developer token is configured. Apple’s embedded player can still play full songs when you sign in to Apple Music inside the player.</div>
-            )}
-            {appleMusicPlaybackStatus === 'unavailable' && (
-              <div className="bc-party-inline-status" role="status">{appleMusicPlaybackError || 'MusicKit is unavailable. Apple’s embedded player remains available for full songs.'}</div>
-            )}
+            <div className="bc-party-inline-status" role="status">Party playback source: {sourceLabel}. Apple Music is available here for catalogue discovery and timed lyrics only.</div>
             {appleMusicEmbed && (
               <section className="bc-party-apple-embed" aria-label="Apple Music player">
                 <header>
@@ -1225,7 +1209,7 @@ function PartyRoomExperience({
                   loading="lazy"
                   referrerPolicy="strict-origin-when-cross-origin"
                 />
-                <p>Sign in to Apple Music in the player for full-length playback. The Apple Music embed is not used as the party audio source. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
+                <p>Apple Music is used here for discovery only. Find this track in {sourceLabel} to play it for the party. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
               </section>
             )}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
