@@ -147,7 +147,7 @@ test('an existing BitConnection account can explicitly link to BitCider and rest
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitaccount-link-'));
   const port = await freePort();
   const encryptionKey = crypto.randomBytes(32).toString('base64url');
-  const username = 'existing-bitconnection-user';
+  const username = 'bitaccount-shared';
   const password = 'existing-bitconnection-password-2026';
   const fakeCiderToken = 'bitaccount-link-integration-token-never-store-plaintext';
   let server;
