@@ -51,7 +51,12 @@ function PartyQrCode({ value }) {
     return segments.join('');
   }, [qr]);
 
-  if (!qr) return null;
+  if (!qr) return (
+    <div className="bc-party-qr-fallback" role="status">
+      <span>QR unavailable</span>
+      <strong>{value}</strong>
+    </div>
+  );
   const extent = qr.size + 8;
   return (
     <svg
@@ -166,7 +171,7 @@ function PartyRoomExperience({
   onControlAppleMusic = async () => {},
   onSeekAppleMusic = async () => {}
 }) {
-  const [activeTab, setActiveTab] = useState('members');
+  const [activeTab, setActiveTab] = useState('lyrics');
   const [volume, setVolume] = useState(1);
   const [draft, setDraft] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
@@ -230,6 +235,14 @@ function PartyRoomExperience({
   const appleMusicStorefront = /^[a-z]{2}$/.test(String(track?.appleMusicStorefront || '')) ? String(track.appleMusicStorefront) : 'us';
   const roomName = room?.roomName || roomState?.room?.roomName || 'Listening Party';
   const roomCode = room?.roomCode || roomState?.room?.roomCode || '';
+  const roomData = roomState?.room || room || {};
+  const bitChordRoomCode = String(
+    roomData.bitChordRoomCode || roomData.roomCodes?.bitChord || roomCode || ''
+  ).trim();
+  const musAudioRoomCode = String(
+    roomData.musAudioRoomCode || roomData.musAudioCode || roomData.roomCodes?.musAudio || ''
+  ).trim();
+  const hostControlsPlayback = Boolean(roomData.ownerOnlyControls);
   const allowPlayback = isHost || !room?.ownerOnlyControls;
   const allowQueue = allowPlayback;
   const currentId = currentParticipant?.participantId || session?.participantId;
@@ -843,25 +856,6 @@ function PartyRoomExperience({
 
   return (
     <main className="bc-party-room" data-role={isHost ? 'host' : 'guest'}>
-      <section className="bc-party-room-share" aria-label="Room code and QR code">
-          <div className="bc-party-room-code-copy">
-            <span className="bc-party-room-code-label">ROOM CODE</span>
-            <div className="bc-party-room-code-row">
-              <strong className="bc-party-room-code-value">{roomCode || '--------'}</strong>
-              {roomCode && (
-                <button className="bc-party-copy-code" type="button" onClick={() => navigator.clipboard?.writeText(roomCode).catch(() => {})}>
-                  <Icon name="copy" size={14}/>Copy code
-                </button>
-              )}
-            </div>
-            <small>Enter this code in BitChord or scan the QR code to read it.</small>
-          </div>
-          <div className="bc-party-room-qr-wrap">
-            {roomCode ? <PartyQrCode value={roomCode}/> : <div className="bc-party-room-qr-placeholder" aria-hidden="true"/>}
-            <span>ROOM QR</span>
-          </div>
-        </section>
-
       <section className="bc-party-playback-panel" aria-label="Playback">
         <div className="bc-party-left-heading">
           <span className="bc-party-live-dot" />
@@ -923,7 +917,6 @@ function PartyRoomExperience({
           </div>
         )}
         {playbackMessage && <div className="bc-party-inline-status" role="status">{playbackMessage}</div>}
-        <button className="bc-party-leave" type="button" onClick={onLeave}>{isHost && participants.length <= 1 ? "End party" : "Leave party"}</button>
       </section>
 
       <section className="bc-party-content-panel" aria-label="Party content">
@@ -958,7 +951,71 @@ function PartyRoomExperience({
             </section>
           )}
 
-          {activeTab === 'queue' && (
+          {activeTab === 'room' && (
+            <>
+              <section className="bc-party-room-details" aria-label="Room details">
+                <div className="bc-party-room-control-note">
+                  <span className="bc-party-room-control-state">
+                    <i />
+                    {hostControlsPlayback ? 'Host controls playback' : 'Everyone can control playback'}
+                  </span>
+                  <span>{participants.length} {participants.length === 1 ? 'member' : 'members'} in this room</span>
+                </div>
+                <div className="bc-party-room-code-layout">
+                  <article className="bc-party-room-code-card">
+                    <span>BITCHORD ROOM CODE</span>
+                    <strong>{bitChordRoomCode || 'Unavailable'}</strong>
+                    {bitChordRoomCode && (
+                      <button type="button" onClick={() => navigator.clipboard?.writeText(bitChordRoomCode).catch(() => {})}>
+                        <Icon name="copy" size={13}/>Copy code
+                      </button>
+                    )}
+                    <small>Enter this code in BitChord.</small>
+                  </article>
+                  <div className="bc-party-room-qr-center">
+                    {bitChordRoomCode
+                      ? <PartyQrCode value={bitChordRoomCode}/>
+                      : <div className="bc-party-qr-fallback"><span>QR unavailable</span><strong>No room code</strong></div>}
+                    <span>SCAN TO JOIN</span>
+                  </div>
+                  <article className="bc-party-room-code-card is-mus-audio">
+                    <span>MUSAUDIO ROOM CODE</span>
+                    <strong>{musAudioRoomCode || 'Not linked'}</strong>
+                    {musAudioRoomCode && (
+                      <button type="button" onClick={() => navigator.clipboard?.writeText(musAudioRoomCode).catch(() => {})}>
+                        <Icon name="copy" size={13}/>Copy code
+                      </button>
+                    )}
+                    <small>{musAudioRoomCode ? 'Enter this code in MusAudio.' : 'A separate MusAudio room code has not been provided by this room.'}</small>
+                  </article>
+                </div>
+              </section>
+              <section className="bc-party-room-members" aria-label="People in this room">
+                <div className="bc-party-room-section-heading">
+                  <div><span>IN THIS ROOM</span><strong>People</strong></div>
+                  <small>{participants.length} / {room?.partySize || roomState?.room?.partySize || '—'}</small>
+                </div>
+                <div className="bc-party-members">
+                  {participants.map(person => (
+                    <article className="bc-party-member-card" key={person.participantId}>
+                      <div className="bc-party-avatar">{avatarFor(person)}</div>
+                      <div className="bc-party-member-copy"><strong>{person.username}</strong><span>{person.role === 'host' ? 'Host' : person.status === 'connected' ? 'Listening now' : 'Reconnecting'}{person.participantId === currentId ? ' · You' : ''}</span></div>
+                      {person.role === 'host' && <span className="bc-party-host-badge"><Icon name="crown" size={13}/>HOST</span>}
+                      {isHost && person.participantId !== currentId && person.role !== 'host' && (
+                        <div className="bc-party-member-actions">
+                          <button type="button" onClick={() => void moderateMember(person, 'promote')} disabled={Boolean(memberBusy)} title="Promote to host"><Icon name="crown" size={15}/></button>
+                          <button type="button" onClick={() => void moderateMember(person, 'kick')} disabled={Boolean(memberBusy)} title="Kick from party">Kick</button>
+                          <button type="button" onClick={() => void moderateMember(person, 'ban')} disabled={Boolean(memberBusy) || !person.canBan} title={person.canBan ? 'Ban from party' : 'A persistent ban needs this member to sign in'}>Ban</button>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </>
+          )}
+
+          {activeTab === 'room' && (
             <section className="bc-party-queue">
               <div className="bc-party-queue-actions">
                 <button type="button" className={queueSettings.loop ? 'is-active' : ''} onClick={() => void updateQueueSettings({ loop: !queueSettings.loop })} disabled={queueBusy} aria-pressed={Boolean(queueSettings.loop)}><Icon name="repeat" size={17}/>Loop</button>
@@ -1034,37 +1091,31 @@ function PartyRoomExperience({
             </section>
           )}
 
-          {activeTab === 'members' && (
-            <section className="bc-party-members">
-              {participants.map(person => (
-                <article className="bc-party-member-card" key={person.participantId}>
-                  <div className="bc-party-avatar">{avatarFor(person)}</div>
-                  <div className="bc-party-member-copy"><strong>{person.username}</strong><span>{person.role === 'host' ? 'Host' : person.status === 'connected' ? 'Listening now' : 'Reconnecting'}{person.participantId === currentId ? ' · You' : ''}</span></div>
-                  {person.role === 'host' && <span className="bc-party-host-badge"><Icon name="crown" size={13}/>HOST</span>}
-                  {isHost && person.participantId !== currentId && person.role !== 'host' && (
-                    <div className="bc-party-member-actions">
-                      <button type="button" onClick={() => void moderateMember(person, 'promote')} disabled={Boolean(memberBusy)} title="Promote to host"><Icon name="crown" size={15}/></button>
-                      <button type="button" onClick={() => void moderateMember(person, 'kick')} disabled={Boolean(memberBusy)} title="Kick from party">Kick</button>
-                      <button type="button" onClick={() => void moderateMember(person, 'ban')} disabled={Boolean(memberBusy) || !person.canBan} title={person.canBan ? 'Ban from party' : 'A persistent ban needs this member to sign in'}>Ban</button>
-                    </div>
-                  )}
-                </article>
-              ))}
-            </section>
-          )}
         </div>
 
         <nav className="bc-party-tab-bar" aria-label="Party sections">
           {[
             { id: 'lyrics', label: 'Lyrics', symbol: '≋' },
-            { id: 'queue', label: 'Queue', symbol: '☷' },
+            { id: 'room', label: 'Room', symbol: '▤' },
             { id: 'chat', label: 'Chat', symbol: '◌' },
-            { id: 'members', label: 'Members', symbol: '◎' }
-          ].map(tab => (
-            <button type="button" key={tab.id} className={activeTab === tab.id ? 'is-active' : ''} onClick={() => setActiveTab(tab.id)} aria-current={activeTab === tab.id ? 'page' : undefined}>
-              <span>{tab.symbol}</span>{tab.label}{tab.id === 'chat' && chat.length > 0 ? <small>{chat.length > 99 ? '99+' : chat.length}</small> : null}
-            </button>
-          ))}
+            { id: 'leave', label: 'Leave', symbol: '↗' }
+          ].map(tab => {
+            const isLeave = tab.id === 'leave';
+            const leaveLabel = isHost && participants.length <= 1 ? 'End party' : 'Leave party';
+            return (
+              <button
+                type="button"
+                key={tab.id}
+                className={(activeTab === tab.id ? 'is-active ' : '') + (isLeave ? 'is-leave' : '')}
+                onClick={() => isLeave ? void onLeave() : setActiveTab(tab.id)}
+                aria-current={!isLeave && activeTab === tab.id ? 'page' : undefined}
+                aria-label={isLeave ? leaveLabel : tab.label}
+                title={isLeave ? leaveLabel : tab.label}
+              >
+                <span>{tab.symbol}</span>{isLeave ? 'Leave' : tab.label}{tab.id === 'chat' && chat.length > 0 ? <small>{chat.length > 99 ? '99+' : chat.length}</small> : null}
+              </button>
+            );
+          })}
         </nav>
       </section>
 
