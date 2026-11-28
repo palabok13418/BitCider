@@ -6,7 +6,7 @@ Use this specification for every active-party screen update. The active-party pa
 
 - Full-bleed dark plum / rose Grainient canvas; do not wrap the whole room in an additional oversized card.
 - Two-column body: playback always stays on the left; the right side is the content workspace.
-- Left column: small hosting/listening status, square cover art (or a wide waveform empty-state tile), track title and artist, timeline with elapsed/total time, audio format mark centered below the timeline, previous/play/next controls, volume, host tab-audio sharing, and no duplicate leave button outside the bottom navigation.
+- Left column: small hosting/listening status, square cover art (or a wide waveform empty-state tile), track title and artist, timeline with elapsed/total time, audio format mark centered below the timeline, previous/play/next controls, volume, and a compact status for the selected BitMono, CCustom, or Cider source; do not show a screen-share button or picker.
 - Right column header: hosting/joined status, room name, and current member count.
 - The right content opens on **Lyrics** by default. Keep the currently active lyric centered and clearly emphasized, with surrounding lines quieter.
 - A four-item rounded floating bottom navigation sits at the bottom center of the viewport and contains exactly **Lyrics**, **Room**, **Chat**, and **Leave**. Do not use Queue or Members as navigation destinations.
@@ -26,6 +26,6 @@ Use this specification for every active-party screen update. The active-party pa
 ## Behavior
 
 - The Leave navigation action must call the existing room leave flow. Hosts alone end their party; hosts with guests leave and hand hosting to the earliest active guest. The label/accessible name should reflect “End party” versus “Leave party”.
-- Without APPLE_MUSICKIT_DEVELOPER_TOKEN, use the official Apple Music embedded-player fallback; do not present unavailable direct MusicKit controls as active.
-- Browser-native media methods (getDisplayMedia, play, pause, and captureStream) must be invoked with their owning object as the receiver.
-- ERR_BLOCKED_BY_CLIENT from optional analytics or injected browser extensions is not a room playback failure.
+- BitConnection party audio comes only from the source saved in BitAccount Center: BitMono, CCustom, or Cider. Apple Music remains a discovery/lyrics surface, not a fourth party audio source.
+- Publish only the audio track from the selected in-page media element with HTMLMediaElement.captureStream(). Never call getDisplayMedia or request screen/window/tab capture for party audio.
+- The Cider source requires the linked personal Cider relay on the host device. CCustom requires a valid HTTPS add-on manifest and browser CORS permission.
