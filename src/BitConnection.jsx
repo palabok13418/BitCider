@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
-import { startBitConnectionGuestTransport, startBitConnectionHostTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
+import { startBitConnectionGuestTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
+import { runCiderBrowserRelay } from './cider-bridge.js';
 import { attachBitCiderStream } from './bitconnection/stream-player.mjs';
 import {
   getMusicKitPlayer,
@@ -665,6 +666,9 @@ function AccountManagementWindow() {
   const [appleMusicStatus, setAppleMusicStatus] = useState(null);
   const [appleMusicUserToken, setAppleMusicUserToken] = useState('');
   const [appleMusicBusy, setAppleMusicBusy] = useState(false);
+  const [playbackSource, setPlaybackSource] = useState('bitmono');
+  const [customSourceManifestUrl, setCustomSourceManifestUrl] = useState('');
+  const [playbackSettingsBusy, setPlaybackSettingsBusy] = useState(false);
 
   async function loadAccount(mode = 'auto') {
     const selectedMode = mode === 'auto' ? 'bitconnection' : mode;
@@ -678,6 +682,8 @@ function AccountManagementWindow() {
     setAccount(payload);
     setIdentityMode(selectedMode);
     setProfile(payload.profile || null);
+    setPlaybackSource(['bitmono', 'ccustom', 'cider'].includes(payload.profile?.playbackSource) ? payload.profile.playbackSource : 'bitmono');
+    setCustomSourceManifestUrl(payload.profile?.customSourceManifestUrl || '');
     if (payload.authenticated) {
       const providerHeaders = selectedMode === 'bitcider' ? { 'X-BitConnection-Identity': 'bitcider' } : {};
       const providerResponse = await fetch('/api/bitconnection/account/providers/apple-music', {
@@ -720,6 +726,36 @@ function AccountManagementWindow() {
     });
     return () => { active = false; };
   }, []);
+
+  async function savePlaybackSettings(event) {
+    event.preventDefault();
+    setPlaybackSettingsBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch('/api/bitconnection/account/playback-settings', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          ...identityHeaders(identityMode, account)
+        },
+        body: JSON.stringify({ playbackSource, customSourceManifestUrl })
+      });
+      const payload = await readResponse(response, 'Could not save your party audio source.');
+      setCustomSourceManifestUrl(payload.playbackSettings?.customSourceManifestUrl || '');
+      setProfile(current => ({
+        ...current,
+        playbackSource: payload.playbackSettings?.playbackSource || playbackSource,
+        customSourceManifestUrl: payload.playbackSettings?.customSourceManifestUrl || ''
+      }));
+      setNotice('Your party audio source preference has been saved.');
+    } catch (saveError) {
+      setError(saveError.message || 'Could not save your party audio source.');
+    } finally {
+      setPlaybackSettingsBusy(false);
+    }
+  }
 
   function closeWindow() {
     window.close();
@@ -1032,6 +1068,57 @@ function AccountManagementWindow() {
             </section>
           </div>
 
+
+          <section className="bc-account-provider-panel bc-party-source-settings" aria-label="Party audio source">
+            <div className="bc-account-provider-heading">
+              <div>
+                <span className="bc-account-panel-kicker">LISTENING PARTY</span>
+                <h2>Party audio source</h2>
+                <p>Choose which service BitConnection uses as the host's audio source. Audio plays from that source inside this page and is sent to guests through WebRTC. No screen sharing is used.</p>
+              </div>
+            </div>
+            <form onSubmit={savePlaybackSettings}>
+              <fieldset className="bc-party-source-options">
+                <legend>SELECT AUDIO SOURCE</legend>
+                <label className={playbackSource === 'bitmono' ? 'is-selected' : ''}>
+                  <input type="radio" name="party-audio-source" value="bitmono" checked={playbackSource === 'bitmono'} onChange={() => setPlaybackSource('bitmono')}/>
+                  <span><strong>BitMono</strong><small>Monochrome-backed BitMono catalogue and streams.</small></span>
+                </label>
+                <label className={playbackSource === 'ccustom' ? 'is-selected' : ''}>
+                  <input type="radio" name="party-audio-source" value="ccustom" checked={playbackSource === 'ccustom'} onChange={() => setPlaybackSource('ccustom')}/>
+                  <span><strong>CCustom</strong><small>Your custom BitChord-compatible add-on.</small></span>
+                </label>
+                <label className={playbackSource === 'cider' ? 'is-selected' : ''}>
+                  <input type="radio" name="party-audio-source" value="cider" checked={playbackSource === 'cider'} onChange={() => setPlaybackSource('cider')}/>
+                  <span><strong>Cider</strong><small>Use your linked Cider app and personal BitCider connection.</small></span>
+                </label>
+              </fieldset>
+              {playbackSource === 'ccustom' && (
+                <label className="bc-party-custom-source-field">
+                  <span>CCUSTOM MANIFEST URL</span>
+                  <input
+                    type="url"
+                    value={customSourceManifestUrl}
+                    onChange={event => setCustomSourceManifestUrl(event.target.value)}
+                    placeholder="https://your-addon.example/manifest.json"
+                    autoComplete="url"
+                    spellCheck={false}
+                    required
+                  />
+                  <small>Use an HTTPS BitChord-compatible add-on manifest ending in /manifest.json. The add-on must permit browser CORS requests.</small>
+                </label>
+              )}
+              {playbackSource === 'cider' && (
+                <div className="bc-account-unavailable">
+                  <strong>Cider connection required</strong>
+                  <p>Link Cider in BitCider on this device and keep the BitCider browser relay available. Cider playback will use that personal connection, not screen sharing.</p>
+                </div>
+              )}
+              <button className="bc-primary-button" type="submit" disabled={playbackSettingsBusy || (playbackSource === 'ccustom' && !customSourceManifestUrl.trim())}>
+                {playbackSettingsBusy ? 'Saving…' : 'Save party audio source'}
+              </button>
+            </form>
+          </section>
 
           <section className="bc-account-provider-panel" aria-label="Connected music services">
             <div className="bc-account-provider-heading">
