@@ -45,7 +45,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-28-apple-music-addon-v1';
+const API_VERSION = '2026-11-28-bitaccount-link-v1';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
 const browserBridges = new Map();
@@ -1190,45 +1190,6 @@ function streamDetails(url, queueItem, quality = 'high') {
   return streamMetadata(url, queueItem, quality);
 }
 
-function ciderQueueItemIsFairPlayProtected(queueItem = {}) {
-  const attributes = queueItem?.attributes || queueItem || {};
-  const values = [
-    attributes.drm,
-    attributes.drmType,
-    attributes.drmSystem,
-    attributes.keySystem,
-    attributes.protection,
-    attributes.protectionScheme,
-    attributes.encryptionScheme,
-    attributes.licenseType,
-    attributes.licenseUrl,
-    attributes.licenseURL,
-    attributes.keyServerUrl,
-    attributes.fairPlayLicenseUrl,
-    attributes.fairplayLicenseUrl
-  ].filter(value => value != null).map(value => String(value).toLowerCase());
-
-  const explicitFlags = [
-    attributes.encrypted,
-    attributes.isEncrypted,
-    attributes.protected,
-    attributes.isProtected,
-    attributes.drmProtected,
-    attributes.isDrmProtected
-  ];
-  if (explicitFlags.some(value => value === true || String(value).toLowerCase() === 'true')) return true;
-  return values.some(value => /fairplay|fair-play|skd|drm|streamingkeydelivery|com\.apple\.streamingkeydelivery/.test(value));
-}
-
-function appleMusicFairPlayError() {
-  const error = new Error(
-    'Cider returned a FairPlay-protected Apple Music rendition. The BitChord addon cannot decrypt or relay protected audio. Use Apple Music or Cider’s official player for this track, or choose a rendition Cider exposes as an unprotected playable asset.'
-  );
-  error.status = 409;
-  error.ciderCode = 'APPLE_MUSIC_FAIRPLAY_PROTECTED';
-  return error;
-}
-
 async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high', bridgeOwnerKey = null) {
   const parsedTrack = parseAddonTrackId(addonTrackId);
   const trackId = parsedTrack.trackId;
@@ -1252,7 +1213,6 @@ async function resolveCiderStream(addonTrackId, token, requestedQuality = 'high'
     ) === String(trackId));
     const url = findAssetUrl(queueRows, trackId);
     if (url) {
-      if (ciderQueueItemIsFairPlayProtected(item || queueRows[0])) throw appleMusicFairPlayError();
       const parsed = new URL(url);
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
         throw new Error('Cider returned a non-HTTP media URL.');
@@ -1299,7 +1259,7 @@ function validAddonKey(req, res, next) {
 // BitChord can call addons from a different app origin. The random addon
 // key is the endpoint's bearer-like locator, so public addon routes need CORS.
 app.use((req, res, next) => {
-  const isAddonRoute = /^\/(?:bitmono\/(?:manifest\.json|search|stream\/|audio\/)|apple-music\/[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/)|[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/))/.test(req.path);
+  const isAddonRoute = /^\/(?:bitmono\/(?:manifest\.json|search|stream\/|audio\/)|[A-Za-z0-9_-]+\/(?:manifest\.json|search|stream\/))/.test(req.path);
   if (!isAddonRoute) return next();
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -1337,7 +1297,6 @@ app.get('/api/status', localOnly, async (req, res) => {
   const token = tokenForUser(user);
   const base = addonBaseUrl();
   const addonUrl = token && user?.addonKey ? base + '/' + user.addonKey + '/manifest.json' : null;
-  const appleMusicAddonUrl = token && user?.addonKey ? base + '/apple-music/' + user.addonKey + '/manifest.json' : null;
   const ownerKey = browserBridgeOwnerKey(accountId, sessionId);
   const ciderRelay = browserBridgeStatus(ownerKey, Boolean(token && user?.addonKey), sessionId);
   const devices = authenticated ? activeAccountDevices(store, accountId, sessionId) : [];
@@ -1347,7 +1306,6 @@ app.get('/api/status', localOnly, async (req, res) => {
     apiVersion: API_VERSION,
     connected: Boolean(token && user?.addonKey),
     addonUrl,
-    appleMusicAddonUrl,
     ciderConnectionUpdatedAt: user?.connectedAt || null,
     ciderBridgeConfigured: ciderRelay.online,
     ciderBridgeConfigurationError: null,
@@ -3619,76 +3577,6 @@ app.get('/:addonKey/stream/:trackId', validAddonKey, personalAddonStreamRateLimi
     sendAddonFailure(res, 'CIDER_STREAM_FAILED', error);
   }
 });
-
-
-function appleMusicAddonManifest(addonKey) {
-  const safeSuffix = String(addonKey || '').slice(0, 12).replace(/[^a-zA-Z0-9]/g, '');
-  return {
-    id: 'com.bitcider.apple-music.' + safeSuffix,
-    name: 'Apple Music',
-    version: '1.0.0',
-    description: 'Apple Music catalog search and authorized Cider stream resolution. Downloads are disabled; FairPlay-protected assets are not decrypted.',
-    resources: ['search', 'stream'],
-    allowDownloads: 0,
-    checkValidLossless: 0,
-    settings: [{
-      key: 'quality',
-      type: 'select',
-      label: 'Audio quality',
-      default: 'high',
-      options: [
-        { value: 'high', label: 'AAC 256 kbps' },
-        { value: 'low', label: 'AAC 64 kbps' },
-        { value: 'atmos', label: 'Dolby Atmos when available' }
-      ]
-    }]
-  };
-}
-
-app.get('/apple-music/:addonKey/manifest.json', validAddonKey, (req, res) => {
-  res.set('Cache-Control', 'private, no-store');
-  return res.json(appleMusicAddonManifest(req.params.addonKey));
-});
-
-app.get('/apple-music/:addonKey/search', validAddonKey, personalAddonSearchRateLimit, async (req, res) => {
-  const query = String(req.query.q || '').trim();
-  if (!query) return res.json({ tracks: [] });
-  if (query.length > 160) return res.status(400).json({ error: 'Search query is too long.' });
-  try {
-    const quality = normalizeQuality(req.query.quality);
-    const preferAtmos = String(req.query.atmos || '').toLowerCase() === 'auto';
-    const tracks = await searchCiderSongs(query, req.bitciderUser.token, {
-      quality,
-      preferAtmos,
-      bridgeOwnerKey: req.bitciderUser.bridgeOwnerKey
-    });
-    res.set('Cache-Control', 'no-store');
-    return res.json({ tracks });
-  } catch (error) {
-    logAddonFailure('Apple Music search', error);
-    return sendAddonFailure(res, 'APPLE_MUSIC_SEARCH_FAILED', error);
-  }
-});
-
-app.get('/apple-music/:addonKey/stream/:trackId', validAddonKey, personalAddonStreamRateLimit, async (req, res) => {
-  const trackId = String(req.params.trackId || '');
-  if (!trackId || trackId.length > 180) return res.status(400).json({ error: 'Invalid track id.' });
-  try {
-    const stream = await resolveCiderStream(
-      trackId,
-      req.bitciderUser.token,
-      req.query.quality,
-      req.bitciderUser.bridgeOwnerKey
-    );
-    res.set('Cache-Control', 'no-store');
-    return res.json(stream);
-  } catch (error) {
-    logAddonFailure('Apple Music stream resolution', error);
-    return sendAddonFailure(res, 'APPLE_MUSIC_STREAM_FAILED', error);
-  }
-});
-
-
 
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST, { index: false, maxAge: '1h' }));

@@ -23,18 +23,11 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Includes the supplied Lightfall WebGL background, with request-driven warping while a personal addon URL is created.
 - Gives each BitCider account its own encrypted Cider connection and personal BitChord addon URL; anonymous browser sessions can be upgraded into accounts.
 - Allows an existing authenticated BitConnection account to be explicitly linked to BitCider. The link is stored against the BitConnection account ID, preserves its original credentials and profile, and automatically restores the corresponding BitCider session after BitConnection sign-in.
-- Implements the personal BitCider addon plus a separate Apple Music addon manifest, search, and stream-resolution route.
-- The Apple Music addon resolves streams through the user's authorized Cider session and disables downloads. It refuses queue entries Cider identifies as FairPlay/DRM-protected rather than attempting to extract or decrypt them.
+- Implements the addon manifest, search, and stream-resolution route shapes.
 - Preloads complete Monochrome or Deezer audio files onto the Deplexo cache before returning a playable URL; cached audio supports byte-range seeking to avoid upstream chunk-fetch stalls during playback.
 - Encrypts saved Cider app tokens with AES-256-GCM.
 - Uses Deplexo's `/data` persistent volume for connection records and the legacy CSRF-signing key; the dedicated Cider-token encryption key is kept separately as a Deplexo secret.
 - Allows exact same-origin Deplexo HTTPS requests to manage a session directly, while Netlify/Cloudflare use a private gateway secret.
-
-## Apple Music BitChord source
-
-After linking Cider in BitCider, the status response also provides a separate Apple Music addon URL at `/apple-music/<your-addon-key>/manifest.json`. Add that URL in BitChord under **Settings → Sources / Add-ons → Add custom source**. Its manifest identifies itself as **Apple Music**, searches the Apple catalog through the authenticated in-browser Cider bridge, and resolves playable assets through Cider's authorized playback queue. The addon sets `allowDownloads: 0`.
-
-The addon only returns media URLs that Cider exposes as playable, non-protected assets. If Cider marks a queue item as encrypted or FairPlay-protected, BitCider returns `APPLE_MUSIC_FAIRPLAY_PROTECTED` and does not expose the media URL or pause Cider. This is intentional: BitChord's documented HTTP addon contract accepts media/manifest URLs, not an embedded MusicKit player or FairPlay license session. Full-length protected playback must remain in Apple's authorized MusicKit or Cider player; the addon does not reverse-engineer, decrypt, or relay FairPlay content.
 
 ## BitCider accounts and cloud-saved links
 
