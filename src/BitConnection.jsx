@@ -1771,7 +1771,7 @@ function CreateRoomWindow() {
       Reflect.apply(player.removeAttribute, player, ['src']);
       Reflect.apply(player.load, player, []);
     }
-    hostAudioModeRef.current = 'tab';
+    hostAudioModeRef.current = 'none';
     if (transport) await transport.stop({ leave: true });
     else if (session) await session.leave().catch(() => {});
     closeWindow();
