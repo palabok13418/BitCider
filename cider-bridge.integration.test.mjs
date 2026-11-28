@@ -156,6 +156,7 @@ async function createAuthenticatedBrowserBridge(backend) {
   assert.equal(bridge.response.status, 200, JSON.stringify(bridge.payload));
   return {
     addonUrl: status.payload.addonUrl,
+    appleMusicAddonUrl: status.payload.appleMusicAddonUrl,
     cookie: accountCookie,
     csrfToken: status.payload.csrfToken,
     bridgeId: bridge.payload.bridgeId,
@@ -342,6 +343,203 @@ test('authenticated addon search and stream resolve through the local Cider API 
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
     assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/pause' && item.method === 'POST'));
     assert.ok(ciderRequests.every(item => item.token === bridge.ciderToken));
+  } finally {
+    controller.abort();
+    await bridgeLoop;
+  }
+});
+
+
+test('Apple Music is exposed as a separate BitChord addon with catalog search and downloads disabled', async t => {
+  const backend = await startBackend();
+  const ciderRequests = [];
+  const cider = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      ciderRequests.push({ method: request.method, path: request.url, token: request.headers.apptoken || '', body: body ? JSON.parse(body) : null });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      if (request.url?.startsWith('/api/v2/amapi/search?')) {
+        response.end(JSON.stringify({ data: { results: { songs: { data: [{
+          id: 'apple-catalog-track-987',
+          type: 'songs',
+          attributes: {
+            name: 'Apple Source Test',
+            artistName: 'BitCider Apple Artist',
+            albumName: 'Apple Source Album',
+            durationInMillis: 199000,
+            artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
+            playParams: { id: 'apple-catalog-track-987' }
+          }
+        }] } } } }));
+      } else if (request.url === '/api/v2/queue') {
+        response.end(JSON.stringify({ data: [{
+          id: 'apple-catalog-track-987',
+          assetURL: 'https://media.example.invalid/apple-source-test.m4a',
+          attributes: { name: 'Apple Source Test', artistName: 'BitCider Apple Artist', encrypted: false }
+        }] }));
+      } else {
+        response.end(JSON.stringify({ data: {} }));
+      }
+    });
+  });
+  const ciderPort = await listen(cider);
+  t.after(async () => {
+    await backend.stop();
+    await new Promise(resolve => cider.close(resolve));
+  });
+
+  const bridge = await createAuthenticatedBrowserBridge(backend);
+  assert.match(bridge.appleMusicAddonUrl, /\/apple-music\/[A-Za-z0-9_-]+\/manifest\.json$/);
+
+  const controller = new AbortController();
+  const bridgeLoop = (async () => {
+    while (!controller.signal.aborted) {
+      try {
+        const poll = await fetch(backend.origin + '/api/bridge/poll', {
+          method: 'POST',
+          headers: browserBridgeHeaders(bridge),
+          body: JSON.stringify({ waitMs: 750 }),
+          signal: controller.signal
+        });
+        const next = await poll.json();
+        if (poll.status === 401) throw new Error('test browser bridge unexpectedly rejected its secret');
+        if (!poll.ok) throw new Error('test browser bridge poll returned HTTP ' + poll.status);
+        if (!next.job) continue;
+        const localResponse = await fetch('http://127.0.0.1:' + ciderPort + next.job.path, {
+          method: next.job.method,
+          headers: { Accept: 'application/json', apptoken: bridge.ciderToken, ...(next.job.body ? { 'Content-Type': 'application/json' } : {}) },
+          ...(next.job.body ? { body: JSON.stringify(next.job.body) } : {})
+        });
+        const raw = await localResponse.text();
+        let body;
+        try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
+        const delivered = await fetch(backend.origin + '/api/bridge/result', {
+          method: 'POST',
+          headers: browserBridgeHeaders(bridge),
+          body: JSON.stringify({ requestId: next.job.requestId, status: localResponse.status, body }),
+          signal: controller.signal
+        });
+        assert.equal(delivered.status, 200);
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        throw error;
+      }
+    }
+  })();
+
+  try {
+    const preflight = await fetch(bridge.appleMusicAddonUrl.replace('/manifest.json', '/search'), {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://bitchord.example', 'Access-Control-Request-Method': 'GET' }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+
+    const manifestResponse = await fetch(bridge.appleMusicAddonUrl);
+    const manifest = await manifestResponse.json();
+    assert.equal(manifestResponse.status, 200);
+    assert.equal(manifest.name, 'Apple Music');
+    assert.ok(manifest.id.startsWith('com.bitcider.apple-music.'));
+    assert.deepEqual(manifest.resources, ['search', 'stream']);
+    assert.equal(manifest.allowDownloads, 0);
+    assert.equal(manifest.checkValidLossless, 0);
+
+    const search = await fetch(bridge.appleMusicAddonUrl.replace('/manifest.json', '/search?q=Apple%20Source%20Test'));
+    const searchPayload = await search.json();
+    assert.equal(search.status, 200, JSON.stringify(searchPayload));
+    assert.equal(searchPayload.tracks[0].title, 'Apple Source Test');
+    assert.equal(searchPayload.tracks[0].artist, 'BitCider Apple Artist');
+    assert.equal(searchPayload.tracks[0].id, 'apple-catalog-track-987');
+
+    const stream = await fetch(bridge.appleMusicAddonUrl.replace('/manifest.json', '/stream/apple-catalog-track-987'));
+    const streamPayload = await stream.json();
+    assert.equal(stream.status, 200, JSON.stringify(streamPayload));
+    assert.equal(streamPayload.url, 'https://media.example.invalid/apple-source-test.m4a');
+    assert.equal(streamPayload.encrypted, false);
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/amapi/search?term=Apple+Source+Test&types=songs&limit=25&offset=0'));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/playback/play-item' && item.method === 'POST'));
+    assert.ok(ciderRequests.some(item => item.path === '/api/v2/queue'));
+  } finally {
+    controller.abort();
+    await bridgeLoop;
+  }
+});
+
+test('Apple Music addon rejects FairPlay-protected renditions instead of exposing protected audio URLs', async t => {
+  const backend = await startBackend();
+  const ciderRequests = [];
+  const cider = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      ciderRequests.push({ method: request.method, path: request.url, token: request.headers.apptoken || '', body: body ? JSON.parse(body) : null });
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      if (request.url?.startsWith('/api/v2/amapi/search?')) {
+        response.end(JSON.stringify({ data: { results: { songs: { data: [{
+          id: 'protected-apple-track',
+          type: 'songs',
+          attributes: { name: 'Protected Song', artistName: 'Protected Artist', playParams: { id: 'protected-apple-track' } }
+        }] } } } }));
+      } else if (request.url === '/api/v2/queue') {
+        response.end(JSON.stringify({ data: [{
+          id: 'protected-apple-track',
+          assetURL: 'https://media.example.invalid/fairplay-protected.m4a',
+          attributes: { encrypted: true, keySystem: 'com.apple.fps', protectionScheme: 'FairPlay' }
+        }] }));
+      } else {
+        response.end(JSON.stringify({ data: {} }));
+      }
+    });
+  });
+  const ciderPort = await listen(cider);
+  t.after(async () => {
+    await backend.stop();
+    await new Promise(resolve => cider.close(resolve));
+  });
+
+  const bridge = await createAuthenticatedBrowserBridge(backend);
+  const controller = new AbortController();
+  const bridgeLoop = (async () => {
+    while (!controller.signal.aborted) {
+      try {
+        const poll = await fetch(backend.origin + '/api/bridge/poll', {
+          method: 'POST', headers: browserBridgeHeaders(bridge), body: JSON.stringify({ waitMs: 750 }), signal: controller.signal
+        });
+        const next = await poll.json();
+        if (!poll.ok) throw new Error('test browser bridge poll returned HTTP ' + poll.status);
+        if (!next.job) continue;
+        const localResponse = await fetch('http://127.0.0.1:' + ciderPort + next.job.path, {
+          method: next.job.method,
+          headers: { Accept: 'application/json', apptoken: bridge.ciderToken, ...(next.job.body ? { 'Content-Type': 'application/json' } : {}) },
+          ...(next.job.body ? { body: JSON.stringify(next.job.body) } : {})
+        });
+        const raw = await localResponse.text();
+        let body;
+        try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
+        const delivered = await fetch(backend.origin + '/api/bridge/result', {
+          method: 'POST', headers: browserBridgeHeaders(bridge),
+          body: JSON.stringify({ requestId: next.job.requestId, status: localResponse.status, body }),
+          signal: controller.signal
+        });
+        assert.equal(delivered.status, 200);
+      } catch (error) {
+        if (controller.signal.aborted) break;
+        throw error;
+      }
+    }
+  })();
+
+  try {
+    const stream = await fetch(bridge.appleMusicAddonUrl.replace('/manifest.json', '/stream/protected-apple-track'));
+    const payload = await stream.json();
+    assert.equal(stream.status, 409, JSON.stringify(payload));
+    assert.equal(payload.code, 'APPLE_MUSIC_FAIRPLAY_PROTECTED');
+    assert.match(payload.message, /cannot decrypt or relay protected audio/i);
+    assert.ok(!ciderRequests.some(item => item.path === '/api/v2/playback/pause'));
+    assert.doesNotMatch(JSON.stringify(payload), /fairplay-protected\.m4a/);
   } finally {
     controller.abort();
     await bridgeLoop;

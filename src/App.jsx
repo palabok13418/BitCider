@@ -8,7 +8,7 @@ import AccountDeletionSection from './AccountDeletionSection.jsx';
 import AdminConsole from './AdminConsole.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-28-bitaccount-link-v1';
+const API_VERSION = '2026-11-28-apple-music-addon-v1';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -1089,6 +1089,7 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [noticeType, setNoticeType] = useState('info');
   const [copied, setCopied] = useState(false);
+  const [appleMusicAddonCopied, setAppleMusicAddonCopied] = useState(false);
   const [csrfToken, setCsrfToken] = useState('');
   const [accountBusy, setAccountBusy] = useState(false);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
@@ -1931,6 +1932,18 @@ export default function App() {
     }
   }
 
+  async function copyAppleMusicAddonUrl() {
+    if (!status.appleMusicAddonUrl) return;
+    try {
+      await navigator.clipboard.writeText(status.appleMusicAddonUrl);
+      setAppleMusicAddonCopied(true);
+      window.setTimeout(() => setAppleMusicAddonCopied(false), 1800);
+    } catch {
+      setNotice('Clipboard access was blocked. Select and copy the Apple Music URL manually.');
+      setNoticeType('warning');
+    }
+  }
+
   async function copyBitMonoAddonUrl() {
     try {
       await navigator.clipboard.writeText(bitMonoAddonUrl);
@@ -2272,6 +2285,26 @@ export default function App() {
                   </div>
                 </div>
               )}
+                  {status.appleMusicAddonUrl && (
+                    <div className="addon-url-panel apple-music-addon-url-panel">
+                      <div className="scope-title">APPLE MUSIC SOURCE FOR BITCHORD</div>
+                      <div className="url-row">
+                        <code>{status.appleMusicAddonUrl}</code>
+                        <button
+                          className={'copy-button ' + (appleMusicAddonCopied ? 'is-copied' : '')}
+                          onClick={copyAppleMusicAddonUrl}
+                          aria-label="Copy Apple Music addon URL"
+                        >
+                          {appleMusicAddonCopied ? <Icon name="check" /> : <Icon name="copy" />}
+                        </button>
+                      </div>
+                      <div className="url-hint">
+                        <span className="tiny-dot" />
+                        Separate Apple Music source · downloads disabled
+                      </div>
+                      <p className="apple-music-addon-note">Add this URL in BitChord → Settings → Sources / Add-ons → Add custom source. Apple Music tracks are resolved through your signed-in Cider session. FairPlay-protected renditions stay inside Apple’s authorized player.</p>
+                    </div>
+                  )}
               {connected && (
                 <section className="cider-relay-panel" aria-label="In-browser Cider bridge">
                   <div className="cider-relay-panel-head">
