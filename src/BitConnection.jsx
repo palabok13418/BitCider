@@ -517,11 +517,14 @@ function AccountAuth({ account, initialMode = 'register', onAuthenticated, onRec
 
 function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
   const [confirmedSaved, setConfirmedSaved] = useState(false);
+  const [fileVerified, setFileVerified] = useState(false);
+  const [fileMessage, setFileMessage] = useState('');
   const [passkeyAdded, setPasskeyAdded] = useState(false);
   const [passkeyPassword, setPasskeyPassword] = useState(password || '');
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyMessage, setPasskeyMessage] = useState('');
   const [copied, setCopied] = useState(false);
+  const recoveryFileInputRef = useRef(null);
 
   async function addPasskey() {
     setPasskeyBusy(true);
@@ -541,7 +544,7 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
         headers: { 'Content-Type': 'application/json', 'X-BitConnection-CSRF': account?.csrfToken || '' },
         body: JSON.stringify({ ...registration, deviceName: navigator.userAgent })
       });
-      const verified = await readResponse(verifyResponse, 'Could not save this passkey.');
+      await readResponse(verifyResponse, 'Could not save this passkey.');
       setPasskeyMessage('Passkey added to your BitConnection account.');
       setPasskeyAdded(true);
     } catch (error) {
@@ -551,7 +554,60 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
     }
   }
 
-  const codesText = recoveryCodes.join('\n');
+  const codesText = recoveryCodes.join('\\n');
+
+  async function verifyRecoveryFile(file) {
+    setConfirmedSaved(false);
+    setFileVerified(false);
+    setFileMessage('');
+    if (!file) return;
+    if (!/\\.txt$/i.test(file.name) || file.type && file.type !== 'text/plain') {
+      setFileMessage('Choose a plain-text .txt file.');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setFileMessage('For safety, choose a recovery-code text file smaller than 1 MB.');
+      return;
+    }
+    try {
+      const existingText = await file.text();
+      const existingLines = new Set(existingText.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean));
+      const missingCodes = recoveryCodes.filter(code => !existingLines.has(code));
+      if (missingCodes.length) {
+        if (!('showOpenFilePicker' in window)) {
+          setFileMessage('This browser can read the file but cannot safely append to it. Use a browser that supports local file editing, or save the codes manually and select the file again.');
+          return;
+        }
+        const picker = await window.showOpenFilePicker({
+          multiple: false,
+          excludeAcceptAllOption: true,
+          types: [{ description: 'Text files', accept: { 'text/plain': ['.txt'] } }]
+        }).catch(() => null);
+        const handle = picker?.[0];
+        if (!handle || handle.name !== file.name) {
+          setFileMessage('Select the same .txt file again to grant permission to append the missing codes.');
+          return;
+        }
+        const writable = await handle.createWritable({ keepExistingData: true });
+        await writable.seek(file.size);
+        await writable.write((existingText && !existingText.endsWith('\\n') ? '\\n' : '') + missingCodes.join('\\n') + '\\n');
+        await writable.close();
+      }
+      const finalText = missingCodes.length
+        ? existingText + (existingText && !existingText.endsWith('\\n') ? '\\n' : '') + missingCodes.join('\\n') + '\\n'
+        : existingText;
+      const finalLines = new Set(finalText.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean));
+      const verified = recoveryCodes.every(code => finalLines.has(code));
+      if (!verified) throw new Error('The selected file did not contain every recovery code after verification.');
+      setFileVerified(true);
+      setConfirmedSaved(true);
+      setFileMessage(missingCodes.length
+        ? 'Verified. Missing recovery codes were appended; existing file contents were preserved.'
+        : 'Verified. Every recovery code is already present in this local file.');
+    } catch (error) {
+      setFileMessage(error.message || 'Could not verify the selected recovery-code file.');
+    }
+  }
 
   return (
     <section className="bc-window-state bc-recovery-state">
@@ -581,12 +637,23 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
         <button className="bc-secondary-button" type="button" onClick={addPasskey} disabled={passkeyBusy || !passkeyPassword || passkeyAdded}>{passkeyBusy ? 'Setting up…' : passkeyAdded ? 'Passkey added' : 'Add a passkey'}</button>
         {passkeyMessage && <small role="status">{passkeyMessage}</small>}
       </div>
-      <label className="bc-recovery-confirm">
-        <input type="checkbox" checked={confirmedSaved} onChange={event => setConfirmedSaved(event.target.checked)} />
-        <span>I have saved my recovery codes somewhere safe.</span>
-      </label>
+      <div className="bc-recovery-file-check">
+        <label className="bc-recovery-confirm">
+          <input type="checkbox" checked={confirmedSaved && fileVerified} onChange={event => {
+            if (event.target.checked) recoveryFileInputRef.current?.click();
+            else { setConfirmedSaved(false); setFileVerified(false); setFileMessage(''); }
+          }} />
+          <span>I have saved my recovery codes somewhere safe.</span>
+        </label>
+        <input ref={recoveryFileInputRef} type="file" accept=".txt,text/plain" hidden onChange={event => {
+          void verifyRecoveryFile(event.target.files?.[0]);
+          event.target.value = '';
+        }} />
+        <small>Choose your local .txt file. BitConnection checks that every code is present on this device and appends any missing codes without replacing existing contents. Browsers hide the full system path, so the path itself cannot be certified as safe.</small>
+        {fileMessage && <p role="status" className={fileVerified ? 'is-verified' : 'is-error'}>{fileMessage}</p>}
+      </div>
       <div className="bc-window-actions">
-        <button className="bc-primary-button" type="button" disabled={!confirmedSaved} onClick={onContinue}>Continue to room setup</button>
+        <button className="bc-primary-button" type="button" disabled={!confirmedSaved || !fileVerified} onClick={onContinue}>Continue to room setup</button>
       </div>
     </section>
   );
