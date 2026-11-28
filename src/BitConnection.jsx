@@ -524,7 +524,6 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyMessage, setPasskeyMessage] = useState('');
   const [copied, setCopied] = useState(false);
-  const recoveryFileInputRef = useRef(null);
 
   async function addPasskey() {
     setPasskeyBusy(true);
@@ -556,48 +555,42 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
 
   const codesText = recoveryCodes.join('\\n');
 
-  async function verifyRecoveryFile(file) {
+  async function verifyRecoveryFile() {
     setConfirmedSaved(false);
     setFileVerified(false);
     setFileMessage('');
-    if (!file) return;
-    if (!/\\.txt$/i.test(file.name) || file.type && file.type !== 'text/plain') {
-      setFileMessage('Choose a plain-text .txt file.');
-      return;
-    }
-    if (file.size > 1024 * 1024) {
-      setFileMessage('For safety, choose a recovery-code text file smaller than 1 MB.');
+    if (!('showOpenFilePicker' in window)) {
+      setFileMessage('This browser cannot safely grant local file write access. Use Chrome or Edge on this device to verify and append the codes.');
       return;
     }
     try {
+      const [handle] = await window.showOpenFilePicker({
+        multiple: false,
+        excludeAcceptAllOption: true,
+        types: [{ description: 'Text files', accept: { 'text/plain': ['.txt'] } }]
+      });
+      if (!handle || !/\\.txt$/i.test(handle.name)) {
+        setFileMessage('Choose a plain-text .txt file.');
+        return;
+      }
+      const file = await handle.getFile();
+      if (file.size > 1024 * 1024) {
+        setFileMessage('For safety, choose a recovery-code text file smaller than 1 MB.');
+        return;
+      }
       const existingText = await file.text();
       const existingLines = new Set(existingText.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean));
       const missingCodes = recoveryCodes.filter(code => !existingLines.has(code));
       if (missingCodes.length) {
-        if (!('showOpenFilePicker' in window)) {
-          setFileMessage('This browser can read the file but cannot safely append to it. Use a browser that supports local file editing, or save the codes manually and select the file again.');
-          return;
-        }
-        const picker = await window.showOpenFilePicker({
-          multiple: false,
-          excludeAcceptAllOption: true,
-          types: [{ description: 'Text files', accept: { 'text/plain': ['.txt'] } }]
-        }).catch(() => null);
-        const handle = picker?.[0];
-        if (!handle || handle.name !== file.name) {
-          setFileMessage('Select the same .txt file again to grant permission to append the missing codes.');
-          return;
-        }
         const writable = await handle.createWritable({ keepExistingData: true });
         await writable.seek(file.size);
         await writable.write((existingText && !existingText.endsWith('\\n') ? '\\n' : '') + missingCodes.join('\\n') + '\\n');
         await writable.close();
       }
-      const finalText = missingCodes.length
-        ? existingText + (existingText && !existingText.endsWith('\\n') ? '\\n' : '') + missingCodes.join('\\n') + '\\n'
-        : existingText;
-      const finalLines = new Set(finalText.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean));
-      const verified = recoveryCodes.every(code => finalLines.has(code));
+      const verifiedFile = await handle.getFile();
+      const verifiedText = await verifiedFile.text();
+      const verifiedLines = new Set(verifiedText.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean));
+      const verified = recoveryCodes.every(code => verifiedLines.has(code));
       if (!verified) throw new Error('The selected file did not contain every recovery code after verification.');
       setFileVerified(true);
       setConfirmedSaved(true);
@@ -605,6 +598,7 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
         ? 'Verified. Missing recovery codes were appended; existing file contents were preserved.'
         : 'Verified. Every recovery code is already present in this local file.');
     } catch (error) {
+      if (error?.name === 'AbortError') return;
       setFileMessage(error.message || 'Could not verify the selected recovery-code file.');
     }
   }
@@ -640,15 +634,11 @@ function RecoveryCodes({ recoveryCodes, account, password, onContinue }) {
       <div className="bc-recovery-file-check">
         <label className="bc-recovery-confirm">
           <input type="checkbox" checked={confirmedSaved && fileVerified} onChange={event => {
-            if (event.target.checked) recoveryFileInputRef.current?.click();
+            if (event.target.checked) void verifyRecoveryFile();
             else { setConfirmedSaved(false); setFileVerified(false); setFileMessage(''); }
           }} />
           <span>I have saved my recovery codes somewhere safe.</span>
         </label>
-        <input ref={recoveryFileInputRef} type="file" accept=".txt,text/plain" hidden onChange={event => {
-          void verifyRecoveryFile(event.target.files?.[0]);
-          event.target.value = '';
-        }} />
         <small>Choose your local .txt file. BitConnection checks that every code is present on this device and appends any missing codes without replacing existing contents. Browsers hide the full system path, so the path itself cannot be certified as safe.</small>
         {fileMessage && <p role="status" className={fileVerified ? 'is-verified' : 'is-error'}>{fileMessage}</p>}
       </div>
