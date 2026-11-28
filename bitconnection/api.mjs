@@ -2801,7 +2801,12 @@ export function createBitConnectionRouter({
       return { ok: true, roomClosed: false, hostTransferred: false };
     });
     if (result.status) return res.status(result.status).json({ error: result.error });
-    return res.json({ ok: true, roomClosed: result.roomClosed });
+    return res.json({
+      ok: true,
+      roomClosed: result.roomClosed,
+      hostTransferred: Boolean(result.hostTransferred),
+      hostParticipantId: result.hostParticipantId || null
+    });
   });
 
   return router;
