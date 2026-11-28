@@ -630,7 +630,7 @@ function PartyRoomExperience({
         return;
       }
       if (status.recommendationsConfigured === false) {
-        setBrowserMessage('Apple Music is connected for TTML lyrics. The optional personalized recommendation feed needs a separate Apple Developer token; Bit Mono search below is still available.');
+        setBrowserMessage('Apple Music is connected for TTML lyrics. The optional personalized recommendation feed needs a separate Apple Developer token; ' + sourceLabel + ' search is still available.');
         return;
       }
 
@@ -672,7 +672,8 @@ function PartyRoomExperience({
     if (playbackSource === 'cider') return String(ciderAddonBaseUrl || '').replace(/\\/$/, '');
     if (playbackSource === 'ccustom') {
       const manifest = String(customSourceManifestUrl || '').trim();
-      return manifest.endsWith('/manifest.json') ? manifest.slice(0, -'/manifest.json'.length) : '';
+      const suffix = '/manifest.json';
+      return manifest.endsWith(suffix) ? manifest.slice(0, -suffix.length) : '';
     }
     return '';
   }
@@ -814,7 +815,7 @@ function PartyRoomExperience({
       await refreshState();
       setPlaybackMessage('Added to the shared queue.');
     } catch (error) {
-      setPlaybackMessage(error.message || 'Could not add that Bit Mono track to the queue.');
+      setPlaybackMessage(error.message || 'Could not add that ' + sourceLabel + ' track to the queue.');
     }
   }
 
@@ -827,7 +828,7 @@ function PartyRoomExperience({
     const prepared = bitMonoPrepared[String(track.id || '')];
     if (!prepared) return;
     if (!isHost) {
-      setPlaybackMessage('Only the host can start a Bit Mono stream for everyone.');
+      setPlaybackMessage('Only the host can start the selected audio source for everyone.');
       return;
     }
     try {
@@ -835,7 +836,7 @@ function PartyRoomExperience({
       await onPlayPartySourceTrack(prepared.track, prepared.url, prepared.mimeType, playbackSource);
       setPlaybackMessage(({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource]) + ' is now playing for the party.');
     } catch (error) {
-      setPlaybackMessage(error.message || 'Could not start Bit Mono playback.');
+      setPlaybackMessage(error.message || 'Could not start ' + sourceLabel + ' playback.');
     } finally {
       setQueueBusy(false);
     }
@@ -1332,7 +1333,7 @@ function PartyRoomExperience({
                                   {'Find in ' + sourceLabel}
                                 </button>
                               )}
-                              <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in Bit Mono'}</button>
+                              <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in ' + sourceLabel + ''}</button>
                               {search && (
                                 <div className="bc-party-browser-mono-results">
                                   {search.error
