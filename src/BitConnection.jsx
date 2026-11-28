@@ -1342,7 +1342,7 @@ function JoinPublicPartyWindow({ roomId }) {
           <>
             <div className="bc-party-playback">
               <span>{playback?.isPlaying ? 'NOW PLAYING' : 'WAITING FOR PLAYBACK'}</span>
-              <strong>{playback?.track?.title || 'Waiting for the host to share BitChord audio'}</strong>
+              <strong>{playback?.track?.title || 'Waiting for the host to play from their selected audio source'}</strong>
               {playback?.track?.artist && <small>{playback.track.artist}</small>}
             </div>
             <p>Your guest connection is active. Audio plays directly from the host through WebRTC.</p>
@@ -2010,8 +2010,9 @@ function CreateRoomWindow() {
           <div className="bc-window-kicker">HOST A LISTENING PARTY</div>
           <h1>Set the room.</h1>
           <p className="bc-window-copy">
-            Signed in as <strong>{profile.username}</strong>. Music comes exclusively from YouTube Music through BitChord Web.
-            {identityMode === 'bitcider' ? ' This uses your existing BitCider login only, and does not create or change a Cider addon.' : ''}
+            Signed in as <strong>{profile.username}</strong>. Your party audio source is <strong>{({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[profile.playbackSource] || 'BitMono')}</strong>, saved in BitAccount Center. Audio is streamed from the selected in-page player to guests over WebRTC; screen sharing is not used.
+            {profile.playbackSource === 'cider' ? ' Cider must be linked in BitCider on this device.' : ''}
+            {profile.playbackSource === 'ccustom' ? ' Your CCustom add-on must be reachable over HTTPS and allow browser CORS requests.' : ''}
           </p>
           <label className="bc-field-card">
             <span className="bc-field-label">ROOM NAME <small>1–48 CHARACTERS</small></span>
@@ -2074,7 +2075,6 @@ function CreateRoomWindow() {
           onSeekPartySource={seekPartySourcePlayback}
           
           
-          onPlayAppleMusicTrack={playAppleMusicTrack}
           onSearchAppleMusicCatalog={searchAppleMusicCatalog}
           playbackSource={profile?.playbackSource || createdRoom.room.playbackSource || 'bitmono'}
           customSourceManifestUrl={profile?.customSourceManifestUrl || ''}
@@ -2083,8 +2083,6 @@ function CreateRoomWindow() {
           ciderBridgeMessage={ciderBridgeMessage}
           appleMusicPlaybackStatus={appleMusicPlaybackStatus}
           appleMusicPlaybackError={appleMusicPlaybackError}
-          onControlAppleMusic={controlAppleMusic}
-          onSeekAppleMusic={seekAppleMusic}
         />
         </>
       )}
