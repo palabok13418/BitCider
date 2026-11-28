@@ -2191,7 +2191,6 @@ export default function BitConnection() {
             {accountAvatarUrl
               ? <img className="bitconnection-account-avatar" src={accountAvatarUrl} alt="" aria-hidden="true" />
               : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" /><path d="M4.7 20a7.3 7.3 0 0 1 14.6 0" /></svg>}
-            <span>Account</span>
           </button>
         )}
       </header>
@@ -2205,7 +2204,6 @@ export default function BitConnection() {
             <span>Create a room</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
           </button>
-          <span className="bitconnection-source-note">YouTube Music via BitChord Web</span>
         </div>
         <div className={`bitconnection-api-status is-${apiState}`} aria-live="polite">
           <span className="bitconnection-api-dot" />
