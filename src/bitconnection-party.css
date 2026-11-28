@@ -1678,3 +1678,381 @@ audio.bc-party-audio-output { display: none !important; }
   .bc-party-tab-content { min-height: 300px; padding-bottom: 80px; }
   .bc-party-tab-bar { position: fixed; left: 14px; right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); }
 }
+
+
+/* Active Listening Party visual system
+   Reference: full-bleed rose-to-ink canvas; room code and QR across the top;
+   playback controls stay in the left column; room content and member cards
+   stay in the right column; compact navigation belongs to the right panel. */
+.bc-party-room {
+  --party-ink: #fff5f8;
+  --party-muted: rgba(255, 229, 238, .62);
+  --party-line: rgba(255, 215, 229, .15);
+  display: grid;
+  grid-template-columns: minmax(360px, .88fr) minmax(0, 1.12fr);
+  grid-template-rows: clamp(112px, 15vh, 168px) minmax(0, 1fr);
+  align-content: stretch;
+  gap: 12px clamp(30px, 4.2vw, 76px);
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  padding: clamp(22px, 2.4vw, 42px) clamp(26px, 3vw, 54px) clamp(24px, 2.4vh, 34px);
+  overflow: hidden;
+  color: var(--party-ink);
+  background:
+    radial-gradient(ellipse at 88% 8%, rgba(255, 153, 184, .18), transparent 43%),
+    radial-gradient(ellipse at 48% 92%, rgba(122, 25, 58, .2), transparent 47%),
+    transparent;
+}
+
+.bc-party-room-share {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 24px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.bc-party-room-code-copy { gap: 9px; }
+.bc-party-room-code-label,
+.bc-party-room-qr-wrap > span {
+  color: rgba(255, 218, 231, .52);
+  font-size: 9px;
+  letter-spacing: .2em;
+}
+.bc-party-room-code-value {
+  font-size: clamp(32px, 3.15vw, 46px);
+  line-height: 1.05;
+  letter-spacing: .19em;
+  text-shadow: 0 4px 30px rgba(255, 122, 163, .18);
+}
+.bc-party-room-code-copy > small {
+  margin-top: 1px;
+  color: rgba(255, 227, 237, .5);
+  font-size: 11px;
+}
+.bc-party-room .bc-party-copy-code {
+  min-height: 34px;
+  padding: 0 11px;
+  border-color: rgba(255, 223, 234, .17);
+  border-radius: 10px;
+  background: rgba(255,255,255,.045);
+  font-size: 10px;
+}
+.bc-party-room-qr-wrap { gap: 7px; }
+.bc-party-room-qr {
+  width: clamp(92px, 7.8vw, 116px);
+  height: clamp(92px, 7.8vw, 116px);
+  padding: 8px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 8px 30px rgba(0,0,0,.16);
+}
+
+.bc-party-playback-panel {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  justify-content: center;
+  align-self: stretch;
+  padding: 0 clamp(2px, 1vw, 18px) 2px;
+}
+.bc-party-left-heading {
+  gap: 10px;
+  margin-bottom: clamp(16px, 2vh, 24px);
+  font-size: 9px;
+  letter-spacing: .2em;
+}
+.bc-party-artwork-wrap {
+  width: min(100%, clamp(250px, 29vw, 418px));
+  aspect-ratio: 1;
+  margin: 0 auto 19px;
+  border: 1px solid rgba(255, 217, 231, .1);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(75, 22, 46, .72), rgba(15, 6, 12, .92));
+  box-shadow: 0 25px 64px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.045);
+}
+.bc-party-artwork-wrap.is-empty {
+  aspect-ratio: 2.1 / 1;
+  width: min(100%, 420px);
+}
+.bc-party-artwork-empty {
+  color: rgba(255, 204, 221, .62);
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(234, 113, 155, .25), transparent 30%),
+    linear-gradient(135deg, rgba(71, 22, 45, .85), rgba(15, 6, 12, .96));
+}
+.bc-party-track-copy {
+  width: min(100%, 480px);
+  gap: 7px;
+}
+.bc-party-track-copy strong {
+  font-size: clamp(22px, 2.1vw, 30px);
+  letter-spacing: -.04em;
+}
+.bc-party-track-copy > span { font-size: 13px; }
+.bc-party-timeline {
+  width: min(100%, 490px);
+  margin-top: clamp(20px, 2.4vh, 30px);
+}
+.bc-party-timeline input { height: 5px; }
+.bc-party-quality {
+  margin-top: 9px;
+  min-height: 18px;
+}
+.bc-party-quality img { height: 17px; max-width: 128px; }
+.bc-party-transport-controls {
+  gap: 26px;
+  margin-top: clamp(14px, 1.8vh, 21px);
+}
+.bc-party-transport-controls .bc-party-play-toggle {
+  width: 58px;
+  height: 58px;
+  color: #250913;
+  background: linear-gradient(145deg, #ffd9e5, #ef83a6);
+  box-shadow: 0 8px 25px rgba(218, 78, 121, .26), inset 0 1px rgba(255,255,255,.7);
+}
+.bc-party-volume {
+  width: min(100%, 330px);
+  margin-top: 18px;
+}
+.bc-party-host-audio {
+  width: min(100%, 410px);
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-color: rgba(244, 140, 172, .24);
+  border-radius: 15px;
+  background: linear-gradient(120deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px rgba(255,255,255,.05);
+}
+.bc-party-host-audio > button {
+  min-height: 38px;
+  border-radius: 10px;
+  background: rgba(213, 76, 119, .2);
+}
+.bc-party-inline-status {
+  max-width: 410px;
+  margin-top: 10px;
+  color: rgba(255, 206, 221, .85);
+  font-size: 11px;
+}
+.bc-party-leave {
+  margin-top: 14px;
+  min-height: 34px;
+  padding: 0 17px;
+  border-color: rgba(255, 221, 233, .16);
+  border-radius: 999px;
+  color: rgba(255, 229, 238, .66);
+  background: rgba(255,255,255,.025);
+  font-size: 10px;
+}
+
+.bc-party-content-panel {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 0 82px;
+}
+.bc-party-content-heading {
+  min-height: 76px;
+  padding: 0 2px 19px;
+  align-items: flex-end;
+  border-bottom: 1px solid rgba(255, 222, 233, .16);
+}
+.bc-party-eyebrow {
+  font-size: 9px;
+  letter-spacing: .19em;
+}
+.bc-party-content-heading h1 {
+  margin-top: 7px;
+  color: #fff5f8;
+  font-size: clamp(25px, 2.45vw, 34px);
+  letter-spacing: -.045em;
+}
+.bc-party-member-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 5px;
+  color: rgba(255, 234, 241, .58);
+  font: 11px 'DM Mono', ui-monospace, monospace;
+}
+.bc-party-member-count > span {
+  background: #86e1b5;
+  box-shadow: 0 0 10px rgba(134,225,181,.55);
+}
+.bc-party-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  padding: 17px 2px 10px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 133, 168, .34) transparent;
+}
+.bc-party-members {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 0 0 12px;
+}
+.bc-party-member-card {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 15px;
+  border: 1px solid rgba(255, 221, 233, .15);
+  border-radius: 15px;
+  background: linear-gradient(105deg, rgba(255,255,255,.065), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px rgba(255,255,255,.045);
+}
+.bc-party-avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-color: rgba(255, 211, 227, .18);
+  background: linear-gradient(145deg, rgba(226, 102, 145, .35), rgba(60, 20, 42, .85));
+}
+.bc-party-member-copy { gap: 4px; }
+.bc-party-member-copy strong { font-size: 13px; }
+.bc-party-member-copy span { font-size: 10px; }
+.bc-party-host-badge { margin-left: auto; }
+
+.bc-party-tab-bar {
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: 0;
+  width: min(100%, 590px);
+  min-height: 58px;
+  margin: 0;
+  padding: 5px;
+  gap: 4px;
+  border: 1px solid rgba(255, 218, 231, .2);
+  border-radius: 19px;
+  background: rgba(48, 17, 33, .68);
+  box-shadow: 0 12px 36px rgba(0,0,0,.25), inset 0 1px rgba(255,255,255,.06);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  transform: translateX(-50%);
+}
+.bc-party-tab-bar button {
+  min-height: 46px;
+  border-radius: 13px;
+  gap: 7px;
+  color: rgba(255, 234, 241, .56);
+  font-size: 11px;
+}
+.bc-party-tab-bar button > span { font-size: 16px; }
+.bc-party-tab-bar button.is-active {
+  color: #fff7fa;
+  background: linear-gradient(135deg, rgba(237, 119, 158, .28), rgba(171, 53, 95, .2));
+  box-shadow: inset 0 1px rgba(255,255,255,.09);
+}
+.bc-party-tab-bar button.is-active::after { bottom: 2px; }
+
+.bc-party-browser-button {
+  right: clamp(18px, 2vw, 28px);
+  bottom: clamp(18px, 2vw, 28px);
+  min-height: 46px;
+  padding: 0 19px;
+  border: 1px solid rgba(255, 220, 233, .24);
+  border-radius: 999px;
+  color: #fff3f7;
+  background: rgba(51, 15, 32, .82);
+  box-shadow: 0 14px 36px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+@media (max-width: 900px) {
+  .bc-party-room {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    grid-template-rows: 112px minmax(0, 1fr);
+    gap: 10px 24px;
+    padding: 18px 22px 22px;
+  }
+  .bc-party-artwork-wrap { width: min(100%, 320px); }
+  .bc-party-artwork-wrap.is-empty { width: min(100%, 400px); }
+  .bc-party-content-panel { padding-bottom: 76px; }
+}
+
+@media (max-width: 760px) {
+  .bc-party-room {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    padding: 16px 16px calc(104px + env(safe-area-inset-bottom));
+    overflow: visible;
+  }
+  .bc-party-room-share {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 84px;
+    align-items: center;
+    gap: 12px;
+  }
+  .bc-party-room-code-value {
+    font-size: clamp(25px, 7vw, 36px);
+    letter-spacing: .1em;
+    overflow-wrap: anywhere;
+  }
+  .bc-party-room-qr { width: 82px; height: 82px; padding: 5px; }
+  .bc-party-playback-panel {
+    flex: 0 0 auto;
+    padding: 8px 0 18px;
+  }
+  .bc-party-artwork-wrap { width: min(68vw, 300px); }
+  .bc-party-artwork-wrap.is-empty { width: min(86vw, 390px); }
+  .bc-party-content-panel {
+    flex: 1 1 auto;
+    min-height: 420px;
+    padding: 0 0 78px;
+  }
+  .bc-party-content-heading { min-height: 68px; }
+  .bc-party-tab-content { min-height: 260px; padding: 14px 2px 12px; }
+  .bc-party-tab-bar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    min-height: 56px;
+    transform: none;
+  }
+  .bc-party-tab-bar button {
+    flex-direction: column;
+    min-height: 45px;
+    gap: 2px;
+    font-size: 9px;
+  }
+  .bc-party-tab-bar button > span { font-size: 15px; }
+  .bc-party-browser-button {
+    right: 14px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    min-height: 42px;
+    padding: 0 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bc-party-room *, .bc-party-room *::before, .bc-party-room *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
