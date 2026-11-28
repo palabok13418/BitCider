@@ -2102,3 +2102,189 @@ a { color: inherit; text-decoration: none; }
   .bc-party-source-settings { padding: 15px; }
   .bc-party-source-settings .bc-primary-button { width: 100%; }
 }
+
+
+/* Main BitConnection page: align discovery with the hero title and keep the
+   layout fluid from wide desktops through narrow phones. */
+.bitconnection-shell {
+  width: 100%;
+  min-width: 320px;
+  padding-inline: clamp(14px, 4.5vw, 72px);
+}
+.bitconnection-layout {
+  --bitconnection-hero-top-space: clamp(84px, 14vh, 150px);
+  grid-template-columns: minmax(0, 1fr) minmax(275px, .72fr);
+  align-items: start;
+  gap: clamp(24px, 4vw, 68px);
+}
+.bitconnection-hero {
+  translate: none;
+  padding: var(--bitconnection-hero-top-space) 0 clamp(72px, 12vh, 138px);
+}
+.bitconnection-discovery {
+  margin-top: calc(var(--bitconnection-hero-top-space) + 45px);
+  max-height: min(760px, calc(100dvh - 170px));
+}
+.bitconnection-account-button {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  flex: 0 0 42px;
+  gap: 0;
+  padding: 5px;
+  border-radius: 50%;
+}
+.bitconnection-account-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+.bitconnection-account-button svg {
+  width: 25px;
+  height: 25px;
+}
+.bc-party-service-url {
+  min-width: 0;
+}
+.bc-party-service-url code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1080px) and (min-width: 821px) {
+  .bitconnection-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, .82fr);
+    gap: clamp(20px, 3vw, 32px);
+  }
+  .bitconnection-shell {
+    padding-inline: clamp(18px, 3.5vw, 42px);
+  }
+}
+@media (max-width: 820px) {
+  .bitconnection-shell {
+    padding-inline: clamp(16px, 4vw, 28px);
+  }
+  .bitconnection-layout {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+    padding-bottom: 30px;
+  }
+  .bitconnection-hero {
+    translate: none;
+    padding: clamp(54px, 8vh, 82px) 0 20px;
+  }
+  .bitconnection-hero h1 {
+    margin-top: 22px;
+    font-size: clamp(54px, 10vw, 86px);
+  }
+  .bitconnection-discovery {
+    width: 100%;
+    max-height: none;
+    margin-top: 0;
+    overflow: visible;
+  }
+}
+@media (max-width: 680px) {
+  .bitconnection-header {
+    min-height: 68px;
+    gap: 12px;
+  }
+  .bitconnection-account-button {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+  }
+  .bitconnection-account-avatar {
+    width: 29px;
+    height: 29px;
+    flex-basis: 29px;
+  }
+  .bitconnection-hero {
+    padding-top: clamp(44px, 7vh, 66px);
+    padding-bottom: 12px;
+  }
+  .bitconnection-hero h1 {
+    font-size: clamp(48px, 12vw, 76px);
+    line-height: .96;
+  }
+  .bitconnection-intro {
+    max-width: 42ch;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .bitconnection-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .bitconnection-create-button {
+    width: min(100%, 340px);
+  }
+  .bitconnection-api-status {
+    margin-top: 22px;
+  }
+  .bitconnection-discovery {
+    gap: 16px;
+  }
+  .bc-discovery-heading h2 {
+    font-size: clamp(24px, 7vw, 30px);
+  }
+  .bitconnection-footer {
+    translate: none;
+    min-height: 58px;
+    gap: 12px;
+    font-size: 8px;
+  }
+}
+@media (max-width: 420px) {
+  .bitconnection-shell {
+    padding-inline: 14px;
+  }
+  .bitconnection-header {
+    min-height: 62px;
+  }
+  .bitconnection-wordmark {
+    gap: 8px;
+    font-size: 13px;
+  }
+  .bitconnection-logo {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px;
+    min-height: 30px;
+    max-width: 30px;
+    max-height: 30px;
+    flex-basis: 30px;
+  }
+  .bitconnection-hero h1 {
+    font-size: clamp(44px, 12.3vw, 58px);
+    letter-spacing: -.075em;
+  }
+  .bitconnection-intro {
+    font-size: 13px;
+  }
+  .bitconnection-create-button {
+    min-height: 50px;
+  }
+  .bc-party-service-card {
+    min-width: 0;
+  }
+  .bc-party-service-url {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .bc-party-service-url code {
+    max-width: 100%;
+  }
+  .bc-party-service-url button {
+    flex: 0 0 auto;
+  }
+  .bitconnection-footer {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
