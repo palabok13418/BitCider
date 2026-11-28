@@ -1140,17 +1140,10 @@ function PartyRoomExperience({
           <section className="bc-party-browser-panel">
             <header className="bc-party-browser-heading">
               <div>
-                <span>{sourceLabel.toUpperCase()} · SELECTED PARTY SOURCE</span>
-                <h2>{sourceLabel} Browser</h2>
-                <p>Search Apple Music recommendations, then find matching tracks in {sourceLabel} for party playback.</p>
+                <h2>Browse</h2>
               </div>
               <button type="button" onClick={() => setBrowserOpen(false)} aria-label="Close Browser"><Icon name="close" size={20}/></button>
             </header>
-            <div className="bc-party-browser-toolbar">
-              <span className={browserAppleConnected ? 'is-connected' : ''}><i/>{browserAppleConnected ? 'APPLE MUSIC CONNECTED' : 'APPLE MUSIC'}</span>
-              <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
-            </div>
-            <div className="bc-party-inline-status" role="status">Party playback source: {sourceLabel}. Apple Music is available here for catalogue discovery and timed lyrics only.</div>
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
               <Icon name="music" size={17}/>
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
@@ -1196,33 +1189,6 @@ function PartyRoomExperience({
                 })}
               </section>
             )}
-            <form className="bc-party-browser-search" onSubmit={searchBitMonoCatalog}>
-              <Icon name="browser" size={17}/>
-              <input value={browserQuery} onChange={event => setBrowserQuery(event.target.value)} placeholder={'Search songs in ' + sourceLabel + '…'} aria-label={'Search ' + sourceLabel + ' songs'}/>
-              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search ' + sourceLabel}</button>
-            </form>
-            {(browserSearchResults.length > 0 || browserSearchError) && (
-              <section className="bc-party-browser-search-results">
-                <div className="bc-party-browser-search-title">{sourceLabel.toUpperCase()} RESULTS {browserSearchResults.length ? '· ' + browserSearchResults.length : ''}</div>
-                {browserSearchError && <p>{browserSearchError}</p>}
-                {browserSearchResults.map(item => {
-                  const id = String(item.id || '');
-                  const prepared = bitMonoPrepared[id];
-                  return (
-                    <article className="bc-party-browser-search-track" key={id}>
-                      {(item.artworkURL || item.thumbnailUrl) ? <img src={item.artworkURL || item.thumbnailUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
-                      <div><strong>{item.title}</strong><small>{[item.artist, item.album, item.audioQuality].filter(Boolean).join(' · ')}</small></div>
-                      <div className="bc-party-browser-search-actions">
-                        <button type="button" onClick={() => void addBitMonoTrackToQueue(item)}>Queue</button>
-                        {!prepared
-                          ? <button type="button" onClick={() => void prepareBitMonoTrack(item)} disabled={Boolean(bitMonoPrepareBusy[id])}>{bitMonoPrepareBusy[id] ? 'Preparing…' : 'Prepare'}</button>
-                          : <button type="button" onClick={() => void startPreparedBitMonoTrack(item)} disabled={!isHost || queueBusy}>{isHost ? 'Play in party' : 'Host only'}</button>}
-                      </div>
-                    </article>
-                  );
-                })}
-              </section>
-            )}
             {browserLoading && <div className="bc-party-browser-state"><span className="bc-party-browser-spinner"/><strong>Loading your recommendations</strong><small>Checking your connected Apple Music account</small></div>}
             {!browserLoading && browserError && <div className="bc-party-browser-state is-error"><strong>Could not load Browser</strong><small>{browserError}</small><button type="button" onClick={() => void loadAppleMusicBrowser()}>Try again</button></div>}
             {!browserLoading && !browserError && browserMessage && (
@@ -1240,7 +1206,7 @@ function PartyRoomExperience({
                       {recommendation.artworkUrl
                         ? <img src={recommendation.artworkUrl} alt="" loading="lazy"/>
                         : <span className="bc-party-browser-art-fallback"><Icon name="waveform" size={21}/></span>}
-                      <div><span>RECOMMENDED FOR YOU</span><strong>{recommendation.title}</strong>{recommendation.description && <small>{recommendation.description}</small>}</div>
+                      <div className="bc-party-browser-section-title"><strong>{recommendation.title}</strong>{recommendation.description && <small>{recommendation.description}</small>}</div>
                     </div>
                     {recommendation.items?.length > 0 && (
                       <div className="bc-party-browser-track-list">
