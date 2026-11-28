@@ -923,7 +923,7 @@ function PartyRoomExperience({
           </div>
         )}
         {playbackMessage && <div className="bc-party-inline-status" role="status">{playbackMessage}</div>}
-        <button className="bc-party-leave" type="button" onClick={onLeave}>Leave party</button>
+        <button className="bc-party-leave" type="button" onClick={onLeave}>{isHost && participants.length <= 1 ? "End party" : "Leave party"}</button>
       </section>
 
       <section className="bc-party-content-panel" aria-label="Party content">
