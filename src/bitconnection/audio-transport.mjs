@@ -24,7 +24,7 @@ export async function captureBitChordTabAudio({
 
   // Invoke synchronously from the button handler so the native share picker
   // receives the browser's transient user activation.
-  const captureStream = await mediaDevices.getDisplayMedia({
+  const captureStream = await Reflect.apply(mediaDevices.getDisplayMedia, mediaDevices, [{
     video: { displaySurface: 'browser' },
     audio: {
       echoCancellation: false,
@@ -36,7 +36,7 @@ export async function captureBitChordTabAudio({
     windowAudio: 'exclude',
     monitorTypeSurfaces: 'exclude',
     surfaceSwitching: 'exclude'
-  });
+  }]);
 
   const tracks = captureStream?.getTracks?.() || [];
   const videoTrack = captureStream?.getVideoTracks?.()[0] || null;
@@ -188,7 +188,7 @@ export async function startBitConnectionGuestTransport({
       audioElement.playsInline = true;
       audioElement.muted = false;
       audioElement.srcObject = stream;
-      Promise.resolve().then(() => audioElement.play()).catch(onAudioPlaybackBlocked);
+      Promise.resolve().then(() => Reflect.apply(audioElement.play, audioElement, [])).catch(onAudioPlaybackBlocked);
       onRemoteStream?.({ stream, ...detail });
     }
   });
@@ -198,11 +198,14 @@ export async function startBitConnectionGuestTransport({
     runtime,
     iceConfiguration,
     playAudio() {
-      return Promise.resolve().then(() => audioElement.play());
+      if (typeof audioElement.play !== 'function') {
+        return Promise.reject(new Error('The guest audio element does not support playback.'));
+      }
+      return Promise.resolve().then(() => Reflect.apply(audioElement.play, audioElement, []));
     },
     async stop({ leave = true } = {}) {
       await runtime.stop({ leave });
-      audioElement.pause?.();
+      if (typeof audioElement.pause === 'function') Reflect.apply(audioElement.pause, audioElement, []);
       audioElement.srcObject = null;
     }
   };
@@ -235,7 +238,7 @@ export async function startBitConnectionHostMediaTransport({
     throw new Error('This browser does not support MediaStream audio sharing.');
   }
 
-  const capturedStream = audioElement.captureStream();
+  const capturedStream = Reflect.apply(audioElement.captureStream, audioElement, []);
   const audioTracks = capturedStream?.getAudioTracks?.() || [];
   if (!audioTracks.length) {
     stopTracks(capturedStream);
