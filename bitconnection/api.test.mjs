@@ -1061,7 +1061,10 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
   assert.match(manifest.unavailableFeatures.serverSideOnnxAutoMix, /player-control bridge/i);
   assert.equal(manifest.partyRules.maximumParticipants, 4);
 
-  const preflight = await client.request('/party-service', { method: 'OPTIONS' });
+  const preflight = await client.request('/party-service', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://bitchord.de.deplexo.com', 'Access-Control-Request-Method': 'GET' }
+  });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, HEAD, POST, OPTIONS');
   assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
