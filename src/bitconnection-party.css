@@ -2310,7 +2310,7 @@ audio.bc-party-audio-output { display: none !important; }
 }
 .bc-party-chat .bc-party-composer {
   margin-top: auto;
-  transform: translateY(12px);
+  transform: translateY(25%);
 }
 .bc-party-browser-button { z-index: 90; }
 
