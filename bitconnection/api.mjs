@@ -1543,9 +1543,11 @@ export function createBitConnectionRouter({
       });
     }
 
+    const requestedEntity = String(req.query.entity || 'song').trim().toLowerCase();
+    const entity = requestedEntity === 'album' || requestedEntity === 'albums' ? 'album' : 'song';
     const params = new URLSearchParams({
       term,
-      entity: 'song',
+      entity,
       country: storefront,
       limit: String(limit)
     });
@@ -1565,13 +1567,15 @@ export function createBitConnectionRouter({
         });
       }
       const tracks = payload.results.map(item => {
-        const id = String(item?.trackId || '').trim();
-        const title = String(item?.trackName || '').trim().slice(0, 180);
+        const albumResult = entity === 'album';
+        const id = String(albumResult ? item?.collectionId || '' : item?.trackId || '').trim();
+        const title = String(albumResult ? item?.collectionName || '' : item?.trackName || '').trim().slice(0, 180);
         const artist = String(item?.artistName || '').trim().slice(0, 180);
         if (!/^[0-9]{1,20}$/.test(id) || !title || !artist) return null;
         let url = '';
         try {
-          const parsed = new URL(String(item?.trackViewUrl || ''));
+          const candidate = albumResult ? item?.collectionViewUrl : item?.trackViewUrl;
+          const parsed = new URL(String(candidate || ''));
           if (parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'music.apple.com'
             && /^\/[a-z]{2}\/(?:song|album)\//i.test(parsed.pathname)) {
             url = parsed.toString();
@@ -1579,13 +1583,13 @@ export function createBitConnectionRouter({
         } catch { /* Items without an Apple Music page are omitted from embed metadata. */ }
         return {
           id,
-          type: 'songs',
+          type: albumResult ? 'albums' : 'songs',
           title,
           artist,
           album: String(item?.collectionName || '').trim().slice(0, 180),
           artworkUrl: normalizeAppleArtwork(item?.artworkUrl100 || item?.artworkUrl60 || ''),
           url,
-          durationSeconds: Number.isFinite(Number(item?.trackTimeMillis))
+          durationSeconds: !albumResult && Number.isFinite(Number(item?.trackTimeMillis))
             ? Math.max(0, Number(item.trackTimeMillis) / 1000)
             : 0,
           storefront

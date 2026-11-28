@@ -18,6 +18,9 @@ test('security policy permits the required app, local Cider, and Apple MusicKit 
   assert.match(CONTENT_SECURITY_POLICY, /connect-src 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\*\.apple\.com/);
   assert.ok(CONTENT_SECURITY_POLICY.includes("media-src 'self' blob: data: https://*.apple.com https://*.itunes.apple.com https://*.mzstatic.com"));
+  assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/\\*\.confih\.tech/);
+  assert.match(CONTENT_SECURITY_POLICY, /connect-src[^;]*https:\/\/mus-api\.de\.deplexo\.com/);
+  assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\\*\.confih\.tech/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);

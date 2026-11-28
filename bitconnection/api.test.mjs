@@ -123,6 +123,40 @@ test('Apple Music song search works without a MusicKit developer token', async t
   assert.match(requestedUrl, /entity=song/);
 });
 
+test('Apple Music catalog lookup can resolve EP and album cover artwork', async t => {
+  let requestedUrl = '';
+  const client = await harness(t, {
+    fetchImpl: async url => {
+      requestedUrl = String(url);
+      return {
+        ok: true,
+        async json() {
+          return {
+            results: [{
+              collectionId: 123456789,
+              collectionName: 'WhyKiiiKiii - EP',
+              artistName: 'KiiiKiii',
+              artworkUrl100: 'https://is1-ssl.mzstatic.com/image/thumb/Music123/100x100bb.jpg',
+              collectionViewUrl: 'https://music.apple.com/us/album/whykiikiii-ep/123456789',
+              trackCount: 4
+            }]
+          };
+        }
+      };
+    }
+  });
+  const response = await client.request('/account/providers/apple-music/catalog-search?term=WhyKiiiKiii%20-%20EP&entity=album&storefront=us');
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.tracks.length, 1);
+  assert.equal(payload.tracks[0].id, '123456789');
+  assert.equal(payload.tracks[0].type, 'albums');
+  assert.equal(payload.tracks[0].title, 'WhyKiiiKiii - EP');
+  assert.equal(payload.tracks[0].artworkUrl, 'https://is1-ssl.mzstatic.com/image/thumb/Music123/600x600bb.jpg');
+  assert.equal(payload.tracks[0].url, 'https://music.apple.com/us/album/whykiikiii-ep/123456789');
+  assert.match(requestedUrl, /entity=album/);
+});
+
 test('native registration creates a separate BitConnection identity and never calls BitCider auth', async t => {
   const client = await harness(t);
   const csrf = await csrfContext(client);
