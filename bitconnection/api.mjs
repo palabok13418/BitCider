@@ -2768,9 +2768,9 @@ export function createBitConnectionRouter({
         }
       } else if (body.source !== undefined && nextSource !== (next.source || 'youtube-music')) {
         return { status: 400, error: 'TRACK_REQUIRED_FOR_SOURCE_CHANGE', message: 'Choose a valid track when changing the playback source.' };
-      } else if (['bitmono', 'ccustom', 'cider', 'apple-music'].includes(nextSource) && next.track?.source !== nextSource) {
+      } else if (next.track && nextSource !== 'youtube-music' && next.track.source !== nextSource) {
         return { status: 400, error: 'TRACK_REQUIRED_FOR_SOURCE_CHANGE', message: 'Choose a valid track before changing the party source.' };
-      } else if (nextSource === 'youtube-music' && ['bitmono', 'ccustom', 'cider', 'apple-music'].includes(next.track?.source)) {
+      } else if (nextSource === 'youtube-music' && next.track && ['bitmono', 'ccustom', 'cider', 'apple-music'].includes(next.track.source)) {
         return { status: 400, error: 'YOUTUBE_TRACK_REQUIRED' };
       }
       if (body.isPlaying !== undefined) {
