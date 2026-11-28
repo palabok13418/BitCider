@@ -2002,3 +2002,103 @@ a { color: inherit; text-decoration: none; }
   .bc-account-provider-form .bc-primary-button { width: 100%; }
   .bc-account-provider-connected { flex-wrap: wrap; }
 }
+
+
+/* BitAccount Center — persistent Listening Party audio source preference. */
+.bc-party-source-settings form {
+  display: grid;
+  gap: 13px;
+}
+.bc-party-source-options {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.bc-party-source-options legend,
+.bc-party-custom-source-field > span {
+  margin-bottom: 8px;
+  color: rgba(255, 220, 232, .62);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .13em;
+}
+.bc-party-source-options label {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(255, 219, 232, .12);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.bc-party-source-options label:hover {
+  border-color: rgba(245, 151, 182, .28);
+  background: rgba(255,255,255,.045);
+}
+.bc-party-source-options label.is-selected {
+  border-color: rgba(241, 126, 164, .48);
+  background: linear-gradient(105deg, rgba(220, 82, 128, .13), rgba(255,255,255,.035));
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 0 0 2px rgba(227, 93, 138, .045);
+}
+.bc-party-source-options input[type="radio"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #ec8eae;
+}
+.bc-party-source-options label > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.bc-party-source-options label strong {
+  color: #fff1f6;
+  font-size: 11px;
+  font-weight: 700;
+}
+.bc-party-source-options label small {
+  color: rgba(255, 223, 235, .5);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.bc-party-custom-source-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.bc-party-custom-source-field > span { margin: 0; }
+.bc-party-custom-source-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 222, 231, .15);
+  border-radius: 9px;
+  outline: none;
+  color: #fff2f6;
+  background: rgba(0,0,0,.2);
+  font: 11px ui-monospace, monospace;
+}
+.bc-party-custom-source-field input:focus {
+  border-color: rgba(245, 135, 169, .6);
+  box-shadow: 0 0 0 3px rgba(232, 91, 139, .1);
+}
+.bc-party-custom-source-field small {
+  color: rgba(255, 222, 235, .42);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.bc-party-source-settings .bc-primary-button {
+  justify-self: start;
+  min-height: 40px;
+}
+@media (max-width: 560px) {
+  .bc-party-source-settings { padding: 15px; }
+  .bc-party-source-settings .bc-primary-button { width: 100%; }
+}
