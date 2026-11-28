@@ -274,7 +274,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
       playbackSync: 'bitmono-ccustom-cider-source-audio-over-webrtc',
-      sharedQueue: 'youtube-bitmono-and-apple-music-track-sources-synchronized-with-room-permissions',
+      sharedQueue: 'bitmono-ccustom-and-cider-track-sources-synchronized-with-room-permissions',
       queueLoopAndShuffle: 'enabled',
       partyChat: 'text-images-and-giphy-gifs-enabled',
       memberModeration: 'kick-ban-and-host-promotion-enabled',
