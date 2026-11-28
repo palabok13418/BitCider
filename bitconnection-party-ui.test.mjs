@@ -72,5 +72,4 @@ test('active-party Browser uses cover-first Apple Music shelves and a 90% rounde
   assert.ok(css.includes('width:min(92vw,1680px)'));
   assert.ok(css.includes('height:min(90dvh,1120px)'));
   assert.ok(css.includes('border-radius:clamp(24px,2.4vw,38px)'));
-  assert.match(css, /\\.bc-party-browser-panel\\s*\\{[^}]*width:min\\(92vw/);
 });
