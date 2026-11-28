@@ -602,7 +602,11 @@ export function createBitConnectionRouter({
     const title = String(value.title || '').trim();
     const artist = String(value.artist || value.artistName || '').trim();
     const durationSeconds = Number(value.durationSeconds ?? value.duration);
-    if (!id || id.length > 180 || /[\\u0000-\\u001f\\u007f]/u.test(id)
+    const hasControlCharacter = [...id].some(character => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+    if (!id || id.length > 180 || hasControlCharacter
       || !title || title.length > 180
       || !artist || artist.length > 180
       || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 24 * 60 * 60) return null;
@@ -614,11 +618,11 @@ export function createBitConnectionRouter({
         if (parsed.protocol === 'https:' && !parsed.username && !parsed.password) thumbnailUrl = parsed.toString();
       } catch { /* Untrusted artwork is omitted. */ }
     }
-    const qualityCandidate = String(value.audioQuality || value.quality || '').trim().slice(0, 40);
-    const quality = /dolby\\s*atmos|\\bjoc\\b/i.test(qualityCandidate) ? 'Dolby Atmos'
-      : /hi[\\s-]?res/i.test(qualityCandidate) ? 'Hi-Res Lossless'
-        : /lossless/i.test(qualityCandidate) ? 'Lossless'
-          : /high|320|256/i.test(qualityCandidate) ? 'High Quality' : '';
+    const qualityCandidate = String(value.audioQuality || value.quality || '').trim().slice(0, 40).toLowerCase();
+    const quality = qualityCandidate.includes('atmos') || qualityCandidate.includes('joc') ? 'Dolby Atmos'
+      : qualityCandidate.includes('hi-res') || qualityCandidate.includes('hi res') ? 'Hi-Res Lossless'
+        : qualityCandidate.includes('lossless') ? 'Lossless'
+          : qualityCandidate.includes('high') || qualityCandidate.includes('320') || qualityCandidate.includes('256') ? 'High Quality' : '';
     return {
       source,
       trackId: id,
@@ -629,6 +633,7 @@ export function createBitConnectionRouter({
       ...(quality ? { audioQuality: quality } : {})
     };
   }
+
 
   function cleanAppleMusicTrack(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
