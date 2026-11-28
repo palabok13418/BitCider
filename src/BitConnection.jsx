@@ -3,16 +3,6 @@ import { BitConnectionApiClient } from './bitconnection/realtime-client.mjs';
 import { startBitConnectionGuestTransport, startBitConnectionHostMediaTransport } from './bitconnection/audio-transport.mjs';
 import { runCiderBrowserRelay } from './cider-bridge.js';
 import { attachBitCiderStream } from './bitconnection/stream-player.mjs';
-import {
-  getMusicKitPlayer,
-  musicKitQueueDescriptor,
-  normalizeAppleCatalogTrack,
-  musicKitPlaybackSnapshot,
-  subscribeAppleMusicPlayback,
-  controlAppleMusicPlayback as controlMusicKitPlayback,
-  searchAppleMusicSongs,
-  appleMusicEmbedUrl
-} from './bitconnection/musickit-player.mjs';
 import PartyRoomExperience from './BitConnectionParty.jsx';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import './bitconnection.css';
@@ -1386,11 +1376,6 @@ function CreateRoomWindow() {
   const [ciderAddonBaseUrl, setCiderAddonBaseUrl] = useState('');
   const hostStreamEngineRef = useRef(null);
   const hostAudioModeRef = useRef('none');
-  const appleMusicPlayerRef = useRef(null);
-  const appleMusicUnsubscribeRef = useRef(null);
-  const [appleMusicPlaybackStatus, setAppleMusicPlaybackStatus] = useState('checking');
-  const [appleMusicPlaybackError, setAppleMusicPlaybackError] = useState('');
-  const [appleMusicPlayback, setAppleMusicPlayback] = useState(null);
 
   useEffect(() => () => {
     const transport = hostTransportRef.current;
@@ -1467,66 +1452,6 @@ function CreateRoomWindow() {
     };
   }, [stage, profile?.playbackSource]);
 
-  useEffect(() => {
-    let active = true;
-    appleMusicPlayerRef.current = null;
-    appleMusicUnsubscribeRef.current?.();
-    appleMusicUnsubscribeRef.current = null;
-    setAppleMusicPlaybackStatus('checking');
-    setAppleMusicPlaybackError('');
-
-    async function prepareMusicKit() {
-      if (!account?.authenticated) {
-        setAppleMusicPlaybackStatus('embed-ready');
-        setAppleMusicPlaybackError('MusicKit developer credentials are not needed for the Apple Music embedded-player route. Sign in to Apple Music inside the player for full songs.');
-        return;
-      }
-      try {
-        const response = await fetch('/api/bitconnection/account/providers/apple-music/playback-config', {
-          headers: identityHeaders(identityMode, account),
-          credentials: 'same-origin',
-          cache: 'no-store'
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          if (payload.error === 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED') {
-            if (active) {
-              setAppleMusicPlaybackStatus('embed-ready');
-              setAppleMusicPlaybackError('');
-            }
-            return;
-          }
-          throw new Error(payload.message || 'Direct Apple Music playback is unavailable.');
-        }
-        if (payload.configured !== true) {
-          if (active) {
-            setAppleMusicPlaybackStatus('embed-ready');
-            setAppleMusicPlaybackError('');
-          }
-          return;
-        }
-        const music = await getMusicKitPlayer(payload);
-        if (!active) return;
-        appleMusicPlayerRef.current = music;
-        appleMusicUnsubscribeRef.current = subscribeAppleMusicPlayback(music, () => {
-          setAppleMusicPlayback(musicKitPlaybackSnapshot(music));
-        });
-        setAppleMusicPlaybackStatus('ready');
-      } catch (error) {
-        if (!active) return;
-        setAppleMusicPlaybackStatus('unavailable');
-        setAppleMusicPlaybackError(error.message || 'Could not initialize Apple MusicKit.');
-      }
-    }
-
-    void prepareMusicKit();
-    return () => {
-      active = false;
-      appleMusicUnsubscribeRef.current?.();
-      appleMusicUnsubscribeRef.current = null;
-      appleMusicPlayerRef.current = null;
-    };
-  }, [account?.authenticated, account?.csrfToken, identityMode]);
 
   useEffect(() => {
     const player = hostPlayerRef.current;
@@ -1543,36 +1468,10 @@ function CreateRoomWindow() {
     return () => player.removeEventListener('ended', handleEnded);
   }, [hostSession, stage]);
 
-  async function publishAppleMusicPlayback(snapshot) {
-    if (!hostSession || hostSession.role !== 'host' || !snapshot?.track?.id) return null;
-    const track = normalizeAppleCatalogTrack({
-      id: snapshot.track.id,
-      title: snapshot.track.title,
-      artist: snapshot.track.artist,
-      album: snapshot.track.album,
-      artworkUrl: snapshot.track.artworkUrl,
-      url: snapshot.track.url || snapshot.track.appleMusicUrl || '',
-      playbackMode: snapshot.track.playbackMode,
-      durationSeconds: snapshot.durationSeconds,
-      audioVariants: snapshot.track.audioVariants
-    });
-    const result = await hostSession.updatePlayback({
-      source: 'apple-music',
-      track,
-      isPlaying: Boolean(snapshot.isPlaying),
-      positionSeconds: Math.max(0, Number(snapshot.positionSeconds) || 0)
-    });
-    setRoomState(await hostSession.getState());
-    return result;
-  }
-
   async function searchAppleMusicCatalog(term) {
-    const music = appleMusicPlayerRef.current;
-    if (music && appleMusicPlaybackStatus === 'ready') {
-      return searchAppleMusicSongs(music, term, 25);
-    }
     const query = new URLSearchParams({ term: String(term || '').trim(), storefront: 'us', limit: '25' });
     const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-search?' + query, {
+      headers: identityHeaders(identityMode, account),
       credentials: 'same-origin',
       cache: 'no-store'
     });
@@ -2015,8 +1914,6 @@ function CreateRoomWindow() {
           ciderAddonBaseUrl={ciderAddonBaseUrl}
           ciderBridgeState={ciderBridgeState}
           ciderBridgeMessage={ciderBridgeMessage}
-          appleMusicPlaybackStatus={appleMusicPlaybackStatus}
-          appleMusicPlaybackError={appleMusicPlaybackError}
         />
         </>
       )}
