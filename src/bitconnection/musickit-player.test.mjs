@@ -6,7 +6,8 @@ import {
   musicKitPlaybackSnapshot,
   searchAppleMusicSongs,
   normalizeAppleAudioVariants,
-  appleMusicEmbedUrl
+  appleMusicEmbedUrl,
+  controlAppleMusicPlayback
 } from './musickit-player.mjs';
 
 test('normalizes Apple audio variant names and drops unknown values', () => {
@@ -141,4 +142,38 @@ test('searches the Apple Music catalog and normalizes returned song entries', as
   assert.equal(results[0].title, 'Catalog Song');
   assert.equal(results[0].durationSeconds, 201);
   assert.deepEqual(results[0].audioVariants, ['dolby-atmos', 'lossless']);
+});
+
+
+test('MusicKit playback controls preserve the instance receiver for every player action', async () => {
+  const calls = [];
+  const music = {
+    player: {
+      isPlaying: false,
+      playbackTime: 0,
+      currentPlaybackDuration: 120,
+      volume: 1,
+      async seekToTime(value) {
+        assert.equal(this, music.player);
+        this.playbackTime = value;
+        calls.push(['seek', value]);
+      }
+    },
+    async play() { assert.equal(this, music); calls.push(['play']); },
+    async pause() { assert.equal(this, music); calls.push(['pause']); },
+    async stop() { assert.equal(this, music); calls.push(['stop']); },
+    async skipToNextItem() { assert.equal(this, music); calls.push(['next']); },
+    async skipToPreviousItem() { assert.equal(this, music); calls.push(['previous']); }
+  };
+
+  await controlAppleMusicPlayback(music, 'play');
+  await controlAppleMusicPlayback(music, 'pause');
+  await controlAppleMusicPlayback(music, 'stop');
+  await controlAppleMusicPlayback(music, 'next');
+  await controlAppleMusicPlayback(music, 'previous');
+  await controlAppleMusicPlayback(music, 'seek', 42);
+
+  assert.deepEqual(calls, [
+    ['play'], ['pause'], ['stop'], ['next'], ['previous'], ['seek', 42]
+  ]);
 });
