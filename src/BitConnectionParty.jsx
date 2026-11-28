@@ -155,6 +155,8 @@ function PartyRoomExperience({
   onRoomState = () => {},
   onLeave = () => {},
   audioRef,
+  hostAudioState = 'idle',
+  hostAudioError = '',
   audioBlocked = false,
   onResumeAudio = () => {},
   playbackSource = 'bitmono',
@@ -234,6 +236,7 @@ function PartyRoomExperience({
   const appleMusicSongId = String(track?.appleMusicSongId || '');
   const appleMusicStorefront = /^[a-z]{2}$/.test(String(track?.appleMusicStorefront || '')) ? String(track.appleMusicStorefront) : 'us';
   const roomName = room?.roomName || roomState?.room?.roomName || 'Listening Party';
+  const sourceLabel = ({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource] || 'BitMono');
   const roomCode = room?.roomCode || roomState?.room?.roomCode || '';
   const roomData = roomState?.room || room || {};
   const bitChordRoomCode = String(
@@ -834,10 +837,10 @@ function PartyRoomExperience({
           title: String(item.title || 'Apple Music track'),
           artist: String(item.artist || '')
         });
-        setPlaybackMessage('Press Play in the Apple Music player below. Share this browser tab to send its audio to party guests.');
+        setPlaybackMessage('Apple Music's embedded player is separate from party audio. Choose tracks from your saved party source to send audio to guests.');
       } else {
         setAppleMusicEmbed(null);
-        setPlaybackMessage('Apple Music is playing through MusicKit. Start tab-audio sharing to include party guests.');
+        setPlaybackMessage('Apple Music is playing locally; choose a track from the selected party source to share audio with guests.');
       }
     } catch (error) {
       setPlaybackMessage(error.message || 'Apple Music could not start this track.');
@@ -964,15 +967,17 @@ function PartyRoomExperience({
         </div>
         {audioBlocked && !isHost && <button className="bc-party-resume-audio" type="button" onClick={onResumeAudio}>Tap to enable party audio</button>}
         {isHost && (
-          <div className="bc-party-host-audio">
+          <div className="bc-party-host-audio" aria-live="polite">
             <div className="bc-party-host-audio-status">
               <span className={hostAudioState === 'streaming' ? 'is-live' : ''}/>
-              {hostAudioState === 'streaming' ? 'BitChord tab audio is being shared' : 'Share the BitChord Web tab to start party audio'}
+              {hostAudioState === 'streaming'
+                ? sourceLabel + ' audio is live to the party'
+                : sourceLabel + ' is your selected party audio source'}
             </div>
+            {playbackSource === 'cider' && <p>{ciderBridgeMessage || (ciderBridgeState === 'connected' ? 'Cider is connected on this device.' : 'Connect Cider through BitCider on this device.')}</p>}
+            {playbackSource === 'ccustom' && <p>{customSourceManifestUrl ? 'Your CCustom add-on is configured.' : 'Add a CCustom manifest URL in BitAccount Center.'}</p>}
             {hostAudioError && <p role="alert">{hostAudioError}</p>}
-            {hostAudioState === 'streaming'
-              ? <button type="button" onClick={onStopHostAudio}>Stop audio sharing</button>
-              : <button type="button" onClick={onStartHostAudio} disabled={hostAudioState === 'requesting'}>{hostAudioState === 'requesting' ? 'Opening tab picker…' : 'Share BitChord tab audio'}</button>}
+            <small>Audio comes directly from the selected in-page player. No screen or tab sharing is used.</small>
           </div>
         )}
         {playbackMessage && <div className="bc-party-inline-status" role="status">{playbackMessage}</div>}
@@ -1268,7 +1273,7 @@ function PartyRoomExperience({
                         </span>
                       </div>
                       <div className="bc-party-browser-search-actions">
-                        <button type="button" onClick={() => void playRecommendedAppleMusicItem(item)} disabled={!isHost || queueBusy}>{queueBusy ? 'Starting…' : 'Play full song'}</button>
+                        <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={!isHost || queueBusy}>{'Find in ' + sourceLabel}</button>
                       </div>
                     </article>
                   );
@@ -1277,19 +1282,19 @@ function PartyRoomExperience({
             )}
             <form className="bc-party-browser-search" onSubmit={searchBitMonoCatalog}>
               <Icon name="browser" size={17}/>
-              <input value={browserQuery} onChange={event => setBrowserQuery(event.target.value)} placeholder="Search songs in Bit Mono…" aria-label="Search Bit Mono songs"/>
-              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search Bit Mono'}</button>
+              <input value={browserQuery} onChange={event => setBrowserQuery(event.target.value)} placeholder={'Search songs in ' + sourceLabel + '…'} aria-label={'Search ' + sourceLabel + ' songs'}/>
+              <button type="submit" disabled={browserSearchBusy || !browserQuery.trim()}>{browserSearchBusy ? 'Searching…' : 'Search ' + sourceLabel}</button>
             </form>
             {(browserSearchResults.length > 0 || browserSearchError) && (
               <section className="bc-party-browser-search-results">
-                <div className="bc-party-browser-search-title">BIT MONO RESULTS {browserSearchResults.length ? '· ' + browserSearchResults.length : ''}</div>
+                <div className="bc-party-browser-search-title">{sourceLabel.toUpperCase()} RESULTS {browserSearchResults.length ? '· ' + browserSearchResults.length : ''}</div>
                 {browserSearchError && <p>{browserSearchError}</p>}
                 {browserSearchResults.map(item => {
                   const id = String(item.id || '');
                   const prepared = bitMonoPrepared[id];
                   return (
                     <article className="bc-party-browser-search-track" key={id}>
-                      {item.artworkURL ? <img src={item.artworkURL} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
+                      {(item.artworkURL || item.thumbnailUrl) ? <img src={item.artworkURL || item.thumbnailUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
                       <div><strong>{item.title}</strong><small>{[item.artist, item.album, item.audioQuality].filter(Boolean).join(' · ')}</small></div>
                       <div className="bc-party-browser-search-actions">
                         <button type="button" onClick={() => void addBitMonoTrackToQueue(item)}>Queue</button>
@@ -1331,8 +1336,8 @@ function PartyRoomExperience({
                               {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
                               <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
                               {item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) && (
-                                <button type="button" onClick={() => void playRecommendedAppleMusicItem(item)} disabled={!isHost || queueBusy} title={isHost ? 'Play the full-length song through Apple Music' : 'Only the host can start Apple Music playback'}>
-                                  {queueBusy ? 'Starting…' : 'Play Apple Music'}
+                                <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={!isHost || queueBusy} title={isHost ? 'Find this song in ' + sourceLabel : 'Only the host can choose party tracks'}>
+                                  {'Find in ' + sourceLabel}
                                 </button>
                               )}
                               <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in Bit Mono'}</button>
