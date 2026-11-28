@@ -28,6 +28,142 @@ const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
 
+const DEFAULT_BITCONNECTION_ALLOWED_ORIGINS = new Set([
+  'https://bitcider.de.deplexo.com',
+  'https://bitchord.de.deplexo.com',
+  'https://mus-api.de.deplexo.com',
+  'https://mus-api.palabokmagtiis.workers.dev'
+]);
+
+function normalizeHttpOrigin(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    if (!['https:', 'http:'].includes(parsed.protocol)) return '';
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+export function isBitConnectionOriginAllowed(origin) {
+  const normalized = normalizeHttpOrigin(origin);
+  if (!normalized) return false;
+  const configured = String(process.env.BITCONNECTION_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(normalizeHttpOrigin)
+    .filter(Boolean);
+  return DEFAULT_BITCONNECTION_ALLOWED_ORIGINS.has(normalized) || configured.includes(normalized);
+}
+
+export function bitConnectionCorsMiddleware(req, res, next) {
+  const origin = String(req.get('origin') || '').trim();
+  const allowed = Boolean(origin && isBitConnectionOriginAllowed(origin));
+  if (allowed) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+    res.set('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', [
+      'Accept',
+      'Authorization',
+      'Content-Type',
+      'X-BitConnection-CSRF',
+      'X-BitCider-CSRF',
+      'X-BitConnection-Identity'
+    ].join(', '));
+    res.set('Access-Control-Max-Age', '600');
+    res.vary('Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    if (origin && !allowed) {
+      return res.status(403).json({ error: 'BITCONNECTION_ORIGIN_NOT_ALLOWED' });
+    }
+    return res.status(204).end();
+  }
+  return next();
+}
+
+export function buildBitConnectionPartyServiceDescriptor(req, maximum = 30) {
+  const forwardedProtocol = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
+  const forwardedHost = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+  const origin = forwardedHost && /^(?:https?|wss?):\/\//i.test(forwardedHost)
+    ? forwardedHost.replace(/\/$/, '')
+    : forwardedHost ? forwardedProtocol + '://' + forwardedHost : '';
+  const apiBase = '/api/bitconnection';
+  return {
+    service: 'BitConnection Listening Party',
+    protocolVersion: 1,
+    apiVersion: BITCONNECTION_API_VERSION,
+    serviceUrl: origin ? origin + '/party' : '/party',
+    apiBase: origin ? origin + apiBase : apiBase,
+    cors: {
+      credentials: 'include',
+      requiredHeaders: ['Authorization', 'Content-Type', 'X-BitConnection-CSRF', 'X-BitCider-CSRF', 'X-BitConnection-Identity']
+    },
+    source: 'BitMono, CCustom, or Cider selected in BitAccount Center',
+    authentication: {
+      host: 'BitConnection or BitCider account session with session-bound CSRF',
+      guest: 'Room-scoped participant bearer credential with session-bound CSRF',
+      guestCredentialScope: 'single room'
+    },
+    partyRules: {
+      maximumParticipants: maximum,
+      ownerOnlyControls: 'enforced-by-room-setting',
+      privateRoomAdmission: 'invitation plus proximity check or host one-time code',
+      hostActions: ['kick', 'ban', 'promote'],
+      queueActions: ['add', 'remove', 'move', 'clear', 'loop', 'shuffle'],
+      chat: {
+        text: true,
+        images: ['image/png', 'image/jpeg', 'image/webp'],
+        maximumImageBytes: 524288,
+        gifs: 'GIPHY HTTPS media URLs only',
+        gifSearch: { method: 'GET', path: '/gifs/search', apiKey: 'server-side-only' },
+        voice: 'browser speech transcription to editable text; raw audio is not uploaded'
+      }
+    },
+    capabilities: {
+      roomCreation: true,
+      publicDiscovery: true,
+      privateRooms: true,
+      synchronizedQueueMetadata: true,
+      partyChat: true,
+      memberModeration: true,
+      directWebRtcAudio: true,
+      serverSideOnnxAnalysis: true,
+      serverSideOnnxDjPlanning: true,
+      serverSideOnnxAutoMix: false,
+      liveAutoMixExecution: false,
+      sourcePlaybackCommands: false,
+      synchronizedLyrics: false
+    },
+    unavailableFeatures: {
+      sourcePlaybackCommands: 'The BitChord player-control bridge is not connected yet.',
+      synchronizedLyrics: 'The BitChord lyrics feed is not connected yet.',
+      serverSideOnnxAutoMix: 'ONNX beat analysis and DJ transition planning are available. Live execution still needs the BitChord player-control bridge.'
+    },
+    endpoints: {
+      health: { method: 'GET', path: '/health' },
+      account: { method: 'GET', path: '/account' },
+      createRoom: { method: 'POST', path: '/rooms' },
+      publicRooms: { method: 'GET', path: '/rooms/public' },
+      joinRoom: { method: 'POST', path: '/rooms/{roomId}/join' },
+      roomState: { method: 'GET', path: '/rooms/{roomId}/state' },
+      heartbeat: { method: 'POST', path: '/rooms/{roomId}/heartbeat' },
+      playbackState: { method: 'POST', path: '/rooms/{roomId}/playback' },
+      queue: { method: 'POST', path: '/rooms/{roomId}/queue' },
+      autoMixStatus: { method: 'GET', path: '/rooms/{roomId}/automix/status' },
+      autoMixPrepare: { method: 'POST', path: '/rooms/{roomId}/automix/prepare' },
+      autoMixAnalyze: { method: 'POST', path: '/rooms/{roomId}/automix/analyze/{queueItemId}', contentType: 'application/vnd.bitconnection.pcm-f32le', sampleRate: 22050, channels: 1 },
+      autoMixPlan: { method: 'POST', path: '/rooms/{roomId}/automix/plan' },
+      chat: { method: 'POST', path: '/rooms/{roomId}/chat' },
+      memberModeration: { method: 'POST', path: '/rooms/{roomId}/members/{participantId}/moderate' },
+      gifSearch: { method: 'GET', path: '/gifs/search?q={query}' },
+      signaling: { method: 'POST', path: '/rooms/{roomId}/signals' },
+      leave: { method: 'POST', path: '/rooms/{roomId}/leave' },
+      close: { method: 'POST', path: '/rooms/{roomId}/close' }
+    }
+  };
+}
+
 function emptyData() {
   return { accounts: {}, profiles: {}, rooms: {}, authSessions: {}, webauthnChallenges: {}, providerConnections: {} };
 }
@@ -360,6 +496,7 @@ export function createBitConnectionRouter({
     });
   }
   const router = express.Router();
+  router.use(bitConnectionCorsMiddleware);
   const maximum = Number.isSafeInteger(Number(maxPartySize))
     ? Math.min(30, Math.max(2, Number(maxPartySize)))
     : 30;
@@ -821,13 +958,6 @@ export function createBitConnectionRouter({
     return res.json(bitConnectionHealthPayload(maximum));
   });
 
-  router.options('/party-service', (_req, res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.set('Cache-Control', 'no-store');
-    return res.status(204).end();
-  });
-
   router.get('/gifs/search', rateGifSearch, async (req, res) => {
     if (!String(giphyApiKey || '').trim()) {
       return res.status(503).json({
@@ -887,85 +1017,8 @@ export function createBitConnectionRouter({
   });
 
   router.get('/party-service', (req, res) => {
-    const forwardedProtocol = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
-    const forwardedHost = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
-    const origin = forwardedHost && /^(?:https?|wss?):\/\//i.test(forwardedHost)
-      ? forwardedHost.replace(/\/$/, '')
-      : forwardedHost ? forwardedProtocol + '://' + forwardedHost : '';
-    const apiBase = '/api/bitconnection';
     res.set('Cache-Control', 'no-store');
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    if (req.method === 'OPTIONS') return res.status(204).end();
-    return res.json({
-      service: 'BitConnection Listening Party',
-      protocolVersion: 1,
-      apiVersion: BITCONNECTION_API_VERSION,
-      serviceUrl: origin ? origin + '/party' : '/party',
-      apiBase: origin ? origin + apiBase : apiBase,
-      source: 'BitMono, CCustom, or Cider selected in BitAccount Center',
-      authentication: {
-        host: 'BitConnection or BitCider account session with session-bound CSRF',
-        guest: 'Room-scoped participant bearer credential with session-bound CSRF',
-        guestCredentialScope: 'single room'
-      },
-      partyRules: {
-        maximumParticipants: maximum,
-        ownerOnlyControls: 'enforced-by-room-setting',
-        privateRoomAdmission: 'invitation plus proximity check or host one-time code',
-        hostActions: ['kick', 'ban', 'promote'],
-        queueActions: ['add', 'remove', 'move', 'clear', 'loop', 'shuffle'],
-        chat: {
-          text: true,
-          images: ['image/png', 'image/jpeg', 'image/webp'],
-          maximumImageBytes: 524288,
-          gifs: 'GIPHY HTTPS media URLs only',
-          gifSearch: { method: 'GET', path: '/gifs/search', apiKey: 'server-side-only' },
-          voice: 'browser speech transcription to editable text; raw audio is not uploaded'
-        }
-      },
-      capabilities: {
-        roomCreation: true,
-        publicDiscovery: true,
-        privateRooms: true,
-        synchronizedQueueMetadata: true,
-        partyChat: true,
-        memberModeration: true,
-        directWebRtcAudio: true,
-        serverSideOnnxAnalysis: true,
-        serverSideOnnxDjPlanning: true,
-        serverSideOnnxAutoMix: false,
-        liveAutoMixExecution: false,
-        sourcePlaybackCommands: false,
-        synchronizedLyrics: false
-      },
-      unavailableFeatures: {
-        sourcePlaybackCommands: 'The BitChord player-control bridge is not connected yet.',
-        synchronizedLyrics: 'The BitChord lyrics feed is not connected yet.',
-        serverSideOnnxAutoMix: 'ONNX beat analysis and DJ transition planning are available. Live execution still needs the BitChord player-control bridge.'
-      },
-      endpoints: {
-        health: { method: 'GET', path: '/health' },
-        account: { method: 'GET', path: '/account' },
-        createRoom: { method: 'POST', path: '/rooms' },
-        publicRooms: { method: 'GET', path: '/rooms/public' },
-        joinRoom: { method: 'POST', path: '/rooms/{roomId}/join' },
-        roomState: { method: 'GET', path: '/rooms/{roomId}/state' },
-        heartbeat: { method: 'POST', path: '/rooms/{roomId}/heartbeat' },
-        playbackState: { method: 'POST', path: '/rooms/{roomId}/playback' },
-        queue: { method: 'POST', path: '/rooms/{roomId}/queue' },
-        autoMixStatus: { method: 'GET', path: '/rooms/{roomId}/automix/status' },
-        autoMixPrepare: { method: 'POST', path: '/rooms/{roomId}/automix/prepare' },
-        autoMixAnalyze: { method: 'POST', path: '/rooms/{roomId}/automix/analyze/{queueItemId}', contentType: 'application/vnd.bitconnection.pcm-f32le', sampleRate: 22050, channels: 1 },
-        autoMixPlan: { method: 'POST', path: '/rooms/{roomId}/automix/plan' },
-        chat: { method: 'POST', path: '/rooms/{roomId}/chat' },
-        memberModeration: { method: 'POST', path: '/rooms/{roomId}/members/{participantId}/moderate' },
-        gifSearch: { method: 'GET', path: '/gifs/search?q={query}' },
-        signaling: { method: 'POST', path: '/rooms/{roomId}/signals' },
-        leave: { method: 'POST', path: '/rooms/{roomId}/leave' },
-        close: { method: 'POST', path: '/rooms/{roomId}/close' }
-      }
-    });
+    return res.json(buildBitConnectionPartyServiceDescriptor(req, maximum));
   });
 
 

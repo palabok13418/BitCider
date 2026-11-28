@@ -94,6 +94,8 @@ The BitConnection home page displays an environment-specific URL above **Live Di
 
 The service descriptor is not a Cider addon manifest. BitChord must implement a client adapter for the listed BitConnection API routes. State-changing requests still require the documented BitConnection/BitCider account authentication and CSRF checks, or a room-scoped guest bearer credential. Do not treat the descriptor URL itself as a room invitation or as a substitute for authentication.
 
+The `/party` URL now returns the JSON descriptor directly (without an HTTP redirect). All BitConnection API routes answer browser CORS preflights and return credentialed CORS headers only for approved client origins. The built-in origins include the BitChord and Mus-API Deplexo hosts. For a BitChord deployment on another hostname, set `BITCONNECTION_ALLOWED_ORIGINS` on Deplexo to a comma-separated list of exact origins (scheme and hostname, including a non-default port when applicable), for example `https://your-bitchord-host.example`. The BitChord client must use `credentials: 'include'` for account cookies and send the session CSRF header advertised by the descriptor. Wildcard credentialed CORS is deliberately not enabled.
+
 The descriptor reports server-side ONNX analysis as available and live AutoMix execution as unavailable until the BitChord player-control bridge is connected. BitConnection uses Beat This! final0 ONNX plus an ONNX log-mel frontend for beat/downbeat analysis, then builds a harmonic, phrase-aligned transition plan. See [AutoMix architecture and model notes](docs/AUTOMIX.md). The existing room transport still sends party audio directly over WebRTC; only separate host-authorized analysis uploads go to Deplexo.
 
 ## Server-side AutoMix model

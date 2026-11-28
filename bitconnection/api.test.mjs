@@ -1035,11 +1035,16 @@ test('AutoMix endpoints expose host-only analysis and a safe plan-only state', a
 test('BitConnection publishes its Listening Party service descriptor for BitChord discovery', async t => {
   const client = await harness(t);
   const response = await client.request('/party-service', {
-    headers: { Origin: 'https://bitchord.example.test' }
+    headers: { Origin: 'https://bitchord.de.deplexo.com' }
   });
   const manifest = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://bitchord.de.deplexo.com');
+  assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+  assert.deepEqual(manifest.cors, {
+    credentials: 'include',
+    requiredHeaders: ['Authorization', 'Content-Type', 'X-BitConnection-CSRF', 'X-BitCider-CSRF', 'X-BitConnection-Identity']
+  });
   assert.equal(manifest.service, 'BitConnection Listening Party');
   assert.equal(manifest.protocolVersion, 1);
     assert.match(manifest.serviceUrl, /\/party$/);
@@ -1058,9 +1063,35 @@ test('BitConnection publishes its Listening Party service descriptor for BitChor
 
   const preflight = await client.request('/party-service', { method: 'OPTIONS' });
   assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, OPTIONS');
+  assert.equal(preflight.headers.get('access-control-allow-methods'), 'GET, HEAD, POST, OPTIONS');
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
 });
 
+
+test('BitChord cross-origin room requests receive credentialed CORS preflight; unknown origins are rejected', async t => {
+  const client = await harness(t);
+  const origin = 'https://bitchord.de.deplexo.com';
+  const preflight = await client.request('/rooms', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: origin,
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type,x-bitconnection-csrf,x-bitconnection-identity'
+    }
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+  assert.match(preflight.headers.get('access-control-allow-headers') || '', /X-BitConnection-CSRF/i);
+  assert.match(preflight.headers.get('access-control-allow-headers') || '', /X-BitConnection-Identity/i);
+
+  const denied = await client.request('/rooms', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://untrusted.example', 'Access-Control-Request-Method': 'POST' }
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get('access-control-allow-origin'), null);
+});
 
 test('GIF search proxies through Deplexo and never returns the API key to the browser', async t => {
   const calls = [];
