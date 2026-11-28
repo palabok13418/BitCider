@@ -87,6 +87,13 @@ function trackArtwork(track) {
   return '';
 }
 
+function youtubeMusicTrackUrl(track) {
+  const videoId = String(track?.videoId || '').trim();
+  return /^[A-Za-z0-9_-]{11}$/.test(videoId)
+    ? 'https://music.youtube.com/watch?v=' + encodeURIComponent(videoId)
+    : '';
+}
+
 const APPLE_MOTION_LOOKUP_ENDPOINT = 'https://mus-api.de.deplexo.com/api/motion';
 
 const APPLE_AUDIO_VARIANT_LABELS = {
@@ -303,6 +310,7 @@ function PartyRoomExperience({
   const isPlaying = Boolean(playback.isPlaying);
   const art = trackArtwork(track);
   const quality = qualityLabel(track);
+  const youtubeMusicUrl = youtubeMusicTrackUrl(track);
   const filteredAppleCatalogResults = useMemo(() => appleCatalogFormatFilter === 'all'
     ? appleCatalogResults
     : appleCatalogResults.filter(item => item.audioVariants?.includes(appleCatalogFormatFilter)), [appleCatalogResults, appleCatalogFormatFilter]);
@@ -436,7 +444,9 @@ function PartyRoomExperience({
           track
         }, window.location.origin);
       }
-      if (track?.source === 'apple-music' && track?.playbackMode === 'embed') {
+      if (track?.source === 'youtube-music') {
+        setPlaybackMessage('Open this track in YouTube Music. BitConnection shares its metadata but does not play or relay its audio.');
+      } else if (track?.source === 'apple-music' && track?.playbackMode === 'embed') {
         if (!isHost) throw new Error('Only the host can control the Apple Music embedded player.');
         setPlaybackMessage('Use the Apple Music player in the Browser panel for playback controls.');
       } else if (track?.source === 'apple-music') {
@@ -460,6 +470,10 @@ function PartyRoomExperience({
 
   async function seekTo(value) {
     const next = Math.max(0, Math.min(duration || 86400, Number(value) || 0));
+    if (track?.source === 'youtube-music') {
+      setPlaybackMessage('Open this track in YouTube Music to listen. BitConnection does not relay YouTube Music audio.');
+      return;
+    }
     if (track?.source === 'apple-music') {
       setPlaybackMessage('Apple Music is not a party playback source. Find this track in ' + sourceLabel + ' to stream it to guests.');
       return;
@@ -1166,6 +1180,16 @@ function PartyRoomExperience({
         <div className="bc-party-track-copy">
           <strong title={track?.title || ''}>{track?.title || 'Waiting for the next track'}</strong>
           <span title={track?.artist || ''}>{track?.artist || 'Your party soundtrack starts here'}</span>
+          {youtubeMusicUrl && (
+            <a
+              href={youtubeMusicUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', width: 'fit-content', marginTop: 8, padding: '6px 10px', border: '1px solid rgba(255,255,255,.2)', borderRadius: 999, color: 'inherit', fontSize: 12, fontWeight: 650, textDecoration: 'none' }}
+            >
+              Open in YouTube Music ↗
+            </a>
+          )}
         </div>
         <div className="bc-party-timeline">
           <input
@@ -1177,7 +1201,7 @@ function PartyRoomExperience({
             onPointerUp={() => void seekTo(progressSeconds)}
             onKeyUp={() => void seekTo(progressSeconds)}
             aria-label="Playback position"
-            disabled={!duration || track?.source === 'apple-music'}
+            disabled={!duration || track?.source === 'apple-music' || track?.source === 'youtube-music'}
           />
           <div><span>{formatTime(progressSeconds)}</span><span>{formatTime(duration)}</span></div>
         </div>
@@ -1193,9 +1217,9 @@ function PartyRoomExperience({
           quality?.src && <div className="bc-party-quality" aria-label={quality.label || 'Source audio format'}><img src={quality.src} alt={quality.label || ''} title={quality.label || ''}/></div>
         )}
         <div className="bc-party-transport-controls">
-          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || track?.source === 'apple-music'} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
-          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
-          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || track?.source === 'apple-music' || track?.source === 'youtube-music'} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
+          <button className="bc-party-play-toggle" type="button" onClick={() => void runPlaybackAction('toggle')} disabled={!allowPlayback || track?.source === 'youtube-music' || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label={isPlaying ? 'Pause' : 'Play'} title={isPlaying ? 'Pause' : 'Play'}><Icon name={isPlaying ? 'pause' : 'play'} size={25}/></button>
+          <button type="button" onClick={() => void runPlaybackAction('next')} disabled={!allowPlayback || track?.source === 'youtube-music' || (track?.source === 'apple-music' && (!isHost || track?.playbackMode === 'embed'))} aria-label="Next track" title="Next track"><Icon name="next" size={23}/></button>
         </div>
         <div className="bc-party-volume">
           <Icon name="volume" size={17}/>
