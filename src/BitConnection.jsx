@@ -1500,9 +1500,9 @@ function CreateRoomWindow() {
     }
     // authorize() is invoked from the user's Play button gesture. MusicKit
     // owns the subscriber authorization and FairPlay playback session.
-    await music.authorize();
-    await music.setQueue(musicKitQueueDescriptor(track));
-    await music.play();
+    await Reflect.apply(music.authorize, music, []);
+    await Reflect.apply(music.setQueue, music, [musicKitQueueDescriptor(track)]);
+    await Reflect.apply(music.play, music, []);
     const snapshot = musicKitPlaybackSnapshot(music);
     setAppleMusicPlayback(snapshot);
     await publishAppleMusicPlayback({
@@ -1738,7 +1738,7 @@ function CreateRoomWindow() {
     }
 
     setHostAudioError('');
-    player.pause();
+    Reflect.apply(player.pause, player, []);
     await hostStreamEngineRef.current?.destroy?.();
     hostStreamEngineRef.current = null;
     const streamEngine = await attachBitCiderStream(player, streamUrl, {
@@ -1746,7 +1746,7 @@ function CreateRoomWindow() {
       onError: streamError => setHostAudioError(streamError.message || 'The HLS stream encountered an error.')
     });
     hostStreamEngineRef.current = streamEngine;
-    const playPromise = player.play();
+    const playPromise = Reflect.apply(player.play, player, []);
     let startedNewTransport = false;
     let transportPromise = Promise.resolve(hostTransportRef.current);
     if (!hostTransportRef.current || hostAudioModeRef.current !== 'bitmono') {
@@ -1788,7 +1788,7 @@ function CreateRoomWindow() {
       const failedStreamEngine = hostStreamEngineRef.current;
       hostStreamEngineRef.current = null;
       if (failedStreamEngine) await failedStreamEngine.destroy().catch(() => {});
-      player.pause();
+      Reflect.apply(player.pause, player, []);
       setHostAudioState('idle');
       setHostAudioError(error.message || 'Could not start Bit Mono audio for the party.');
       throw error;
@@ -1799,14 +1799,14 @@ function CreateRoomWindow() {
     const player = hostPlayerRef.current;
     if (!player || hostAudioModeRef.current !== 'bitmono') return;
     if (action === 'toggle') {
-      if (player.paused) await player.play();
-      else player.pause();
+      if (player.paused) await Reflect.apply(player.play, player, []);
+      else Reflect.apply(player.pause, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: !player.paused, positionSeconds: player.currentTime || 0 });
     } else if (action === 'pause') {
       player.pause();
       await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds: player.currentTime || 0 });
     } else if (action === 'play') {
-      await player.play();
+      await Reflect.apply(player.play, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: true, positionSeconds: player.currentTime || 0 });
     }
     setRoomState(await hostSession.getState());
@@ -1832,7 +1832,7 @@ function CreateRoomWindow() {
       hostStreamEngineRef.current = null;
       player.pause();
       player.removeAttribute('src');
-      player.load();
+      Reflect.apply(player.load, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds });
       if (hostSession?.getState) setRoomState(await hostSession.getState());
     }
