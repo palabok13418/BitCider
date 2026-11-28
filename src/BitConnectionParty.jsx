@@ -1191,7 +1191,6 @@ function PartyRoomExperience({
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
             <div className="bc-party-inline-status" role="status">Party playback source: {sourceLabel}. Apple Music is available here for catalogue discovery and timed lyrics only.</div>
-}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
               <Icon name="music" size={17}/>
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
