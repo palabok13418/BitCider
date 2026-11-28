@@ -9,8 +9,8 @@ test('AutoMix skips optional CUDA downloads while retaining its CPU runtime', as
     readFile(new URL('./bitconnection/automix.mjs', import.meta.url), 'utf8')
   ]);
 
-  assert.match(npmrc, /^onnxruntime-node-install=skip\\s*$/m);
+  assert.ok(npmrc.split(/\r?\n/).includes('onnxruntime-node-install=skip'));
   assert.equal(packageJson.dependencies['onnxruntime-node'], '1.31.1');
-  assert.match(autoMixSource, /executionProviders:\\s*\\[\\s*['"]cpu['"]\\s*\\]/);
-  assert.match(autoMixSource, /import\\(['"]onnxruntime-node['"]\\)/);
+  assert.ok(autoMixSource.includes("executionProviders: ['cpu']"));
+  assert.ok(autoMixSource.includes("import('onnxruntime-node')"));
 });
