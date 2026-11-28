@@ -1190,7 +1190,7 @@ function PartyRoomExperience({
             <span className="bc-party-quality-note">Apple selects the active format using its playback settings, device support and network conditions.</span>
           </div>
         ) : (
-          {quality?.src && <div className="bc-party-quality" aria-label={quality.label || 'Source audio format'}><img src={quality.src} alt={quality.label || ''} title={quality.label || ''}/></div>}
+          quality?.src && <div className="bc-party-quality" aria-label={quality.label || 'Source audio format'}><img src={quality.src} alt={quality.label || ''} title={quality.label || ''}/></div>
         )}
         <div className="bc-party-transport-controls">
           <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || track?.source === 'apple-music'} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
