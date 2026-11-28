@@ -1389,11 +1389,18 @@ function CreateRoomWindow() {
           if (payload.error === 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED') {
             if (active) {
               setAppleMusicPlaybackStatus('embed-ready');
-              setAppleMusicPlaybackError('Apple Music embedded playback is ready. Sign in to Apple Music inside the embedded player for full songs.');
+              setAppleMusicPlaybackError('');
             }
             return;
           }
           throw new Error(payload.message || 'Direct Apple Music playback is unavailable.');
+        }
+        if (payload.configured !== true) {
+          if (active) {
+            setAppleMusicPlaybackStatus('embed-ready');
+            setAppleMusicPlaybackError('');
+          }
+          return;
         }
         const music = await getMusicKitPlayer(payload);
         if (!active) return;
