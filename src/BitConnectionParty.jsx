@@ -4,8 +4,8 @@ import './bitconnection-party.css';
 import { qrcodegen } from './qrcodegen';
 
 
-function Icon({ name, size = 18 }) {
-  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
+function Icon({ name, size = 18, className = '' }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, ...(className ? { className } : {}) };
   const paths = {
     previous: <><path d="M6 5v14" /><path d="m19 5-9 7 9 7z" /></>,
     next: <><path d="M18 5v14" /><path d="m5 5 9 7-9 7z" /></>,
@@ -25,7 +25,10 @@ function Icon({ name, size = 18 }) {
     copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" /></>,
     crown: <><path d="m2 8 5 4 5-8 5 8 5-4-2 12H4z" /><path d="M4 20h16" /></>,
     grip: <><path d="M9 5v14M15 5v14" /></>,
-    more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>
+    more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
+    heart: <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" />,
+    library: <><path d="M4 4.5h15a1.5 1.5 0 0 1 1.5 1.5v13.5H5.5A1.5 1.5 0 0 1 4 18z"/><path d="M4 18a2 2 0 0 1 2-2h14.5"/><path d="M8 8h8M8 11.5h8"/></>,
+    back: <><path d="m15 18-6-6 6-6"/><path d="M9 12h12"/></>
   };
   return <svg {...common}>{paths[name] || <circle cx="12" cy="12" r="8" />}</svg>;
 }
@@ -159,6 +162,19 @@ function parseMoreLikeShelfTitle(value) {
   return { term: match[1].trim() + ' - ' + match[2].toUpperCase(), entity: kind === 'song' ? 'song' : 'album' };
 }
 
+function isAppleMusicPhone() {
+  try {
+    if (typeof navigator === 'undefined') return false;
+    if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') return navigator.userAgentData.mobile;
+    return /iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|IEMobile/i.test(String(navigator.userAgent || ''));
+  } catch { return false; }
+}
+function storefrontFromAppleUrl(value) {
+  try {
+    const segments = new URL(String(value || '')).pathname.split('/').filter(Boolean);
+    return /^[a-z]{2}$/i.test(segments[0] || '') ? segments[0].toLowerCase() : 'us';
+  } catch { return 'us'; }
+}
 function safeAppleMotionMediaUrl(value) {
   try {
     const url = new URL(String(value || '').trim());
@@ -237,6 +253,16 @@ function PartyRoomExperience({
   const [browserMotionById, setBrowserMotionById] = useState({});
   const [browserSectionArtwork, setBrowserSectionArtwork] = useState({});
   const [browserBloomColors, setBrowserBloomColors] = useState({});
+  const [browserIdentityHeaders, setBrowserIdentityHeaders] = useState({});
+  const [browserSelectedRelease, setBrowserSelectedRelease] = useState(null);
+  const [browserReleaseData, setBrowserReleaseData] = useState(null);
+  const [browserReleaseTracks, setBrowserReleaseTracks] = useState([]);
+  const [browserReleaseLoading, setBrowserReleaseLoading] = useState(false);
+  const [browserReleaseError, setBrowserReleaseError] = useState('');
+  const [browserReleaseVisible, setBrowserReleaseVisible] = useState(false);
+  const [browserReleaseOrigin, setBrowserReleaseOrigin] = useState(null);
+  const [browserLibraryBusy, setBrowserLibraryBusy] = useState(false);
+  const browserPanelRef = useRef(null);
   const [browserAppleConnected, setBrowserAppleConnected] = useState(false);
   const [bitMonoSearches, setBitMonoSearches] = useState({});
   const [bitMonoLoading, setBitMonoLoading] = useState({});
@@ -628,30 +654,36 @@ function PartyRoomExperience({
 
 
 
-  async function resolveRecommendationVisuals(recommendations) {
+  async function resolveRecommendationVisuals(recommendations, identityHeaders = browserIdentityHeaders) {
     const rows = Array.isArray(recommendations) ? recommendations.slice(0, 8) : [];
     const motionEntries = [];
     const artworkEntries = [];
+    const phone = isAppleMusicPhone();
     await Promise.all(rows.map(async (recommendation, index) => {
       const key = recommendationKey(recommendation, index);
       const tasks = [];
       if (recommendation?.url && recommendation.artworkUrl) {
         tasks.push((async () => {
           try {
-            const response = await fetch(APPLE_MOTION_LOOKUP_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'omit', cache: 'no-store', body: JSON.stringify({ appleUrl: recommendation.url, storefront: /^[a-z]{2}$/.test(String(appleMusicStorefront || '')) ? appleMusicStorefront : 'us' }) });
+            const query = new URLSearchParams({ url: recommendation.url });
+            const response = await fetch('/api/bitconnection/account/providers/apple-music/motion?' + query, {
+              headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
+            });
             if (!response.ok) return;
             const payload = await response.json().catch(() => ({}));
-            const motionUrl = safeAppleMotionMediaUrl(payload.animatedUrl1080 || payload.animatedUrl || payload.animatedUrl2160 || '');
-            if (motionUrl) motionEntries.push([key, { url: motionUrl, poster: recommendation.artworkUrl }]);
-          } catch { /* Motion is optional; retain the static cover. */ }
+            const motionUrl = safeAppleMotionMediaUrl(phone ? payload.animatedUrlTall : payload.animatedUrlSquare);
+            if (motionUrl) motionEntries.push([key, { url: motionUrl, poster: recommendation.artworkUrl, variant: phone ? 'tall' : 'square' }]);
+          } catch { /* Keep the Apple still image if no device-specific animation is returned. */ }
         })());
       }
       const moreLike = parseMoreLikeShelfTitle(recommendation?.title);
       if (moreLike) {
         tasks.push((async () => {
           try {
-            const query = new URLSearchParams({ term: moreLike.term, entity: moreLike.entity, storefront: /^[a-z]{2}$/.test(String(appleMusicStorefront || '')) ? appleMusicStorefront : 'us', limit: '8' });
-            const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-search?' + query, { credentials: 'same-origin', cache: 'no-store' });
+            const query = new URLSearchParams({ term: moreLike.term, entity: moreLike.entity, storefront: storefrontFromAppleUrl(recommendation.url), limit: '8' });
+            const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-search?' + query, {
+              headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
+            });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok) return;
             const normalize = value => String(value || '').toLowerCase().replace(/\b(ep|song|album)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -661,7 +693,7 @@ function PartyRoomExperience({
               return score(right) - score(left);
             })[0];
             if (candidate?.artworkUrl) artworkEntries.push([key, candidate.artworkUrl]);
-          } catch { /* Without an exact Apple result, leave the section heading text-only. */ }
+          } catch { /* Do not invent section artwork when Apple has no match. */ }
         })());
       }
       await Promise.all(tasks);
@@ -687,6 +719,12 @@ function PartyRoomExperience({
     setBrowserMotionById({});
     setBrowserSectionArtwork({});
     setBrowserBloomColors({});
+    setBrowserIdentityHeaders({});
+    setBrowserSelectedRelease(null);
+    setBrowserReleaseData(null);
+    setBrowserReleaseTracks([]);
+    setBrowserReleaseVisible(false);
+    setBrowserReleaseError('');
     setBrowserAppleConnected(false);
     try {
       const accountResponse = await fetch('/api/bitconnection/account', {
@@ -712,6 +750,7 @@ function PartyRoomExperience({
         setBrowserMessage('Sign in to BitAccount Center to see your personal Apple Music recommendations.');
         return;
       }
+      setBrowserIdentityHeaders(identityHeaders);
 
       const statusResponse = await fetch('/api/bitconnection/account/providers/apple-music', {
         headers: identityHeaders, credentials: 'same-origin', cache: 'no-store'
@@ -735,7 +774,7 @@ function PartyRoomExperience({
       if (!response.ok) throw new Error(payload.message || 'Apple Music recommendations could not be loaded.');
       const recommendations = Array.isArray(payload.recommendations) ? payload.recommendations : [];
       setBrowserRecommendations(recommendations);
-      void resolveRecommendationVisuals(recommendations);
+      void resolveRecommendationVisuals(recommendations, identityHeaders);
       setBrowserAppleConnected(true);
       if (!payload.recommendations?.length) setBrowserMessage('Apple Music did not return any recommendations for this account yet.');
     } catch (error) {
@@ -833,40 +872,30 @@ function PartyRoomExperience({
 
   async function prepareBitMonoTrack(track) {
     const id = String(track?.id || '');
-    if (!id || id.length > 180) return;
-    if (playbackSource === 'bitmono' && !/^(?:mono_|dzr_)[A-Za-z0-9_-]{1,128}$/.test(id)) return;
+    if (!id || id.length > 180) return null;
+    if (playbackSource === 'bitmono' && !/^(?:mono_|dzr_)[A-Za-z0-9_-]{1,128}$/.test(id)) return null;
     setBitMonoPrepareBusy(previous => ({ ...previous, [id]: true }));
     setPlaybackMessage('');
     try {
       let payload;
       let credentials = 'omit';
       if (playbackSource === 'bitmono') {
-        const response = await fetch('/bitmono/stream/' + encodeURIComponent(id) + '?quality=auto', {
-          credentials: 'same-origin', cache: 'no-store'
-        });
+        const response = await fetch('/bitmono/stream/' + encodeURIComponent(id) + '?quality=auto', { credentials: 'same-origin', cache: 'no-store' });
         payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.message || payload.error || 'BitMono could not prepare this track.');
       } else {
         const base = selectedSourceBaseUrl();
         if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
         if (playbackSource === 'ccustom' && !customSourceManifestUrl.trim()) throw new Error('Add your CCustom manifest URL in BitAccount Center.');
-        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
-          throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
-        }
+        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
         credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
-        const response = await fetch(base + '/stream/' + encodeURIComponent(id) + (playbackSource === 'cider' ? '?quality=high' : ''), {
-          credentials, cache: 'no-store'
-        });
+        const response = await fetch(base + '/stream/' + encodeURIComponent(id) + (playbackSource === 'cider' ? '?quality=high' : ''), { credentials, cache: 'no-store' });
         payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.message || payload.error || 'The selected add-on could not prepare this track.');
       }
       const resolved = new URL(payload.url || payload.streamUrl || '', playbackSource === 'bitmono' ? window.location.origin : selectedSourceBaseUrl() + '/');
-      if (playbackSource === 'bitmono' && !resolved.pathname.startsWith('/bitmono/audio/')) {
-        throw new Error('BitMono returned an invalid audio cache URL.');
-      }
-      if (playbackSource !== 'bitmono' && resolved.protocol !== 'https:' && resolved.origin !== window.location.origin) {
-        throw new Error('The selected source returned an insecure stream URL.');
-      }
+      if (playbackSource === 'bitmono' && !resolved.pathname.startsWith('/bitmono/audio/')) throw new Error('BitMono returned an invalid audio cache URL.');
+      if (playbackSource !== 'bitmono' && resolved.protocol !== 'https:' && resolved.origin !== window.location.origin) throw new Error('The selected source returned an insecure stream URL.');
       const stream = {
         url: playbackSource === 'bitmono' ? resolved.pathname + resolved.search : resolved.href,
         track: {
@@ -883,19 +912,19 @@ function PartyRoomExperience({
         quality: String(payload.audioQuality || payload.quality || track.audioQuality || ''),
         mimeType: String(payload.mimeType || payload.contentType || track.mimeType || '')
       };
-      if (!stream.track.title || !stream.track.artist || !Number.isFinite(stream.track.durationSeconds) || stream.track.durationSeconds <= 0) {
-        throw new Error('The selected source returned incomplete track metadata.');
-      }
+      if (!stream.track.title || !stream.track.artist || !Number.isFinite(stream.track.durationSeconds) || stream.track.durationSeconds <= 0) throw new Error('The selected source returned incomplete track metadata.');
       setBitMonoPrepared(previous => ({ ...previous, [id]: stream }));
       setPlaybackMessage(({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource]) + ' audio is prepared and ready for the host.');
+      return stream;
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not prepare this track.');
+      return null;
     } finally {
       setBitMonoPrepareBusy(previous => ({ ...previous, [id]: false }));
     }
   }
 
-  async function addBitMonoTrackToQueue(track) {
+    async function addBitMonoTrackToQueue(track) {
     const durationSeconds = Number(track.duration || track.durationSeconds || 0);
     try {
       await session.updateQueue({
@@ -920,22 +949,17 @@ function PartyRoomExperience({
   }
 
 
-  async function startPreparedBitMonoTrack(track) {
-    const prepared = bitMonoPrepared[String(track.id || '')];
+  async function startPreparedBitMonoTrack(track, preparedOverride = null) {
+    const prepared = preparedOverride || bitMonoPrepared[String(track.id || '')];
     if (!prepared) return;
-    if (!isHost) {
-      setPlaybackMessage('Only the host can start the selected audio source for everyone.');
-      return;
-    }
+    if (!isHost) { setPlaybackMessage('Only the host can start the selected audio source for everyone.'); return; }
     try {
       setQueueBusy(true);
       await onPlayPartySourceTrack(prepared.track, prepared.url, prepared.mimeType, playbackSource);
       setPlaybackMessage(({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource]) + ' is now playing for the party.');
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not start ' + sourceLabel + ' playback.');
-    } finally {
-      setQueueBusy(false);
-    }
+    } finally { setQueueBusy(false); }
   }
 
   function openBrowser() {
@@ -943,53 +967,176 @@ function PartyRoomExperience({
     void loadAppleMusicBrowser();
   }
 
-  async function searchRecommendationInBitMono(item) {
+  async function searchRecommendationInBitMono(item, options = {}) {
     const key = String(item?.id || item?.title || '').slice(0, 180);
-    if (!key) return;
+    if (!key) return [];
     setBitMonoLoading(previous => ({ ...previous, [key]: true }));
-    setBitMonoSearches(previous => ({ ...previous, [key]: null }));
+    if (!options.silent) setBitMonoSearches(previous => ({ ...previous, [key]: null }));
     try {
       const query = [item.title, item.artist].filter(Boolean).join(' ').trim();
       if (!query) throw new Error('This recommendation is missing a title or artist.');
-      let url;
-      let credentials = 'omit';
+      let url, credentials = 'omit';
       if (playbackSource === 'bitmono') {
         url = '/bitmono/search?' + new URLSearchParams({ q: query });
         credentials = 'same-origin';
       } else {
         const base = selectedSourceBaseUrl();
         if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
-        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
-          throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
-        }
+        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
         url = base + '/search?' + new URLSearchParams({ q: query });
         credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
       }
       const response = await fetch(url, { credentials, cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || payload.error || (sourceLabel + ' search is unavailable.'));
-      const tracks = playbackSource === 'bitmono'
-        ? (Array.isArray(payload.tracks) ? payload.tracks : [])
-        : normalizeSourceSearchRows(payload);
-      const appleMusicSongId = item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '';
-      let appleMusicStorefront = 'us';
-      try {
-        const segments = new URL(item.url).pathname.split('/').filter(Boolean);
-        if (/^[a-z]{2}$/i.test(segments[0] || '')) appleMusicStorefront = segments[0].toLowerCase();
-      } catch { /* Default to the US storefront when the catalog URL is absent. */ }
+      const tracks = playbackSource === 'bitmono' ? (Array.isArray(payload.tracks) ? payload.tracks : []) : normalizeSourceSearchRows(payload);
+      const appleMusicSongId = item.type === 'songs' || item.type === 'song'
+        ? (/^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '') : '';
+      const appleMusicStorefront = storefrontFromAppleUrl(item.url);
       const matchedTracks = tracks.map(track => ({
         ...track,
         ...(appleMusicSongId ? { appleMusicSongId, appleMusicStorefront } : {})
       }));
-      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: matchedTracks, error: '' } }));
-      setBrowserQuery(query);
-      setBrowserSearchResults(matchedTracks);
-      setBrowserSearchError(matchedTracks.length ? '' : 'No ' + sourceLabel + ' matches were found for this recommendation.');
+      if (!options.silent) {
+        setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: matchedTracks, error: '' } }));
+        setBrowserQuery(query);
+        setBrowserSearchResults(matchedTracks);
+        setBrowserSearchError(matchedTracks.length ? '' : 'No ' + sourceLabel + ' matches were found for this recommendation.');
+      }
+      return matchedTracks;
     } catch (error) {
-      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || sourceLabel + ' search failed.' } }));
-    } finally {
-      setBitMonoLoading(previous => ({ ...previous, [key]: false }));
-    }
+      if (!options.silent) setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || sourceLabel + ' search failed.' } }));
+      else setPlaybackMessage(error.message || sourceLabel + ' search failed.');
+      return [];
+    } finally { setBitMonoLoading(previous => ({ ...previous, [key]: false })); }
+  }
+
+  function openBrowserRelease(item, event) {
+    const panelRect = browserPanelRef.current?.getBoundingClientRect?.();
+    const coverRect = event?.currentTarget?.getBoundingClientRect?.();
+    const compactLayout = typeof window !== 'undefined' && window.matchMedia('(max-width:760px)').matches;
+    const viewPadding = compactLayout ? 15 : Math.min(34, Math.max(18, (panelRect?.width || 900) * .021));
+    const targetLeft = viewPadding + (compactLayout ? 6 : 24);
+    const targetTop = viewPadding + (compactLayout ? 36 : 20);
+    const targetSize = compactLayout
+      ? (window.innerWidth <= 420 ? 104 : Math.min(154, Math.max(116, window.innerWidth * .3)))
+      : Math.min(232, Math.max(176, window.innerWidth * .2));
+    const sourceLeft = coverRect && panelRect ? coverRect.left - panelRect.left : targetLeft;
+    const sourceTop = coverRect && panelRect ? coverRect.top - panelRect.top : targetTop;
+    const sourceWidth = coverRect?.width || targetSize, sourceHeight = coverRect?.height || sourceWidth;
+    const origin = {
+      x: coverRect && panelRect ? coverRect.left + sourceWidth / 2 - panelRect.left : targetLeft + targetSize / 2,
+      y: coverRect && panelRect ? coverRect.top + sourceHeight / 2 - panelRect.top : targetTop + targetSize / 2,
+      fromX: sourceLeft - targetLeft, fromY: sourceTop - targetTop, scale: sourceWidth / targetSize
+    };
+    const rawType = String(item?.type || '').toLowerCase();
+    const type = rawType === 'album' || rawType === 'albums' ? 'albums' : 'songs';
+    const selected = { ...item, type, storefront: storefrontFromAppleUrl(item?.url) };
+    setBrowserSelectedRelease(selected);
+    setBrowserReleaseData(null);
+    setBrowserReleaseTracks([]);
+    setBrowserReleaseError('');
+    setBrowserReleaseOrigin(origin);
+    setBrowserReleaseVisible(false);
+    setBrowserReleaseLoading(true);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => setBrowserReleaseVisible(true)));
+    (async () => {
+      try {
+        const query = new URLSearchParams({ id: String(item?.id || ''), type, storefront: selected.storefront });
+        const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-item?' + query, {
+          headers: browserIdentityHeaders, credentials: 'same-origin', cache: 'no-store'
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || 'Apple Music could not load this release.');
+        setBrowserReleaseData(payload.release || selected);
+        setBrowserReleaseTracks(Array.isArray(payload.tracks) ? payload.tracks : []);
+      } catch (error) {
+        const fallback = type === 'songs' ? [{
+          ...selected, appleMusicSongId: String(selected.id || ''),
+          appleMusicStorefront: selected.storefront, durationSeconds: Number(selected.durationSeconds || 0)
+        }] : [];
+        setBrowserReleaseData(selected);
+        setBrowserReleaseTracks(fallback);
+        setBrowserReleaseError(error.message || 'The Apple Music tracklist could not be loaded.');
+      } finally { setBrowserReleaseLoading(false); }
+    })();
+  }
+
+  async function playBrowserTrack(track) {
+    if (!isHost) { setPlaybackMessage('Only the host can start a selected Browser track for everyone.'); return; }
+    setBrowserOpen(false);
+    setBrowserSelectedRelease(null);
+    try {
+      const matches = await searchRecommendationInBitMono(track, { silent: true });
+      if (!matches.length) throw new Error('No ' + sourceLabel + ' match was found for this Apple Music song.');
+      const prepared = await prepareBitMonoTrack(matches[0]);
+      if (!prepared) throw new Error('The selected ' + sourceLabel + ' track could not be prepared.');
+      await startPreparedBitMonoTrack(matches[0], prepared);
+    } catch (error) { setPlaybackMessage(error.message || 'Could not load the selected Browser track.'); }
+  }
+
+  async function playBrowserRelease(mode = 'play') {
+    if (!isHost) { setPlaybackMessage('Only the host can start a selected Browser release for everyone.'); return; }
+    const appleTracks = [...browserReleaseTracks];
+    if (!appleTracks.length) return;
+    if (mode === 'shuffle') appleTracks.sort(() => Math.random() - .5);
+    setBrowserOpen(false);
+    setBrowserSelectedRelease(null);
+    try {
+      const resolvedTracks = [];
+      for (const appleTrack of appleTracks) {
+        const matches = await searchRecommendationInBitMono(appleTrack, { silent: true });
+        if (matches.length) resolvedTracks.push(matches[0]);
+      }
+      if (!resolvedTracks.length) throw new Error('No ' + sourceLabel + ' matches were found for this Apple Music release.');
+      const prepared = await prepareBitMonoTrack(resolvedTracks[0]);
+      if (!prepared) throw new Error('The first ' + sourceLabel + ' match could not be prepared.');
+      await startPreparedBitMonoTrack(resolvedTracks[0], prepared);
+      for (const queuedTrack of resolvedTracks.slice(1)) {
+        try {
+          await session.updateQueue({
+            action: 'add',
+            track: {
+              source: playbackSource, id: queuedTrack.id, title: queuedTrack.title, artist: queuedTrack.artist,
+              durationSeconds: Number(queuedTrack.duration || queuedTrack.durationSeconds || 0),
+              artworkURL: queuedTrack.artworkURL || queuedTrack.thumbnailUrl || queuedTrack.artworkUrl || '',
+              audioQuality: queuedTrack.audioQuality || queuedTrack.quality || '',
+              ...( /^[0-9]{1,20}$/.test(String(queuedTrack.appleMusicSongId || '')) ? { appleMusicSongId: String(queuedTrack.appleMusicSongId) } : {}),
+              ...( /^[a-z]{2}$/.test(String(queuedTrack.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(queuedTrack.appleMusicStorefront).toLowerCase() } : {})
+            }
+          });
+        } catch { /* Keep the first song playing if the remaining queue cannot be added. */ }
+      }
+      await refreshState();
+    } catch (error) { setPlaybackMessage(error.message || 'Could not start the selected Apple Music release.'); }
+  }
+
+  async function addSelectedReleaseToLibrary() {
+    const release = browserReleaseData || browserSelectedRelease;
+    if (!release || !/^[0-9]{1,20}$/.test(String(release.id || '')) || browserLibraryBusy) return;
+    setBrowserLibraryBusy(true);
+    try {
+      const csrfResponse = await fetch('/api/bitconnection/account', {
+        headers: browserIdentityHeaders, credentials: 'same-origin', cache: 'no-store'
+      });
+      const csrfPayload = await csrfResponse.json().catch(() => ({}));
+      if (!csrfResponse.ok || !csrfPayload.csrfToken) throw new Error(csrfPayload.message || 'Could not authorize the Apple Music library action.');
+      const response = await fetch('/api/bitconnection/account/providers/apple-music/library', {
+        method: 'POST',
+        headers: { ...browserIdentityHeaders, 'Content-Type': 'application/json', 'X-BitConnection-CSRF': csrfPayload.csrfToken },
+        credentials: 'same-origin', cache: 'no-store',
+        body: JSON.stringify({
+          id: String(release.id),
+          type: release.type === 'albums' || release.type === 'album' ? 'albums' : 'songs',
+          storefront: release.storefront || storefrontFromAppleUrl(release.url)
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Apple Music could not add this release to your library.');
+      setBrowserReleaseData(previous => previous ? { ...previous, inLibrary: true } : previous);
+      setPlaybackMessage('Added to your Apple Music library.');
+    } catch (error) { setBrowserReleaseError(error.message || 'Could not add this release to your Apple Music library.'); }
+    finally { setBrowserLibraryBusy(false); }
   }
 
   const lyrics = appleMusicLyrics.length
@@ -1245,7 +1392,8 @@ function PartyRoomExperience({
       )}
       {browserOpen && createPortal(
         <div className="bc-party-browser-overlay" role="dialog" aria-modal="true" aria-label="Party Audio Browser" onMouseDown={event => { if (event.target === event.currentTarget) setBrowserOpen(false); }}>
-          <section className="bc-party-browser-panel">
+          <section className="bc-party-browser-panel" ref={browserPanelRef}>
+            <div className={'bc-party-browser-browsing' + (browserSelectedRelease ? ' is-exiting' : '')}>
             <header className="bc-party-browser-heading">
               <div>
                 <h2>Browse</h2>
@@ -1280,7 +1428,7 @@ function PartyRoomExperience({
                     const id = String(item.id || '');
                     const bloomKey = 'search:' + id;
                     return (
-                      <button className="bc-party-browser-cover-tile" type="button" key={id} style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={() => void searchRecommendationInBitMono(item)} aria-label={'Find ' + item.title + ' by ' + item.artist + ' in ' + sourceLabel}>
+                      <button className="bc-party-browser-cover-tile" type="button" key={id} style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={event => openBrowserRelease(item, event)} aria-label={'View ' + item.title + ' by ' + item.artist}>
                         {item.artworkUrl ? <img src={item.artworkUrl.replace('{w}', '600').replace('{h}', '600')} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(bloomKey, event)}/> : <span className="bc-party-browser-cover-placeholder"><Icon name="music" size={24}/></span>}
                         <span className="bc-party-browser-cover-bloom"><strong>{item.title}</strong><small>{item.artist}</small></span>
                       </button>
@@ -1309,10 +1457,9 @@ function PartyRoomExperience({
                         const motion = browserMotionById[key];
                         if (!recommendation.artworkUrl) return null;
                         return (
-                          <button className="bc-party-browser-featured-tile" type="button" key={key} style={{ '--bc-party-bloom': browserBloomColors[key] || 'rgba(222, 104, 150, .88)' }} onClick={() => scrollToRecommendation(index)} aria-label={'View ' + recommendation.title}>
-                            <img className="bc-party-browser-cover-poster" src={recommendation.artworkUrl} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(key, event)}/>
+                          <button className={'bc-party-browser-featured-tile' + (isAppleMusicPhone() ? ' is-phone' : ' is-square')} type="button" key={key} onClick={() => scrollToRecommendation(index)} aria-label={'View ' + recommendation.title}>
+                            <img className="bc-party-browser-cover-poster" src={recommendation.artworkUrl} alt="" loading="lazy"/>
                             {motion?.url && <video className="bc-party-browser-cover-motion" src={motion.url} poster={motion.poster || recommendation.artworkUrl} muted loop autoPlay playsInline preload="metadata" onError={() => setBrowserMotionById(previous => ({ ...previous, [key]: { ...previous[key], url: '' } }))}/>}
-                            <span className="bc-party-browser-cover-bloom"><strong>{recommendation.title}</strong><small>Apple Music playlist</small></span>
                           </button>
                         );
                       })}
@@ -1336,7 +1483,7 @@ function PartyRoomExperience({
                               const search = bitMonoSearches[itemKey];
                               return (
                                 <div className="bc-party-browser-item-wrap" key={itemKey}>
-                                  <button className="bc-party-browser-cover-tile" type="button" style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={() => void searchRecommendationInBitMono(item)} aria-label={'Find ' + item.title + ' by ' + item.artist + ' in ' + sourceLabel}>
+                                  <button className="bc-party-browser-cover-tile" type="button" style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={event => openBrowserRelease(item, event)} aria-label={'View ' + item.title + ' by ' + item.artist}>
                                     {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(bloomKey, event)}/> : <span className="bc-party-browser-cover-placeholder"><Icon name="music" size={24}/></span>}
                                     <span className="bc-party-browser-cover-bloom"><strong>{item.title}</strong><small>{item.artist || item.album || 'Apple Music'}</small></span>
                                   </button>
@@ -1366,6 +1513,58 @@ function PartyRoomExperience({
                 </div>
               )}
             </div>
+            </div>
+            {browserSelectedRelease && (
+              <section
+                className={'bc-party-browser-release-view' + (browserReleaseVisible ? ' is-visible' : '')}
+                style={browserReleaseOrigin ? {
+                  '--bc-release-origin-x': browserReleaseOrigin.x + 'px',
+                  '--bc-release-origin-y': browserReleaseOrigin.y + 'px',
+                  '--bc-release-from-x': browserReleaseOrigin.fromX + 'px',
+                  '--bc-release-from-y': browserReleaseOrigin.fromY + 'px',
+                  '--bc-release-from-scale': browserReleaseOrigin.scale
+                } : undefined}
+                aria-label={((browserReleaseData || browserSelectedRelease).title || 'Release') + ' details'}
+              >
+                <header className="bc-party-browser-release-header">
+                  <button className="bc-party-browser-release-back" type="button" onClick={() => { setBrowserSelectedRelease(null); setBrowserReleaseVisible(false); }} aria-label="Back to Browser"><Icon name="back" size={19}/></button>
+                  <div className="bc-party-browser-release-cover">
+                    <img src={(browserReleaseData || browserSelectedRelease).artworkUrl || browserSelectedRelease.artworkUrl} alt=""/>
+                  </div>
+                  <div className="bc-party-browser-release-heading">
+                    <span>{browserSelectedRelease.type === 'albums' ? 'ALBUM / EP' : 'SONG'}</span>
+                    <h2>{(browserReleaseData || browserSelectedRelease).title}</h2>
+                    <p>{(browserReleaseData || browserSelectedRelease).artist || browserSelectedRelease.artist || 'Apple Music'}</p>
+                    <div className="bc-party-browser-release-actions">
+                      <button type="button" onClick={() => void playBrowserRelease('shuffle')} disabled={!browserReleaseTracks.length || browserReleaseLoading || !isHost}><Icon name="shuffle" size={16}/>Shuffle</button>
+                      <button type="button" onClick={() => void playBrowserRelease('play')} disabled={!browserReleaseTracks.length || browserReleaseLoading || !isHost}><Icon name="play" size={16}/>Play</button>
+                      <button type="button" onClick={() => void addSelectedReleaseToLibrary()} disabled={browserLibraryBusy}><Icon name="library" size={16}/>{browserLibraryBusy ? 'Adding…' : 'Add to Library'}</button>
+                    </div>
+                  </div>
+                </header>
+                <div className="bc-party-browser-release-tracklist">
+                  <div className="bc-party-browser-release-tracklist-heading"><strong>Songs</strong><span>{browserReleaseTracks.length ? browserReleaseTracks.length + ' songs' : ''}</span></div>
+                  {browserReleaseLoading && <p className="bc-party-browser-empty-copy">Loading Apple Music tracklist…</p>}
+                  {!browserReleaseLoading && browserReleaseError && <p className="bc-party-browser-empty-copy is-error">{browserReleaseError}</p>}
+                  {!browserReleaseLoading && browserReleaseTracks.map((song, index) => (
+                    <button className="bc-party-browser-release-track" type="button" key={String(song.id || index)} onClick={() => void playBrowserTrack(song)} disabled={!isHost}>
+                      <span className="bc-party-browser-release-track-number"><span>{song.trackNumber || index + 1}</span><i><Icon name="play" size={15}/></i></span>
+                      <span className="bc-party-browser-release-track-title">
+                        <strong>{song.title}</strong>
+                        <span className="bc-party-browser-release-track-flags">
+                          {typeof song.isFavorited === 'boolean' && <Icon name="heart" size={13} className={song.isFavorited ? 'is-active' : 'is-inactive'}/>}
+                          {typeof song.inLibrary === 'boolean' && <Icon name="library" size={13} className={song.inLibrary ? 'is-active' : 'is-inactive'}/>}
+                        </span>
+                      </span>
+                      <span className="bc-party-browser-release-track-analysis"><strong>{song.bpm == null ? '—' : Math.round(song.bpm) + ' BPM'}</strong><small>{song.key || '—'}</small></span>
+                      <span className="bc-party-browser-release-track-duration">{formatTime(song.durationSeconds)}</span>
+                    </button>
+                  ))}
+                  {!browserReleaseLoading && !browserReleaseTracks.length && <p className="bc-party-browser-empty-copy">Apple Music did not return individual songs for this release.</p>}
+                </div>
+                <button className="bc-party-browser-release-close" type="button" onClick={() => { setBrowserSelectedRelease(null); setBrowserReleaseVisible(false); }} aria-label="Close release details"><Icon name="close" size={18}/></button>
+              </section>
+            )}
           </section>
         </div>,
         document.body

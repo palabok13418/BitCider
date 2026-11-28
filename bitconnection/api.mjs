@@ -1257,6 +1257,51 @@ export function createBitConnectionRouter({
     };
   }
 
+
+  function safeAppleMotionVideoUrl(value) {
+    try {
+      const url = new URL(String(value || '').trim());
+      const host = url.hostname.toLowerCase();
+      const appleHost = host === 'mvod.itunes.apple.com'
+        || host.endsWith('.itunes.apple.com')
+        || host.endsWith('.mzstatic.com');
+      return url.protocol === 'https:' && appleHost && !url.username && !url.password
+        && /\.(?:mp4|m4v|mov|webm)(?:[?#]|$)/i.test(url.pathname + url.search)
+        ? url.toString() : '';
+    } catch { return ''; }
+  }
+
+  function appleEditorialVideoUrl(editorialVideo, variant) {
+    const candidates = variant === 'tall'
+      ? [editorialVideo?.motionDetailTall?.video, editorialVideo?.motionDetailPortrait?.video]
+      : [
+          editorialVideo?.motionDetailSquare?.video,
+          editorialVideo?.motionSquareVideo1x1?.video,
+          editorialVideo?.motionDetailSquareVideo1x1?.video,
+          editorialVideo?.motionVideo?.video
+        ];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string') {
+        const safe = safeAppleMotionVideoUrl(candidate);
+        if (safe) return safe;
+      }
+      if (!candidate || typeof candidate !== 'object') continue;
+      for (const key of ['video1080p', 'video720p', 'video480p', 'video', 'videoUrl', 'url']) {
+        const safe = safeAppleMotionVideoUrl(candidate[key]);
+        if (safe) return safe;
+      }
+    }
+    return '';
+  }
+
+  function safeAppleCatalogPageUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return url.protocol === 'https:' && url.hostname.toLowerCase() === 'music.apple.com'
+        && !url.username && !url.password ? url.toString() : '';
+    } catch { return ''; }
+  }
+
   async function currentAppleMusicIdentity(req, res) {
     const identity = identityForRequest(req, res);
     if (!identity) return null;
@@ -1606,6 +1651,304 @@ export function createBitConnectionRouter({
         error: 'APPLE_MUSIC_SEARCH_PROVIDER_ERROR',
         message: 'Apple’s public music search could not be reached. Try again shortly.'
       });
+    }
+  });
+
+
+  router.get('/account/providers/apple-music/catalog-item', rateAppleMusic, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) {
+      return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to view Apple Music release details.' });
+    }
+    const id = String(req.query.id || '').trim();
+    const requestedType = String(req.query.type || 'songs').trim().toLowerCase();
+    const type = requestedType === 'album' || requestedType === 'albums' ? 'albums' : 'songs';
+    const storefrontValue = String(req.query.storefront || 'us').trim().toLowerCase();
+    const storefront = /^[a-z]{2}$/.test(storefrontValue) ? storefrontValue : 'us';
+    if (!/^[0-9]{1,20}$/.test(id)) {
+      return res.status(400).json({ error: 'INVALID_APPLE_CATALOG_ID', message: 'A valid Apple Music catalog ID is required.' });
+    }
+    const connection = storedAppleMusicConnection(store.read(), identity.identityId);
+    if (!connection?.userMediaTokenEncrypted || typeof decryptProviderCredential !== 'function') {
+      return res.status(409).json({ error: 'APPLE_MUSIC_NOT_CONNECTED', message: 'Connect Apple Music in BitAccount Center to view release details.' });
+    }
+
+    let userMediaToken = '';
+    try { userMediaToken = decryptProviderCredential(connection.userMediaTokenEncrypted); } catch { /* Use the public catalog fallback below. */ }
+
+    const normalizeTrack = (resource, index, fallbackArtwork = '') => {
+      const attributes = resource?.attributes || resource || {};
+      const trackId = String(resource?.id || attributes.playParams?.catalogId || attributes.trackId || '').trim();
+      const title = String(attributes.name || attributes.title || attributes.trackName || '').trim().slice(0, 180);
+      if (!title || !/^[0-9]{1,20}$/.test(trackId)) return null;
+      const durationMillis = Number(attributes.durationInMillis ?? attributes.trackTimeMillis);
+      const durationSeconds = Number.isFinite(durationMillis) && durationMillis > 0 ? durationMillis / 1000 : 0;
+      const bpmValue = attributes.bpm ?? attributes.tempo;
+      const bpm = bpmValue != null && Number.isFinite(Number(bpmValue)) && Number(bpmValue) > 0
+        ? Number(bpmValue) : null;
+      const musicalKey = String(attributes.key || attributes.musicalKey || attributes.keyName || '').trim().slice(0, 24);
+      const isFavorited = typeof attributes.isFavorite === 'boolean' ? attributes.isFavorite
+        : typeof attributes.isFavorited === 'boolean' ? attributes.isFavorited : null;
+      const inLibrary = typeof attributes.isLibrary === 'boolean' ? attributes.isLibrary
+        : typeof attributes.inLibrary === 'boolean' ? attributes.inLibrary
+          : typeof attributes.playParams?.isLibrary === 'boolean' ? attributes.playParams.isLibrary : null;
+      return {
+        id: trackId,
+        type: 'songs',
+        title,
+        artist: String(attributes.artistName || attributes.artist || '').trim().slice(0, 180),
+        album: String(attributes.albumName || attributes.collectionName || '').trim().slice(0, 180),
+        artworkUrl: normalizeAppleArtwork(attributes.artwork?.url || attributes.artworkUrl100 || fallbackArtwork),
+        url: safeAppleCatalogPageUrl(attributes.url || attributes.trackViewUrl),
+        durationSeconds,
+        trackNumber: Number.isSafeInteger(Number(attributes.trackNumber)) && Number(attributes.trackNumber) > 0
+          ? Number(attributes.trackNumber) : index + 1,
+        discNumber: Number.isSafeInteger(Number(attributes.discNumber)) && Number(attributes.discNumber) > 0
+          ? Number(attributes.discNumber) : 1,
+        bpm,
+        key: musicalKey,
+        isFavorited,
+        inLibrary,
+        appleMusicSongId: trackId,
+        appleMusicStorefront: storefront
+      };
+    };
+
+    let release = null;
+    let tracks = [];
+    let privateLookupError = null;
+    if (userMediaToken && typeof fetchImpl === 'function') {
+      try {
+        const plural = type === 'albums' ? 'albums' : 'songs';
+        const lookupUrl = new URL('https://amp-api-edge.music.apple.com/v1/catalog/'
+          + storefront + '/' + plural + '/' + encodeURIComponent(id));
+        if (type === 'albums') lookupUrl.searchParams.set('include', 'tracks');
+        const payload = await requestAppleMusicJson(lookupUrl.toString(), userMediaToken);
+        const resource = Array.isArray(payload?.data) ? payload.data[0] : null;
+        const attributes = resource?.attributes || {};
+        if (resource) {
+          const resourceTitle = String(attributes.name || attributes.title || '').trim().slice(0, 180);
+          release = {
+            id: String(resource.id || id),
+            type,
+            title: resourceTitle || 'Apple Music release',
+            artist: String(attributes.artistName || '').trim().slice(0, 180),
+            artworkUrl: normalizeAppleArtwork(attributes.artwork?.url),
+            url: safeAppleCatalogPageUrl(attributes.url),
+            trackCount: Number.isSafeInteger(Number(attributes.trackCount)) ? Number(attributes.trackCount) : 0
+          };
+          if (type === 'albums') {
+            const relationship = resource.relationships?.tracks;
+            const references = Array.isArray(relationship?.data) ? relationship.data : [];
+            const included = Array.isArray(payload.included) ? payload.included : [];
+            const resolved = references.map(reference => {
+              if (reference?.attributes) return reference;
+              return included.find(candidate => String(candidate?.id || '') === String(reference?.id || '')
+                && (!reference?.type || !candidate?.type || String(candidate.type) === String(reference.type))) || reference;
+            });
+            tracks = resolved.map((track, index) => normalizeTrack(track, index, attributes.artwork?.url)).filter(Boolean);
+          } else {
+            const song = normalizeTrack(resource, 0, attributes.artwork?.url);
+            if (song) tracks = [song];
+          }
+        }
+      } catch (error) {
+        privateLookupError = error;
+      }
+    }
+
+    if (!tracks.length && typeof fetchImpl === 'function') {
+      try {
+        const lookupUrl = new URL('https://itunes.apple.com/lookup');
+        lookupUrl.searchParams.set('id', id);
+        lookupUrl.searchParams.set('entity', 'song');
+        lookupUrl.searchParams.set('country', storefront);
+        const response = await fetchImpl(lookupUrl.toString(), {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10000)
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok && Array.isArray(payload?.results)) {
+          const rows = payload.results;
+          const collection = rows.find(row => row?.wrapperType === 'collection')
+            || rows.find(row => row?.collectionId != null) || rows[0] || {};
+          if (type === 'albums') {
+            release = {
+              id: String(collection.collectionId || id),
+              type,
+              title: String(collection.collectionName || collection.name || '').trim().slice(0, 180) || 'Apple Music release',
+              artist: String(collection.artistName || '').trim().slice(0, 180),
+              artworkUrl: normalizeAppleArtwork(collection.artworkUrl100 || collection.artworkUrl60 || ''),
+              url: safeAppleCatalogPageUrl(collection.collectionViewUrl),
+              trackCount: Number(collection.trackCount || 0)
+            };
+            tracks = rows.filter(row => row?.wrapperType === 'track' && row?.trackId != null)
+              .map((row, index) => normalizeTrack({
+                id: String(row.trackId),
+                attributes: {
+                  name: row.trackName,
+                  artistName: row.artistName,
+                  albumName: row.collectionName,
+                  artworkUrl100: row.artworkUrl100,
+                  trackViewUrl: row.trackViewUrl,
+                  trackTimeMillis: row.trackTimeMillis,
+                  trackNumber: row.trackNumber,
+                  discNumber: row.discNumber
+                }
+              }, index, collection.artworkUrl100 || '')).filter(Boolean);
+          } else {
+            const row = rows.find(candidate => String(candidate?.trackId || '') === id)
+              || rows.find(candidate => candidate?.wrapperType === 'track');
+            if (row) {
+              release = {
+                id,
+                type,
+                title: String(row.trackName || '').trim().slice(0, 180),
+                artist: String(row.artistName || '').trim().slice(0, 180),
+                artworkUrl: normalizeAppleArtwork(row.artworkUrl100 || row.artworkUrl60 || ''),
+                url: safeAppleCatalogPageUrl(row.trackViewUrl),
+                trackCount: 1
+              };
+              tracks = [normalizeTrack({
+                id: String(row.trackId || id),
+                attributes: {
+                  name: row.trackName,
+                  artistName: row.artistName,
+                  albumName: row.collectionName,
+                  artworkUrl100: row.artworkUrl100,
+                  trackViewUrl: row.trackViewUrl,
+                  trackTimeMillis: row.trackTimeMillis,
+                  trackNumber: row.trackNumber,
+                  discNumber: row.discNumber
+                }
+              }, 0, row.artworkUrl100 || '')].filter(Boolean);
+            }
+          }
+        }
+      } catch { /* The Apple private response remains preferable when available. */ }
+    }
+
+    if (!release || !tracks.length) {
+      return res.status(privateLookupError?.status || 502).json({
+        error: 'APPLE_MUSIC_RELEASE_DETAILS_UNAVAILABLE',
+        message: 'Apple Music did not return the selected release tracklist. Try again shortly.'
+      });
+    }
+    release.trackCount = tracks.length || release.trackCount;
+    res.set('Cache-Control', 'private, no-store');
+    return res.json({ provider: 'Apple Music', release, tracks });
+  });
+
+  router.get('/account/providers/apple-music/motion', rateAppleMusic, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) {
+      return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to load Apple Music animated artwork.' });
+    }
+    const appleUrl = String(req.query.url || '').trim();
+    let parsed;
+    try { parsed = new URL(appleUrl); } catch { parsed = null; }
+    if (!parsed || parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'music.apple.com'
+      || parsed.username || parsed.password) {
+      return res.status(400).json({ error: 'INVALID_APPLE_MUSIC_URL', message: 'A valid Apple Music item URL is required.' });
+    }
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const storefront = /^[a-z]{2}$/i.test(parts[0] || '') ? parts[0].toLowerCase() : 'us';
+    const kind = String(parts[1] || '').toLowerCase();
+    const resourceId = String(parts[3] || '').trim();
+    const resourceType = ({ album: 'albums', playlist: 'playlists', song: 'songs' })[kind];
+    if (!resourceType || !/^(?:[0-9]{1,20}|pl\.[A-Za-z0-9._-]{1,120})$/.test(resourceId)) {
+      return res.status(400).json({ error: 'INVALID_APPLE_MUSIC_URL', message: 'This Apple Music URL does not identify a supported catalog item.' });
+    }
+    const connection = storedAppleMusicConnection(store.read(), identity.identityId);
+    if (!connection?.userMediaTokenEncrypted || typeof decryptProviderCredential !== 'function') {
+      return res.status(409).json({ error: 'APPLE_MUSIC_NOT_CONNECTED', message: 'Connect Apple Music to load animated artwork.' });
+    }
+    let userMediaToken = '';
+    try { userMediaToken = decryptProviderCredential(connection.userMediaTokenEncrypted); } catch {
+      return res.status(503).json({ error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE', message: 'The saved Apple Music connection could not be decrypted.' });
+    }
+    if (!validAppleMusicUserToken(userMediaToken)) {
+      return res.status(409).json({ error: 'APPLE_MUSIC_RECONNECT_REQUIRED', message: 'Reconnect Apple Music in BitAccount Center.' });
+    }
+    const lookupUrl = new URL('https://amp-api-edge.music.apple.com/v1/catalog/'
+      + storefront + '/' + resourceType + '/' + encodeURIComponent(resourceId));
+    lookupUrl.searchParams.set('extend', 'editorialVideo');
+    try {
+      const payload = await requestAppleMusicJson(lookupUrl.toString(), userMediaToken);
+      const resource = Array.isArray(payload?.data) ? payload.data[0] : null;
+      const editorialVideo = resource?.attributes?.editorialVideo || {};
+      const animatedUrlSquare = appleEditorialVideoUrl(editorialVideo, 'square');
+      const animatedUrlTall = appleEditorialVideoUrl(editorialVideo, 'tall');
+      res.set('Cache-Control', 'private, max-age=300');
+      return res.json({ provider: 'Apple Music', animatedUrlSquare, animatedUrlTall });
+    } catch (error) {
+      return res.status(error.status || 502).json({
+        error: 'APPLE_MUSIC_MOTION_UNAVAILABLE',
+        message: error.message || 'Apple Music animated artwork could not be loaded.'
+      });
+    }
+  });
+
+  router.post('/account/providers/apple-music/library', identityCsrf, rateAppleMusic, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) {
+      return res.status(401).json({ error: 'SIGN_IN_REQUIRED', message: 'Sign in to add Apple Music content to your library.' });
+    }
+    const id = String(req.body?.id || '').trim();
+    const requestedType = String(req.body?.type || '').trim().toLowerCase();
+    const type = requestedType === 'album' || requestedType === 'albums' ? 'albums'
+      : requestedType === 'song' || requestedType === 'songs' ? 'songs' : '';
+    const storefrontValue = String(req.body?.storefront || 'us').trim().toLowerCase();
+    const storefront = /^[a-z]{2}$/.test(storefrontValue) ? storefrontValue : 'us';
+    if (!/^[0-9]{1,20}$/.test(id) || !type) {
+      return res.status(400).json({ error: 'INVALID_APPLE_LIBRARY_RESOURCE', message: 'A valid Apple Music album or song is required.' });
+    }
+    const connection = storedAppleMusicConnection(store.read(), identity.identityId);
+    if (!connection?.userMediaTokenEncrypted || typeof decryptProviderCredential !== 'function') {
+      return res.status(409).json({ error: 'APPLE_MUSIC_NOT_CONNECTED', message: 'Connect Apple Music in BitAccount Center first.' });
+    }
+    let userMediaToken = '';
+    try { userMediaToken = decryptProviderCredential(connection.userMediaTokenEncrypted); } catch {
+      return res.status(503).json({ error: 'APPLE_MUSIC_CREDENTIAL_UNAVAILABLE', message: 'The saved Apple Music connection could not be decrypted.' });
+    }
+    if (!validAppleMusicUserToken(userMediaToken) || typeof fetchImpl !== 'function') {
+      return res.status(503).json({ error: 'APPLE_MUSIC_LIBRARY_UNAVAILABLE', message: 'Apple Music library actions are unavailable.' });
+    }
+    const target = new URL('https://amp-api-edge.music.apple.com/v1/me/library');
+    target.searchParams.set('ids[' + type + ']', id);
+    const send = async bearer => fetchImpl(target.toString(), {
+      method: 'POST',
+      headers: appleMusicAuthHeaders(userMediaToken, bearer),
+      cache: 'no-store',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(12000)
+    });
+    try {
+      let bearer = await resolveAppleMusicWebPlayerToken();
+      let response = await send(bearer);
+      if ((response.status === 401 || response.status === 403) && !String(appleMusicWebPlayerToken || '').trim()) {
+        cachedAppleWebPlayerToken = '';
+        cachedAppleWebPlayerTokenExpiresAt = 0;
+        bearer = await resolveAppleMusicWebPlayerToken();
+        response = await send(bearer);
+      }
+      if (!response.ok) {
+        const status = response.status === 401 || response.status === 403 ? 401
+          : response.status === 429 ? 429 : 502;
+        return res.status(status).json({
+          error: status === 401 ? 'APPLE_MUSIC_AUTH_REJECTED' : 'APPLE_MUSIC_LIBRARY_ADD_FAILED',
+          message: status === 401 ? 'Apple Music rejected the saved subscriber token. Reconnect Apple Music in BitAccount Center.'
+            : status === 429 ? 'Apple Music is rate limiting library changes. Try again shortly.'
+              : 'Apple Music could not add this item to your library.'
+        });
+      }
+      res.set('Cache-Control', 'private, no-store');
+      return res.status(202).json({ ok: true, accepted: true, id, type });
+    } catch {
+      return res.status(502).json({ error: 'APPLE_MUSIC_LIBRARY_ADD_FAILED', message: 'Apple Music could not add this item to your library.' });
     }
   });
 

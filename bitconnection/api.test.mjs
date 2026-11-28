@@ -157,6 +157,126 @@ test('Apple Music catalog lookup can resolve EP and album cover artwork', async 
   assert.match(requestedUrl, /entity=album/);
 });
 
+
+test('Apple Music release details, phone/desktop motion variants, and Add to Library use the saved subscriber token', async t => {
+  const seen = [];
+  const fetchImpl = async (url, options = {}) => {
+    const target = String(url);
+    seen.push({ url: target, method: options.method || 'GET', headers: options.headers || {} });
+    if (target.includes('/v1/catalog/us/albums/987654321')) {
+      return new Response(JSON.stringify({
+        data: [{
+          id: '987654321',
+          type: 'albums',
+          attributes: {
+            name: 'Example EP',
+            artistName: 'Example Artist',
+            artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
+            url: 'https://music.apple.com/us/album/example-ep/987654321',
+            trackCount: 1
+          },
+          relationships: { tracks: { data: [{ id: '123456789', type: 'songs' }] } }
+        }],
+        included: [{
+          id: '123456789',
+          type: 'songs',
+          attributes: {
+            name: 'Example Track',
+            artistName: 'Example Artist',
+            albumName: 'Example EP',
+            durationInMillis: 203000,
+            trackNumber: 1,
+            discNumber: 1,
+            bpm: 124,
+            key: 'D minor',
+            isFavorite: true,
+            isLibrary: false,
+            artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
+            url: 'https://music.apple.com/us/song/example-track/123456789'
+          }
+        }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (target.includes('/v1/catalog/us/playlists/pl.example')) {
+      return new Response(JSON.stringify({
+        data: [{
+          id: 'pl.example',
+          type: 'playlists',
+          attributes: {
+            editorialVideo: {
+              motionDetailSquare: { video: { video1080p: 'https://mvod.itunes.apple.com/video/square-cover.mp4' } },
+              motionDetailTall: { video: { video1080p: 'https://mvod.itunes.apple.com/video/tall-cover.mp4' } }
+            }
+          }
+        }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (target.includes('/v1/me/library')) {
+      return new Response(null, { status: 202 });
+    }
+    return new Response(JSON.stringify({ errors: [{ detail: 'Unexpected Apple Music test URL: ' + target }] }), {
+      status: 404, headers: { 'content-type': 'application/json' }
+    });
+  };
+  const client = await harness(t, {
+    providerCredentialEncryptionConfigured: true,
+    appleMusicWebPlayerToken: 'test-web-player-bearer',
+    fetchImpl
+  });
+  const csrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Release Browser Host', password: 'release-browser-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+  const userMediaToken = 'user-media-token-example-value-1234567890';
+  const connected = await client.request('/account/providers/apple-music', {
+    method: 'PUT',
+    headers: csrf.headers,
+    body: JSON.stringify({ userMediaToken })
+  });
+  assert.equal(connected.status, 200);
+
+  const detailResponse = await client.request('/account/providers/apple-music/catalog-item?id=987654321&type=albums&storefront=us', {
+    headers: { Cookie: csrf.cookie }
+  });
+  const detail = await detailResponse.json();
+  assert.equal(detailResponse.status, 200);
+  assert.equal(detail.release.title, 'Example EP');
+  assert.equal(detail.tracks.length, 1);
+  assert.equal(detail.tracks[0].title, 'Example Track');
+  assert.equal(detail.tracks[0].durationSeconds, 203);
+  assert.equal(detail.tracks[0].bpm, 124);
+  assert.equal(detail.tracks[0].key, 'D minor');
+  assert.equal(detail.tracks[0].isFavorited, true);
+  assert.equal(detail.tracks[0].inLibrary, false);
+  assert.equal(detail.tracks[0].appleMusicSongId, '123456789');
+  assert.ok(seen.some(item => item.url.includes('/albums/987654321?include=tracks')));
+
+  const motionResponse = await client.request('/account/providers/apple-music/motion?url=' + encodeURIComponent('https://music.apple.com/us/playlist/example/pl.example'), {
+    headers: { Cookie: csrf.cookie }
+  });
+  const motion = await motionResponse.json();
+  assert.equal(motionResponse.status, 200);
+  assert.equal(motion.animatedUrlSquare, 'https://mvod.itunes.apple.com/video/square-cover.mp4');
+  assert.equal(motion.animatedUrlTall, 'https://mvod.itunes.apple.com/video/tall-cover.mp4');
+
+  const libraryResponse = await client.request('/account/providers/apple-music/library', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ id: '987654321', type: 'albums', storefront: 'us' })
+  });
+  assert.equal(libraryResponse.status, 202);
+  assert.equal((await libraryResponse.json()).accepted, true);
+  const libraryRequest = seen.find(item => item.url.includes('/v1/me/library'));
+  assert.ok(libraryRequest);
+  assert.equal(libraryRequest.method, 'POST');
+  assert.match(libraryRequest.url, /ids%5Balbums%5D=987654321/);
+  assert.equal(libraryRequest.headers['Media-User-Token'], userMediaToken);
+  assert.equal(libraryRequest.headers.Authorization, 'Bearer test-web-player-bearer');
+});
+
 test('native registration creates a separate BitConnection identity and never calls BitCider auth', async t => {
   const client = await harness(t);
   const csrf = await csrfContext(client);

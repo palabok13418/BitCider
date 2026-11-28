@@ -2621,3 +2621,120 @@ audio.bc-party-audio-output { display: none !important; }
 @media (max-width:620px) { .bc-party-browser-overlay { padding:0; } .bc-party-browser-panel { width:94vw; height:91dvh; max-height:91dvh; padding:16px; gap:13px; border-radius:22px; } .bc-party-browser-heading { padding-bottom:10px; } .bc-party-browser-heading h2 { font-size:27px; } .bc-party-browser-search { grid-template-columns:18px minmax(0,1fr); padding:0 12px; } .bc-party-browser-search button { grid-column:2; justify-self:end; margin:0 0 7px; } .bc-party-browser-featured-row { grid-auto-columns:clamp(124px,42vw,172px); } .bc-party-browser-cover-grid { grid-template-columns:repeat(auto-fill,minmax(126px,1fr)); gap:11px; } .bc-party-browser-section-heading h3 { font-size:20px; } .bc-party-browser-cover-bloom { padding:24px 10px 10px; } .bc-party-browser-cover-bloom strong { font-size:12px; } .bc-party-browser-cover-bloom small { font-size:9px; } }
 @media (max-width:360px) { .bc-party-browser-panel { width:96vw; height:92dvh; max-height:92dvh; padding:13px; } .bc-party-browser-cover-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .bc-party-browser-inline-match { grid-template-columns:minmax(0,1fr) auto; } .bc-party-browser-inline-match button:last-child { grid-column:2; } }
 @media (prefers-reduced-motion:reduce) { .bc-party-browser-featured-tile,.bc-party-browser-cover-tile { transition:none; } }
+
+/* Apple Music release reveal and tracklist. */
+.bc-party-browser-panel { position:relative; }
+.bc-party-browser-browsing {
+  display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0;
+  gap:18px; transition:opacity .32s ease,transform .42s ease,filter .32s ease;
+}
+.bc-party-browser-browsing.is-exiting {
+  opacity:0; transform:scale(.985); filter:blur(8px); pointer-events:none;
+}
+.bc-party-browser-featured-tile { aspect-ratio:1/1; }
+.bc-party-browser-featured-tile.is-phone { aspect-ratio:3/4; }
+.bc-party-browser-featured-tile > img,
+.bc-party-browser-featured-tile > video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.bc-party-browser-featured-tile > video { z-index:1; }
+.bc-party-browser-release-view {
+  position:absolute; inset:0; z-index:12; display:flex; flex-direction:column; min-width:0; min-height:0;
+  overflow:auto; overscroll-behavior:contain; padding:clamp(18px,2.1vw,34px);
+  color:#f8f8fa; background:linear-gradient(155deg,rgba(37,37,43,.995),rgba(20,20,24,.998) 54%,rgba(14,14,18,1));
+  clip-path:circle(0 at var(--bc-release-origin-x,140px) var(--bc-release-origin-y,140px));
+  transition:clip-path .78s cubic-bezier(.18,.76,.2,1);
+}
+.bc-party-browser-release-view.is-visible {
+  clip-path:circle(160% at var(--bc-release-origin-x,140px) var(--bc-release-origin-y,140px));
+}
+.bc-party-browser-release-header {
+  position:relative; display:grid; grid-template-columns:clamp(176px,20vw,232px) minmax(0,1fr);
+  align-items:end; gap:clamp(22px,3vw,44px); min-height:clamp(220px,28vw,280px);
+  padding:20px 24px 27px; border-bottom:1px solid rgba(255,255,255,.1);
+}
+.bc-party-browser-release-cover {
+  width:clamp(176px,20vw,232px); aspect-ratio:1; overflow:hidden; border-radius:16px;
+  background:#25252b; box-shadow:0 22px 58px rgba(0,0,0,.42);
+  transform-origin:top left;
+  transform:translate3d(var(--bc-release-from-x,0px),var(--bc-release-from-y,0px),0) scale(var(--bc-release-from-scale,1));
+  transition:transform .78s cubic-bezier(.18,.76,.2,1);
+}
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-cover { transform:translate3d(0,0,0) scale(1); }
+.bc-party-browser-release-cover img { display:block; width:100%; height:100%; object-fit:cover; }
+.bc-party-browser-release-heading { display:flex; min-width:0; min-height:100%; flex-direction:column; align-items:flex-start; justify-content:flex-end; gap:8px; padding:8px 0 1px; }
+.bc-party-browser-release-heading > span { color:rgba(255,255,255,.52); font:700 9px 'DM Mono',ui-monospace,monospace; letter-spacing:.18em; }
+.bc-party-browser-release-heading h2 { margin:0; color:#fff; font-size:clamp(25px,3.3vw,44px); line-height:1.04; letter-spacing:-.055em; overflow-wrap:anywhere; }
+.bc-party-browser-release-heading p { margin:0; color:rgba(255,255,255,.62); font-size:clamp(13px,1.3vw,17px); }
+.bc-party-browser-release-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; align-self:stretch; gap:9px; margin-top:auto; padding-top:18px; }
+.bc-party-browser-release-actions button {
+  display:inline-flex; min-height:40px; align-items:center; justify-content:center; gap:8px; padding:0 15px;
+  border:1px solid rgba(255,255,255,.13); border-radius:999px; color:#fff; background:rgba(255,255,255,.09);
+  font-size:11px; font-weight:650; cursor:pointer; transition:background .18s ease,transform .18s ease;
+}
+.bc-party-browser-release-actions button:hover:not(:disabled) { transform:translateY(-1px); background:rgba(255,255,255,.17); }
+.bc-party-browser-release-actions button:disabled { opacity:.38; cursor:not-allowed; }
+.bc-party-browser-release-actions button:nth-child(2) { color:#17171b; border-color:#fff; background:#fff; }
+.bc-party-browser-release-back,.bc-party-browser-release-close {
+  position:absolute; top:19px; right:20px; z-index:2; display:grid; width:38px; height:38px; place-items:center;
+  border:1px solid rgba(255,255,255,.14); border-radius:50%; color:#fff; background:rgba(255,255,255,.08); cursor:pointer;
+}
+.bc-party-browser-release-back { left:20px; right:auto; }
+.bc-party-browser-release-close { display:none; }
+.bc-party-browser-release-tracklist { display:grid; gap:2px; padding:16px 24px 28px; }
+.bc-party-browser-release-tracklist-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 0 12px; color:#fff; }
+.bc-party-browser-release-tracklist-heading strong { font-size:17px; letter-spacing:-.025em; }
+.bc-party-browser-release-tracklist-heading span { color:rgba(255,255,255,.43); font-size:10px; }
+.bc-party-browser-release-track {
+  display:grid; grid-template-columns:42px minmax(0,1fr) minmax(86px,112px) 58px; align-items:center; gap:12px;
+  min-width:0; min-height:59px; padding:0 10px; border:0; border-bottom:1px solid rgba(255,255,255,.075);
+  border-radius:9px; color:#fff; text-align:left; background:transparent; cursor:pointer;
+  transition:background .16s ease;
+}
+.bc-party-browser-release-track:hover:not(:disabled) { background:rgba(255,255,255,.075); }
+.bc-party-browser-release-track:disabled { cursor:not-allowed; opacity:.56; }
+.bc-party-browser-release-track-number { position:relative; display:grid; width:28px; height:28px; place-items:center; color:rgba(255,255,255,.56); font-size:12px; font-variant-numeric:tabular-nums; }
+.bc-party-browser-release-track-number i { position:absolute; inset:0; display:grid; place-items:center; color:#fff; opacity:0; font-style:normal; }
+.bc-party-browser-release-track:hover .bc-party-browser-release-track-number > span { opacity:0; }
+.bc-party-browser-release-track:hover .bc-party-browser-release-track-number i { opacity:1; }
+.bc-party-browser-release-track-title { display:flex; min-width:0; align-items:center; gap:12px; }
+.bc-party-browser-release-track-title > strong { overflow:hidden; color:rgba(255,255,255,.94); font-size:13px; font-weight:570; text-overflow:ellipsis; white-space:nowrap; }
+.bc-party-browser-release-track-flags { display:inline-flex; flex:0 0 auto; align-items:center; gap:8px; color:rgba(255,255,255,.36); }
+.bc-party-browser-release-track-flags svg { opacity:.32; }
+.bc-party-browser-release-track-flags svg.is-active { color:#ff718f; opacity:1; }
+.bc-party-browser-release-track-flags svg.is-inactive { opacity:.28; }
+.bc-party-browser-release-track-analysis { display:grid; gap:3px; justify-items:start; color:rgba(255,255,255,.72); font-variant-numeric:tabular-nums; }
+.bc-party-browser-release-track-analysis strong { font-size:11px; font-weight:600; }
+.bc-party-browser-release-track-analysis small { color:rgba(255,255,255,.42); font-size:10px; }
+.bc-party-browser-release-track-duration { color:rgba(255,255,255,.53); font-size:11px; text-align:right; font-variant-numeric:tabular-nums; }
+@media (max-width:760px) {
+  .bc-party-browser-panel { position:relative; }
+  .bc-party-browser-release-view { padding:15px; }
+  .bc-party-browser-release-header { grid-template-columns:clamp(116px,30vw,154px) minmax(0,1fr); gap:15px; min-height:166px; padding:36px 6px 17px; }
+  .bc-party-browser-release-cover { width:clamp(116px,30vw,154px); border-radius:12px; }
+  .bc-party-browser-release-heading { gap:6px; }
+  .bc-party-browser-release-heading h2 { font-size:clamp(19px,5vw,27px); }
+  .bc-party-browser-release-heading p { font-size:12px; }
+  .bc-party-browser-release-actions { justify-content:flex-start; gap:6px; padding-top:11px; }
+  .bc-party-browser-release-actions button { min-height:33px; padding:0 9px; gap:5px; font-size:9px; }
+  .bc-party-browser-release-actions button svg { width:13px; height:13px; }
+  .bc-party-browser-release-back { top:8px; left:6px; width:32px; height:32px; }
+  .bc-party-browser-release-tracklist { padding:13px 2px 24px; }
+  .bc-party-browser-release-track { grid-template-columns:30px minmax(0,1fr) 62px 42px; gap:7px; min-height:55px; padding:0 5px; }
+  .bc-party-browser-release-track-number { width:25px; }
+  .bc-party-browser-release-track-title { gap:7px; }
+  .bc-party-browser-release-track-title > strong { font-size:11px; }
+  .bc-party-browser-release-track-flags { gap:4px; }
+  .bc-party-browser-release-track-analysis strong { font-size:9px; }
+  .bc-party-browser-release-track-analysis small,.bc-party-browser-release-track-duration { font-size:9px; }
+}
+@media (max-width:420px) {
+  .bc-party-browser-release-header { grid-template-columns:104px minmax(0,1fr); gap:11px; }
+  .bc-party-browser-release-cover { width:104px; }
+  .bc-party-browser-release-actions { flex-wrap:wrap; }
+  .bc-party-browser-release-actions button { min-height:31px; padding-inline:7px; font-size:8px; }
+  .bc-party-browser-release-track { grid-template-columns:25px minmax(0,1fr) 50px 36px; gap:5px; }
+  .bc-party-browser-release-track-title > strong { font-size:10px; }
+  .bc-party-browser-release-track-flags svg { width:11px; height:11px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .bc-party-browser-browsing,.bc-party-browser-release-view,.bc-party-browser-release-cover { transition:none !important; }
+}
