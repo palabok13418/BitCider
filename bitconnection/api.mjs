@@ -87,14 +87,15 @@ const PARTY_PLAYBACK_SOURCES = new Set(['bitmono', 'ccustom', 'cider']);
 function cleanCustomSourceManifestUrl(value) {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return '';
-  if (raw.length > 512 || /[\\u0000-\\u0020\\u007f]/u.test(raw)) return null;
+  if (raw.length > 512 || Array.from(raw).some(char => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127)) return null;
   try {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase();
+    const octets = host.split('.');
     const privateAddress = host === 'localhost' || host.endsWith('.localhost')
       || host.endsWith('.local') || host === '127.0.0.1' || host === '::1'
-      || /^10\\./.test(host) || /^192\\.168\\./.test(host)
-      || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host);
+      || host.startsWith('10.') || host.startsWith('192.168.')
+      || (host.startsWith('172.') && Number(octets[1]) >= 16 && Number(octets[1]) <= 31);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
       || privateAddress || !url.pathname.endsWith('/manifest.json')) return null;
     return url.toString();
@@ -102,7 +103,6 @@ function cleanCustomSourceManifestUrl(value) {
     return null;
   }
 }
-
 function usernameKey(value) {
   return cleanUsername(value).normalize('NFKC').toLocaleLowerCase('en-US');
 }
@@ -2022,6 +2022,8 @@ export function createBitConnectionRouter({
     const profile = {
       username,
       avatarDataUrl: avatarDataUrl === null && req.body?.avatarDataUrl === undefined ? previous.avatarDataUrl || null : avatarDataUrl,
+      playbackSource: PARTY_PLAYBACK_SOURCES.has(previous.playbackSource) ? previous.playbackSource : 'bitmono',
+      customSourceManifestUrl: typeof previous.customSourceManifestUrl === 'string' ? previous.customSourceManifestUrl : '',
       createdAt: previous.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -2399,7 +2401,7 @@ export function createBitConnectionRouter({
     return res.json({
       ...roomResponse(room, participant),
       playbackState: room.playbackState || {
-        source: 'youtube-music', track: null, isPlaying: false, positionSeconds: 0
+        source: playbackSource, track: null, isPlaying: false, positionSeconds: 0
       },
       queue: Array.isArray(room.queue) ? room.queue : [],
       queueSettings: room.queueSettings || { loop: false, shuffle: false, autoMix: false },
