@@ -551,6 +551,16 @@ async function linkBitConnectionAccountToCider({ bitConnectionAccountId, bitConn
           write: false
         };
       }
+      const alreadyLinked = activeAccount.linkedBitConnectionAccountId === bitConnectionAccountId;
+      const otherLinkedAccount = findLinkedBitCiderAccount(bitConnectionAccountId, store);
+      if (otherLinkedAccount && otherLinkedAccount.accountId !== activeAuth.accountId) {
+        return {
+          status: 409,
+          error: 'BITCONNECTION_ACCOUNT_ALREADY_LINKED',
+          message: 'This BitConnection account is already linked to another BitCider account. Sign in to the linked BitCider account before continuing.',
+          write: false
+        };
+      }
       activeAccount.linkedBitConnectionAccountId = bitConnectionAccountId;
       activeAccount.linkedBitConnectionUsername = bitConnectionAccount.username || null;
       activeAccount.identityProvider = activeAccount.password?.hash || activeAccount.accountKeyHash
@@ -560,7 +570,7 @@ async function linkBitConnectionAccountToCider({ bitConnectionAccountId, bitConn
       return {
         ok: true,
         accountId: activeAuth.accountId,
-        alreadyLinked: activeAccount.linkedAt !== activeAccount.linkedAt,
+        alreadyLinked,
         identityProvider: activeAccount.identityProvider
       };
     }

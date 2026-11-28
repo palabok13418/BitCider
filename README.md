@@ -14,7 +14,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 ## BitAccount
 
-**BitAccount** is the shared account identity and account-management brand across the Bit* products. **BitAccount Center** is the user-facing place to review profile details, connected-product sign-in status, and available security settings. Product names such as BitCider and BitConnection remain visible where they describe the service being managed. The BitAccount brand does not silently merge their existing authentication systems: BitCider and BitConnection credentials and sessions remain product-scoped unless a future explicit identity migration changes that behavior.
+**BitAccount** is the shared account identity and account-management brand across the Bit* products. **BitAccount Center** is the user-facing place to review profile details, connected-product sign-in status, and available security settings. Product names such as BitCider and BitConnection remain visible where they describe the service being managed. Existing product accounts are never merged silently: a signed-in BitConnection user can explicitly link that account to BitCider during first-time setup. Once linked, BitConnection sign-in also establishes the linked BitCider session on the same website, and both products use the same BitAccount profile identity. Standalone BitCider accounts remain supported.
 
 ## Current features
 
@@ -22,6 +22,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 - Requests `playback`, `queue`, `library`, and `audio` scopes.
 - Includes the supplied Lightfall WebGL background, with request-driven warping while a personal addon URL is created.
 - Gives each BitCider account its own encrypted Cider connection and personal BitChord addon URL; anonymous browser sessions can be upgraded into accounts.
+- Allows an existing authenticated BitConnection account to be explicitly linked to BitCider. The link is stored against the BitConnection account ID, preserves its original credentials and profile, and automatically restores the corresponding BitCider session after BitConnection sign-in.
 - Implements the addon manifest, search, and stream-resolution route shapes.
 - Preloads complete Monochrome or Deezer audio files onto the Deplexo cache before returning a playable URL; cached audio supports byte-range seeking to avoid upstream chunk-fetch stalls during playback.
 - Encrypts saved Cider app tokens with AES-256-GCM.
@@ -30,7 +31,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for provider setup, environment variables, an
 
 ## BitCider accounts and cloud-saved links
 
-Users create a BitCider account with a password after approving Cider. No username or email is collected. BitCider generates a random 256-bit Account Key and shows it once; only a SHA-256 hash is stored. On another device, sign in with Account Key plus password, or use a discoverable passkey. The Cider app token is saved connection data, not the person's account identity.
+Users can either create a standalone BitCider account after approving Cider, or link an already signed-in BitConnection account instead of creating another login. A linked account keeps BitConnection as its identity and credential provider; BitCider establishes a corresponding authenticated session and attaches the encrypted Cider connection to that linked identity. Standalone BitCider accounts continue to use a random 256-bit Account Key, password, and optional discoverable passkeys. The Cider app token is saved connection data, not the person's account identity.
 - Passwords have no character-count rule; the live strength meter is advisory and does not block entry. API requests retain a finite transport-size limit for service protection. Passwords are stored as scrypt hashes (N=32768, r=8, p=1, 64-byte output); plaintext passwords are never stored.
 - Account sessions use random 256-bit, Secure, HttpOnly, SameSite=Lax cookies. Only SHA-256 hashes of authenticated session identifiers are stored server-side. Sessions expire after 30 days, with up to five active device sessions; a sixth sign-in revokes the least-recently-active session.
 - Passkeys use discoverable WebAuthn credentials through SimpleWebAuthn, require user verification, and store only credential IDs and public keys. Passkey sign-in does not require an Account Key or a Cider token. Each BitCider account can register up to five passkeys. Adding or removing passkeys and revoking devices requires the current BitCider passphrase.

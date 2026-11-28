@@ -25,14 +25,16 @@ export default function UnifiedAccountCenterIdentity({
     let active = true;
 
     async function refreshProductStatus() {
-      const [ciderResponse, connectionResponse] = await Promise.all([
-        fetch('/api/status', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null),
-        fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' }).catch(() => null)
-      ]);
-      const [ciderPayload, connectionPayload] = await Promise.all([
-        readPayload(ciderResponse),
-        readPayload(connectionResponse)
-      ]);
+      // BitConnection can restore a linked BitCider cookie. Read it first,
+      // then query BitCider so the initial requests cannot race cookies.
+      const connectionResponse = await fetch('/api/bitconnection/account', {
+        cache: 'no-store', credentials: 'same-origin'
+      }).catch(() => null);
+      const connectionPayload = await readPayload(connectionResponse);
+      const ciderResponse = await fetch('/api/status', {
+        cache: 'no-store', credentials: 'same-origin'
+      }).catch(() => null);
+      const ciderPayload = await readPayload(ciderResponse);
       if (!active) return;
 
       const nextProducts = {

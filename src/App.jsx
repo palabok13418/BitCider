@@ -8,7 +8,7 @@ import AccountDeletionSection from './AccountDeletionSection.jsx';
 import AdminConsole from './AdminConsole.jsx';
 
 const SCOPES = ['playback', 'queue', 'library', 'audio'];
-const API_VERSION = '2026-11-24-account-center-v13';
+const API_VERSION = '2026-11-28-bitaccount-link-v1';
 const SYNC_NOTIFICATION_KEY = 'bitcider.sync-notification-watch.v1';
 function Icon({ name, size = 18 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
@@ -225,6 +225,7 @@ function AccountSetupWindow({
   const [passkeyCount, setPasskeyCount] = useState(0);
   const [passkeyLimit, setPasskeyLimit] = useState(5);
   const [tokenEncryptionConfigured, setTokenEncryptionConfigured] = useState(false);
+  const [bitConnectionAccount, setBitConnectionAccount] = useState(null);
   const [recoveryCodes, setRecoveryCodes] = useState([]);
   const [recoverySaved, setRecoverySaved] = useState(false);
   const [clipboardNotice, setClipboardNotice] = useState('');
@@ -332,6 +333,13 @@ function AccountSetupWindow({
 
   useEffect(() => {
     loadStatus().catch(err => setError(err.message || 'Could not prepare account setup.'));
+    fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' })
+      .then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || 'Could not check BitConnection sign-in.');
+        setBitConnectionAccount(payload.authenticated === true ? payload : null);
+      })
+      .catch(() => setBitConnectionAccount(null));
   }, []);
 
   useEffect(() => {
@@ -422,6 +430,37 @@ function AccountSetupWindow({
       await loadStatus();
     } catch (err) {
       setError(err.message || 'Could not create your BitCider account.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkExistingBitConnectionAccount() {
+    if (!bitConnectionAccount?.authenticated || !bitConnectionAccount.csrfToken) {
+      setError('Sign in to your existing BitConnection account first, then return here to link it.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const response = await fetch('/api/bitconnection/account/link-bitcider', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BitConnection-CSRF': bitConnectionAccount.csrfToken
+        },
+        body: JSON.stringify({})
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || result.error || 'Could not link your BitConnection account.');
+      setInfo(result.alreadyLinked
+        ? 'Your BitConnection account is already linked. Your BitCider session has been restored.'
+        : 'Your existing BitConnection account is now linked to BitCider.');
+      finish();
+    } catch (err) {
+      setError(err.message || 'Could not link your BitConnection account.');
     } finally {
       setBusy(false);
     }
@@ -535,10 +574,19 @@ function AccountSetupWindow({
             <div className="account-popup-state">
               <div className="card-label">NEW CIDER LINK</div>
               <h1>Create your BitCider account.</h1>
-              <p>Your Cider connection is ready. Create a password so this link can be restored when you sign in on another device.</p>
+              <p>Your Cider connection is ready. You can make a new BitCider login, or use your existing BitConnection account as your BitAccount identity.</p>
+              {bitConnectionAccount?.authenticated && (
+                <div className="account-passkey-prompt">
+                  <div className="passkey-prompt-indicator">EXISTING BITCONNECTION ACCOUNT</div>
+                  <p>Signed in as <strong>{bitConnectionAccount.profile?.username || 'your BitConnection account'}</strong>. Link it to BitCider and keep using the same account across both products.</p>
+                  <button className="account-passkey-button" type="button" onClick={linkExistingBitConnectionAccount} disabled={busy}>{busy ? 'LINKING ACCOUNT…' : 'LINK EXISTING BITCONNECTION ACCOUNT'}</button>
+                  <p className="account-popup-footnote">This is an explicit link. Your existing BitConnection account and its sign-in details stay intact.</p>
+                </div>
+              )}
               {!tokenEncryptionConfigured && (
                 <div className="account-popup-warning">Secure cloud storage is not configured on the BitCider backend yet. Account setup is unavailable until Deplexo has the encryption secret.</div>
               )}
+              {bitConnectionAccount?.authenticated && <div className="account-popup-divider"><span>OR CREATE A SEPARATE BITCIDER ACCOUNT</span></div>}
               <form className="account-popup-form" id="account-create-form" autoComplete="on" onSubmit={createAccount}>
                 <label>
                   <span>CREATE A PASSWORD</span>
@@ -913,7 +961,15 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
         </header>
 
         <div className="account-center-content">
-          <div className="account-center-grid">
+          {status.account?.identityProvider === 'bitconnection' ? (
+            <section className="account-center-card">
+              <div className="account-center-card-head"><span>BITACCOUNT LINK</span><span className="account-center-state">CONNECTED</span></div>
+              <h3>Using your BitConnection account</h3>
+              <p>Your BitCider access is linked to {status.account?.linkedBitConnectionUsername || 'your BitConnection account'}. Sign-in, password, passkeys, and recovery are managed through BitConnection, so you do not need a separate BitCider login.</p>
+              <a className="account-center-action unified-account-center-open-link" href="/bitconnection/?account=1&identity=bitconnection" target="_blank" rel="noreferrer">OPEN BITCONNECTION SECURITY SETTINGS</a>
+            </section>
+          ) : (
+            <div className="account-center-grid">
             <section className="account-center-card">
               <div className="account-center-card-head"><span>ACCOUNT KEY</span><span className={status.account?.accountKeyConfigured ? 'account-center-state' : 'account-center-state is-muted'}>{status.account?.accountKeyConfigured ? 'PROTECTED' : 'NOT SET'}</span></div>
               {revealedAccountKey ? (
@@ -981,7 +1037,8 @@ function AccountManagementOverlay({ status, csrfToken, bitConnectionAuthenticate
                 {busyAction === 'passkey-add' ? 'WAITING FOR AUTHENTICATOR…' : (status.passkeys || []).length >= (status.passkeyLimit || 5) ? 'PASSKEY LIMIT REACHED' : 'ADD PASSKEY'}
               </button>
             </section>
-          </div>
+            </div>
+          )}
 
           {message && <div className={'account-center-message ' + (messageType === 'warning' ? 'is-warning' : '')} role="status">{message}</div>}
 
@@ -1153,7 +1210,10 @@ export default function App() {
         const response = await fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error('BitConnection account status unavailable.');
-        if (active) setBitConnectionAccountAuthenticated(payload.authenticated === true);
+        if (active) {
+          setBitConnectionAccountAuthenticated(payload.authenticated === true);
+          if (payload.authenticated === true && payload.bitCiderAccountAvailable === true) await refreshStatus();
+        }
       } catch {
         if (active) setBitConnectionAccountAuthenticated(false);
       }

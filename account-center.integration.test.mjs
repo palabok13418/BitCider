@@ -31,6 +31,15 @@ function cookieFrom(response) {
   return cookie.split(';', 1)[0];
 }
 
+function cookieNamed(response, name) {
+  const values = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie')].filter(Boolean);
+  const cookie = values.filter(value => value.startsWith(name + '=')).at(-1);
+  assert.ok(cookie, 'expected ' + name + ' cookie');
+  return cookie.split(';', 1)[0];
+}
+
 async function startServer({ port, dataDir, encryptionKey }) {
   const child = spawn(process.execPath, [SERVER], {
     cwd: ROOT,
@@ -133,6 +142,121 @@ test('BitAccount Center shares BitCider account deletion across both product set
   assert.ok(styleSource.includes('.account-center-password-label input'));
 });
 
+
+test('an existing BitConnection account can explicitly link to BitCider and restore its shared session after a later sign-in', { timeout: 60000 }, async t => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitaccount-link-'));
+  const port = await freePort();
+  const encryptionKey = crypto.randomBytes(32).toString('base64url');
+  const username = 'existing-bitconnection-user';
+  const password = 'existing-bitconnection-password-2026';
+  const fakeCiderToken = 'bitaccount-link-integration-token-never-store-plaintext';
+  let server;
+
+  t.after(async () => {
+    if (server) await server.stop();
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
+  server = await startServer({ port, dataDir, encryptionKey });
+  const origin = server.origin;
+
+  const firstBitConnectionResponse = await fetch(origin + '/api/bitconnection/account', { cache: 'no-store' });
+  assert.equal(firstBitConnectionResponse.status, 200);
+  const firstBitConnection = await firstBitConnectionResponse.json();
+  const bitConnectionCookie = cookieNamed(firstBitConnectionResponse, 'bitconnection_session');
+
+  const registrationResponse = await fetch(origin + '/api/bitconnection/auth/register', {
+    method: 'POST',
+    headers: {
+      Cookie: bitConnectionCookie,
+      'Content-Type': 'application/json',
+      'X-BitConnection-CSRF': firstBitConnection.csrfToken
+    },
+    body: JSON.stringify({ username, password, avatarDataUrl: null }),
+    cache: 'no-store'
+  });
+  assert.equal(registrationResponse.status, 201);
+
+  const anonymousCiderStatus = await jsonRequest(origin, '/api/status');
+  const anonymousCiderCookie = cookieFrom(anonymousCiderStatus.response);
+  const stagedConnection = await jsonRequest(origin, '/api/connect', {
+    method: 'POST',
+    cookie: anonymousCiderCookie,
+    csrf: anonymousCiderStatus.payload.csrfToken,
+    body: { token: fakeCiderToken, scopes: ['playback', 'queue', 'library', 'audio'] }
+  });
+  assert.equal(stagedConnection.response.status, 200);
+
+  const linkResponse = await fetch(origin + '/api/bitconnection/account/link-bitcider', {
+    method: 'POST',
+    headers: {
+      Cookie: bitConnectionCookie + '; ' + anonymousCiderCookie,
+      'Content-Type': 'application/json',
+      'X-BitConnection-CSRF': firstBitConnection.csrfToken
+    },
+    body: JSON.stringify({}),
+    cache: 'no-store'
+  });
+  assert.equal(linkResponse.status, 200);
+  const linkedPayload = await linkResponse.json();
+  assert.equal(linkedPayload.linked, true);
+  assert.equal(linkedPayload.newlyCreated, true);
+  const linkedCiderCookie = cookieNamed(linkResponse, 'bitcider_session');
+
+  const linkedStatus = await jsonRequest(origin, '/api/status', { cookie: linkedCiderCookie });
+  assert.equal(linkedStatus.payload.account.authenticated, true);
+  assert.equal(linkedStatus.payload.account.identityProvider, 'bitconnection');
+  assert.equal(linkedStatus.payload.account.linkedBitConnectionUsername, username);
+  assert.equal(linkedStatus.payload.connected, true);
+
+  const linkedBitConnectionResponse = await fetch(origin + '/api/bitconnection/account', {
+    headers: { Cookie: bitConnectionCookie + '; ' + linkedCiderCookie },
+    cache: 'no-store'
+  });
+  const linkedBitConnection = await linkedBitConnectionResponse.json();
+  assert.equal(linkedBitConnection.authenticated, true);
+  assert.equal(linkedBitConnection.linkedToBitCider, true);
+  assert.equal(linkedBitConnection.bitCiderAccountAvailable, true);
+  assert.equal(linkedBitConnection.profile.username, username);
+
+  const linkedCiderIdentityResponse = await fetch(origin + '/api/bitconnection/account', {
+    headers: {
+      Cookie: bitConnectionCookie + '; ' + linkedCiderCookie,
+      'X-BitConnection-Identity': 'bitcider'
+    },
+    cache: 'no-store'
+  });
+  const linkedCiderIdentity = await linkedCiderIdentityResponse.json();
+  assert.equal(linkedCiderIdentity.authenticated, true);
+  assert.equal(linkedCiderIdentity.profile.username, username);
+
+  const secondDeviceResponse = await fetch(origin + '/api/bitconnection/account', { cache: 'no-store' });
+  const secondDeviceStatus = await secondDeviceResponse.json();
+  const secondDeviceBitConnectionCookie = cookieNamed(secondDeviceResponse, 'bitconnection_session');
+  const secondDeviceLogin = await fetch(origin + '/api/bitconnection/auth/login', {
+    method: 'POST',
+    headers: {
+      Cookie: secondDeviceBitConnectionCookie,
+      'Content-Type': 'application/json',
+      'X-BitConnection-CSRF': secondDeviceStatus.csrfToken
+    },
+    body: JSON.stringify({ username, password }),
+    cache: 'no-store'
+  });
+  assert.equal(secondDeviceLogin.status, 200);
+
+  const secondDeviceAccountResponse = await fetch(origin + '/api/bitconnection/account', {
+    headers: { Cookie: secondDeviceBitConnectionCookie },
+    cache: 'no-store'
+  });
+  const secondDeviceAccount = await secondDeviceAccountResponse.json();
+  assert.equal(secondDeviceAccount.linkedToBitCider, true);
+  const secondDeviceCiderCookie = cookieNamed(secondDeviceAccountResponse, 'bitcider_session');
+  const secondDeviceCiderStatus = await jsonRequest(origin, '/api/status', { cookie: secondDeviceCiderCookie });
+  assert.equal(secondDeviceCiderStatus.payload.account.authenticated, true);
+  assert.equal(secondDeviceCiderStatus.payload.connected, true);
+});
+
 test('account center rotates secrets and permanently deletes the account and origin session', { timeout: 60000 }, async t => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bitcider-account-center-'));
   const port = await freePort();
@@ -152,7 +276,7 @@ test('account center rotates secrets and permanently deletes the account and ori
 
   const initialStatus = await jsonRequest(origin, '/api/status');
   assert.equal(initialStatus.response.status, 200);
-  assert.equal(initialStatus.payload.apiVersion, '2026-11-24-account-center-v13');
+  assert.equal(initialStatus.payload.apiVersion, '2026-11-28-bitaccount-link-v1');
   const anonymousCookie = cookieFrom(initialStatus.response);
 
   const linked = await jsonRequest(origin, '/api/connect', {
