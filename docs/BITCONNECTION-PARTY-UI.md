@@ -27,5 +27,5 @@ Use this specification for every active-party screen update. The active-party pa
 
 - The Leave navigation action must call the existing room leave flow. Hosts alone end their party; hosts with guests leave and hand hosting to the earliest active guest. The label/accessible name should reflect “End party” versus “Leave party”.
 - BitConnection party audio comes only from the source saved in BitAccount Center: BitMono, CCustom, or Cider. Apple Music remains a discovery/lyrics surface, not a fourth party audio source.
-- Publish only the audio track from the selected in-page media element with HTMLMediaElement.captureStream(). Never call getDisplayMedia or request screen/window/tab capture for party audio.
+- Publish only the audio track from the selected in-page media element with HTMLMediaElement.captureStream(). Do not request the browser display picker or capture any screen, window, monitor, or tab.
 - The Cider source requires the linked personal Cider relay on the host device. CCustom requires a valid HTTPS add-on manifest and browser CORS permission.
