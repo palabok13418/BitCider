@@ -1,28 +1,31 @@
-# BitConnection active-party UI
+# BitConnection active-party UI — required reference
 
-Use the user's shared active-party screenshot as the reference for every future room-screen redesign.
+Use this specification for every active-party screen update. The active-party page must follow the user's requested composition, not substitute a Queue or Members navigation item.
 
 ## Desktop composition
 
-- Keep the room screen full-bleed over the dark plum / rose Grainient background. Do not wrap the whole experience in a second large card.
-- The top band spans the page: room code and copy action at the upper left, a short BitChord join instruction below it, and the high-contrast QR code at the upper right.
-- The body is a two-column split. The left column is the playback surface; the right column is the room information and content surface.
-- Left column order: small live/hosting status, cover artwork (or a wide landscape empty-state tile with the waveform centered), track title and artist, timeline with elapsed/total time, audio-quality mark or available-format labels, previous/play/next, volume, host tab-audio sharing control, then the host's End party / Leave party action.
-- Right column order: hosting/joined eyebrow, room title, live member count, active content, then a compact rounded floating navigation for Lyrics, Queue, Chat, and Members.
-- The navigation belongs to the bottom of the right content panel, not across the full page or over the playback column. Default to Members to match the shared reference state.
-- Keep the Browser action as a small floating pill near the lower-right edge.
+- Full-bleed dark plum / rose Grainient canvas; do not wrap the whole room in an additional oversized card.
+- Two-column body: playback always stays on the left; the right side is the content workspace.
+- Left column: small hosting/listening status, square cover art (or a wide waveform empty-state tile), track title and artist, timeline with elapsed/total time, audio format mark centered below the timeline, previous/play/next controls, volume, host tab-audio sharing, and no duplicate leave button outside the bottom navigation.
+- Right column header: hosting/joined status, room name, and current member count.
+- The right content opens on **Lyrics** by default. Keep the currently active lyric centered and clearly emphasized, with surrounding lines quieter.
+- A four-item rounded floating bottom navigation sits at the bottom center of the viewport and contains exactly **Lyrics**, **Room**, **Chat**, and **Leave**. Do not use Queue or Members as navigation destinations.
+- **Room** is the home for room information: the text “Host controls playback” (or the actual shared-controls state) above the join details; BitChord room code on the left; one QR code centered; MusAudio room code on the right. If QR generation fails, show the room code as readable text beside/in the fallback area. The Room view also contains the people list, host moderation actions, and queue controls.
+- Only show a MusAudio room code when the room/session actually provides one. Do not fabricate or duplicate the BitChord code as a MusAudio code; use a clear “Not linked” state otherwise.
+- **Chat** keeps the message history and the bottom composer with GIF picker, image-only attachment, and voice-to-text controls.
+- Keep the Browser action as a small floating pill near the lower-right edge, clear of the navigation.
 
-## Visual language
+## Visual language and responsive behavior
 
-- Use the existing dark burgundy-to-rose canvas, subtle glass surfaces, low-contrast fine borders, soft pink highlights, and pale text.
-- Keep the playback button as the one prominent control; secondary controls should remain quieter.
-- Member rows should be compact glass cards with a circular avatar, name, listening/host status, and host-only moderation controls.
-- Keep track artwork square when artwork exists. Use the wider landscape waveform surface only for the no-track empty state.
-- Keep the content area spacious and readable; do not let the floating navigation cover the member cards or chat composer.
-- On narrow screens, stack room code, player, and room content vertically. Keep the navigation fixed above the safe-area inset and keep the Browser pill clear of it.
+- Preserve the screenshot's rose glow at the upper-right, deep burgundy-to-black shadows, pale typography, subtle glass controls, fine borders, and soft pink accents.
+- Keep the play button as the most prominent transport control; secondary controls should be restrained.
+- Room code cards should flank the centered, high-contrast QR. The QR must remain scannable and must never be replaced by a decorative image.
+- On narrow screens, stack playback and room content vertically, keep the bottom navigation centered/fixed above the safe-area inset, and prevent Browser/navigation overlap.
+- Do not let the navigation obscure lyric content, the queue, members, or chat composer.
 
-## Behavior and playback
+## Behavior
 
-- The room UI must not imply that unavailable direct MusicKit controls work. Without APPLE_MUSICKIT_DEVELOPER_TOKEN, use the official Apple Music embedded-player fallback; users sign in inside Apple's player for full songs.
-- Browser-native media methods (getDisplayMedia, play, pause, and captureStream) must be invoked with their owning object as the receiver. Avoid extracting those methods and calling them unbound.
-- ERR_BLOCKED_BY_CLIENT from the optional Cloudflare Insights beacon or injected browser-extension scripts is not a BitConnection room playback failure. Do not couple room playback state to those optional scripts.
+- The Leave navigation action must call the existing room leave flow. Hosts alone end their party; hosts with guests leave and hand hosting to the earliest active guest. The label/accessible name should reflect “End party” versus “Leave party”.
+- Without APPLE_MUSICKIT_DEVELOPER_TOKEN, use the official Apple Music embedded-player fallback; do not present unavailable direct MusicKit controls as active.
+- Browser-native media methods (getDisplayMedia, play, pause, and captureStream) must be invoked with their owning object as the receiver.
+- ERR_BLOCKED_BY_CLIENT from optional analytics or injected browser extensions is not a room playback failure.
