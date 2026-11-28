@@ -240,7 +240,8 @@ function PartyRoomExperience({
     roomData.bitChordRoomCode || roomData.roomCodes?.bitChord || roomCode || ''
   ).trim();
   const musAudioRoomCode = String(
-    roomData.musAudioRoomCode || roomData.musAudioCode || roomData.roomCodes?.musAudio || ''
+    roomData.musAudioRoomCode || roomData.musAudioCode || roomData.roomCodes?.musAudio
+      || room?.musAudioRoomCode || room?.musAudioCode || room?.roomCodes?.musAudio || ''
   ).trim();
   const hostControlsPlayback = Boolean(roomData.ownerOnlyControls);
   const allowPlayback = isHost || !room?.ownerOnlyControls;
@@ -1112,7 +1113,7 @@ function PartyRoomExperience({
                 aria-label={isLeave ? leaveLabel : tab.label}
                 title={isLeave ? leaveLabel : tab.label}
               >
-                <span>{tab.symbol}</span>{isLeave ? 'Leave' : tab.label}{tab.id === 'chat' && chat.length > 0 ? <small>{chat.length > 99 ? '99+' : chat.length}</small> : null}
+                <span>{tab.symbol}</span>{isLeave ? leaveLabel : tab.label}{tab.id === 'chat' && chat.length > 0 ? <small>{chat.length > 99 ? '99+' : chat.length}</small> : null}
               </button>
             );
           })}
