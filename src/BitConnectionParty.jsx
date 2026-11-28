@@ -243,7 +243,7 @@ function PartyRoomExperience({
     roomData.musAudioRoomCode || roomData.musAudioCode || roomData.roomCodes?.musAudio
       || room?.musAudioRoomCode || room?.musAudioCode || room?.roomCodes?.musAudio || ''
   ).trim();
-  const hostControlsPlayback = Boolean(roomData.ownerOnlyControls);
+  const hostControlsPlayback = Boolean(room?.ownerOnlyControls ?? roomState?.room?.ownerOnlyControls);
   const allowPlayback = isHost || !room?.ownerOnlyControls;
   const allowQueue = allowPlayback;
   const currentId = currentParticipant?.participantId || session?.participantId;
