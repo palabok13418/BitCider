@@ -2784,6 +2784,7 @@ export function createBitConnectionRouter({
           room.hostIdentityType = successor.identityId?.startsWith('cider:')
             ? 'bitcider' : successor.identityId ? 'bitconnection' : null;
           room.hostUsername = successor.username;
+          hostLocations.delete(room.roomId);
           delete room.participants[participant.participantId];
           room.updatedAt = new Date().toISOString();
           return { ok: true, roomClosed: false, hostTransferred: true, hostParticipantId: successor.participantId };
