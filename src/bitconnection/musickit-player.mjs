@@ -214,30 +214,30 @@ export async function getMusicKitPlayer({ developerToken, scriptUrl = DEFAULT_MU
     throw new Error('MusicKit was already configured with a different developer token. Reload BitCider to change it.');
   }
   if (!configuredTokenFingerprint) {
-    await MusicKit.configure({
+    await Reflect.apply(MusicKit.configure, MusicKit, [{
       developerToken: token,
       // Highest documented MusicKit Web bitrate target; this is not a Lossless override.
       bitrate: MusicKit.PlaybackBitrate?.HIGH ?? 256,
       app: { name: 'BitCider', build: '2026.11.26' }
-    });
+    }]);
     configuredTokenFingerprint = fingerprint;
   }
-  const music = MusicKit.getInstance();
+  const music = Reflect.apply(MusicKit.getInstance, MusicKit, []);
   if (!music) throw new Error('Apple MusicKit did not create a playback instance.');
   return music;
 }
 
 export async function authorizeAppleMusicPlayback(options) {
   const music = await getMusicKitPlayer(options);
-  await music.authorize();
+  await invokeWithReceiver(music, 'authorize');
   return music;
 }
 
 export async function playAppleMusicSong(track, options) {
   const descriptor = musicKitQueueDescriptor(track);
   const music = await authorizeAppleMusicPlayback(options);
-  await music.setQueue(descriptor);
-  await music.play();
+  await invokeWithReceiver(music, 'setQueue', [descriptor]);
+  await invokeWithReceiver(music, 'play');
   return { music, snapshot: musicKitPlaybackSnapshot(music) };
 }
 
@@ -275,8 +275,16 @@ export function subscribeAppleMusicPlayback(music, callback) {
   if (!music || typeof callback !== 'function') return () => {};
   const names = ['playbackStateDidChange', 'nowPlayingItemDidChange', 'playbackTimeDidChange', 'playbackDurationDidChange'];
   const events = names.map(name => music.MusicKit?.Events?.[name] || globalThis.MusicKit?.Events?.[name] || name);
-  for (const eventName of events) music.addEventListener?.(eventName, callback);
+  for (const eventName of events) {
+    if (typeof music.addEventListener === 'function') {
+      Reflect.apply(music.addEventListener, music, [eventName, callback]);
+    }
+  }
   return () => {
-    for (const eventName of events) music.removeEventListener?.(eventName, callback);
+    for (const eventName of events) {
+      if (typeof music.removeEventListener === 'function') {
+        Reflect.apply(music.removeEventListener, music, [eventName, callback]);
+      }
+    }
   };
 }
