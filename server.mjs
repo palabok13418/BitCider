@@ -659,11 +659,11 @@ async function ensureCiderSessionForLinkedBitConnection({ bitConnectionAccountId
 
     delete store.sessions[sessionId];
     delete store.authSessions[sessionHash];
-    createAuthenticatedSession(store, linked.accountId, res, req);
-    return { ok: true };
+    const authenticatedSession = createAuthenticatedSession(store, linked.accountId, res, req);
+    return { ok: true, sessionId: authenticatedSession.sessionId };
   });
   return result.ok === true
-    ? { authenticated: true, accountId: linked.accountId, sessionId }
+    ? { authenticated: true, accountId: linked.accountId, sessionId: result.sessionId }
     : false;
 }
 
