@@ -130,7 +130,7 @@ function usernameAvailable(data, username, excludeIdentityId = '') {
 function createRoomCode(existing) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const bytes = crypto.randomBytes(8);
+    const bytes = crypto.randomBytes(6);
     const code = Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
     if (!Object.values(existing).some(room => room.roomCode === code && room.status === 'open')) return code;
   }
