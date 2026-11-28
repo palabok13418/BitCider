@@ -276,7 +276,7 @@ test('account center rotates secrets and permanently deletes the account and ori
 
   const initialStatus = await jsonRequest(origin, '/api/status');
   assert.equal(initialStatus.response.status, 200);
-  assert.equal(initialStatus.payload.apiVersion, '2026-11-28-bitaccount-link-v1');
+  assert.equal(initialStatus.payload.apiVersion, '2026-11-28-apple-music-addon-v1');
   const anonymousCookie = cookieFrom(initialStatus.response);
 
   const linked = await jsonRequest(origin, '/api/connect', {
