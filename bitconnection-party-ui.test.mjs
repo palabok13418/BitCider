@@ -59,3 +59,17 @@ test('active party styles the navigation at viewport bottom center and adapts Ro
   assert.match(css, /@media\s*\(max-width:\s*760px\)/);
   assert.match(css, /\.bc-party-room-qr-center\s*\.bc-party-room-qr/);
 });
+
+test('active-party Browser uses cover-first Apple Music shelves and a 90% rounded overlay', async () => {
+  const source = await readFile(new URL('src/BitConnectionParty.jsx', root), 'utf8');
+  const css = await readFile(new URL('src/bitconnection-party.css', root), 'utf8');
+  assert.match(source, /bc-party-browser-featured-row/);
+  assert.match(source, /bc-party-browser-cover-grid/);
+  assert.match(source, /parseMoreLikeShelfTitle/);
+  assert.match(source, /APPLE_MOTION_LOOKUP_ENDPOINT/);
+  assert.doesNotMatch(source, /RECOMMENDED FOR YOU/);
+  assert.doesNotMatch(source, /bc-party-browser-recommendation-head/);
+  assert.match(css, /\\.bc-party-browser-panel\\s*\\{[^}]*width:min\\(92vw/);
+  assert.match(css, /height:min\\(90dvh/);
+  assert.match(css, /border-radius:clamp\\(/);
+});

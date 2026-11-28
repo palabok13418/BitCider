@@ -84,6 +84,8 @@ function trackArtwork(track) {
   return '';
 }
 
+const APPLE_MOTION_LOOKUP_ENDPOINT = 'https://mus-api.de.deplexo.com/api/motion';
+
 const APPLE_AUDIO_VARIANT_LABELS = {
   'dolby-atmos': 'Dolby Atmos',
   'hi-res-lossless': 'Hi-Res Lossless',
@@ -146,6 +148,53 @@ function formatTime(seconds) {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
   return Math.floor(value / 60) + ':' + String(value % 60).padStart(2, '0');
 }
+function recommendationKey(recommendation, index) {
+  return String(recommendation?.id || recommendation?.title || index).slice(0, 180);
+}
+
+function parseMoreLikeShelfTitle(value) {
+  const match = String(value || '').trim().match(/^More Like\s+(.+?)\s*[-–—]\s*(EP|Song|Album)\s*$/i);
+  if (!match) return null;
+  const kind = match[2].toLowerCase();
+  return { term: match[1].trim() + ' - ' + match[2].toUpperCase(), entity: kind === 'song' ? 'song' : 'album' };
+}
+
+function safeAppleMotionMediaUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const host = url.hostname.toLowerCase();
+    const appleHost = host === 'mvod.itunes.apple.com' || host.endsWith('.itunes.apple.com') || host.endsWith('.mzstatic.com');
+    if (url.protocol !== 'https:' || !appleHost || url.username || url.password) return '';
+    if (!/\.(?:mp4|m4v|mov|webm)(?:[?#]|$)/i.test(url.pathname + url.search)) return '';
+    return url.toString();
+  } catch { return ''; }
+}
+
+function extractRareArtworkBloom(imageElement) {
+  try {
+    if (!imageElement?.naturalWidth || !imageElement?.naturalHeight) return '';
+    const canvas = document.createElement('canvas'); canvas.width = 28; canvas.height = 28;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return '';
+    context.drawImage(imageElement, 0, 0, 28, 28);
+    const pixels = context.getImageData(0, 0, 28, 28).data;
+    const buckets = new Map();
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] < 166) continue;
+      const red = pixels[index], green = pixels[index + 1], blue = pixels[index + 2];
+      const maximum = Math.max(red, green, blue), minimum = Math.min(red, green, blue);
+      const saturation = maximum ? (maximum - minimum) / maximum : 0;
+      if (maximum < 38 || minimum > 238 || saturation < .25) continue;
+      const bucket = [Math.round(red / 24), Math.round(green / 24), Math.round(blue / 24)].join(':');
+      const entry = buckets.get(bucket) || { count: 0, red: 0, green: 0, blue: 0, saturation: 0 };
+      entry.count += 1; entry.red += red; entry.green += green; entry.blue += blue; entry.saturation += saturation;
+      buckets.set(bucket, entry);
+    }
+    const candidate = [...buckets.values()].sort((left, right) => left.count - right.count || right.saturation / right.count - left.saturation / left.count)[0];
+    if (!candidate) return '';
+    return 'rgba(' + Math.round(candidate.red / candidate.count) + ', ' + Math.round(candidate.green / candidate.count) + ', ' + Math.round(candidate.blue / candidate.count) + ', .9)';
+  } catch { return ''; }
+}
 
 function PartyRoomExperience({
   room,
@@ -185,6 +234,9 @@ function PartyRoomExperience({
   const [browserError, setBrowserError] = useState('');
   const [browserMessage, setBrowserMessage] = useState('');
   const [browserRecommendations, setBrowserRecommendations] = useState([]);
+  const [browserMotionById, setBrowserMotionById] = useState({});
+  const [browserSectionArtwork, setBrowserSectionArtwork] = useState({});
+  const [browserBloomColors, setBrowserBloomColors] = useState({});
   const [browserAppleConnected, setBrowserAppleConnected] = useState(false);
   const [bitMonoSearches, setBitMonoSearches] = useState({});
   const [bitMonoLoading, setBitMonoLoading] = useState({});
@@ -576,11 +628,65 @@ function PartyRoomExperience({
 
 
 
+  async function resolveRecommendationVisuals(recommendations) {
+    const rows = Array.isArray(recommendations) ? recommendations.slice(0, 8) : [];
+    const motionEntries = [];
+    const artworkEntries = [];
+    await Promise.all(rows.map(async (recommendation, index) => {
+      const key = recommendationKey(recommendation, index);
+      const tasks = [];
+      if (recommendation?.url && recommendation.artworkUrl) {
+        tasks.push((async () => {
+          try {
+            const response = await fetch(APPLE_MOTION_LOOKUP_ENDPOINT, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'omit', cache: 'no-store', body: JSON.stringify({ appleUrl: recommendation.url, storefront: /^[a-z]{2}$/.test(String(appleMusicStorefront || '')) ? appleMusicStorefront : 'us' }) });
+            if (!response.ok) return;
+            const payload = await response.json().catch(() => ({}));
+            const motionUrl = safeAppleMotionMediaUrl(payload.animatedUrl1080 || payload.animatedUrl || payload.animatedUrl2160 || '');
+            if (motionUrl) motionEntries.push([key, { url: motionUrl, poster: recommendation.artworkUrl }]);
+          } catch { /* Motion is optional; retain the static cover. */ }
+        })());
+      }
+      const moreLike = parseMoreLikeShelfTitle(recommendation?.title);
+      if (moreLike) {
+        tasks.push((async () => {
+          try {
+            const query = new URLSearchParams({ term: moreLike.term, entity: moreLike.entity, storefront: /^[a-z]{2}$/.test(String(appleMusicStorefront || '')) ? appleMusicStorefront : 'us', limit: '8' });
+            const response = await fetch('/api/bitconnection/account/providers/apple-music/catalog-search?' + query, { credentials: 'same-origin', cache: 'no-store' });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) return;
+            const normalize = value => String(value || '').toLowerCase().replace(/\b(ep|song|album)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+            const wanted = normalize(moreLike.term);
+            const candidate = (Array.isArray(payload.tracks) ? payload.tracks : []).filter(item => item.artworkUrl).sort((left, right) => {
+              const score = item => { const title = normalize(item.title); return title === wanted ? 3 : (title.startsWith(wanted) || wanted.startsWith(title)) ? 2 : title && wanted.includes(title) ? 1 : 0; };
+              return score(right) - score(left);
+            })[0];
+            if (candidate?.artworkUrl) artworkEntries.push([key, candidate.artworkUrl]);
+          } catch { /* Without an exact Apple result, leave the section heading text-only. */ }
+        })());
+      }
+      await Promise.all(tasks);
+    }));
+    if (motionEntries.length) setBrowserMotionById(previous => ({ ...previous, ...Object.fromEntries(motionEntries) }));
+    if (artworkEntries.length) setBrowserSectionArtwork(previous => ({ ...previous, ...Object.fromEntries(artworkEntries) }));
+  }
+
+  function captureBrowserArtworkBloom(key, event) {
+    const color = extractRareArtworkBloom(event.currentTarget);
+    if (color) setBrowserBloomColors(previous => ({ ...previous, [key]: color }));
+  }
+
+  function scrollToRecommendation(index) {
+    document.getElementById('bc-party-recommendation-' + index)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   async function loadAppleMusicBrowser() {
     setBrowserLoading(true);
     setBrowserError('');
     setBrowserMessage('');
     setBrowserRecommendations([]);
+    setBrowserMotionById({});
+    setBrowserSectionArtwork({});
+    setBrowserBloomColors({});
     setBrowserAppleConnected(false);
     try {
       const accountResponse = await fetch('/api/bitconnection/account', {
@@ -627,7 +733,9 @@ function PartyRoomExperience({
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || 'Apple Music recommendations could not be loaded.');
-      setBrowserRecommendations(Array.isArray(payload.recommendations) ? payload.recommendations : []);
+      const recommendations = Array.isArray(payload.recommendations) ? payload.recommendations : [];
+      setBrowserRecommendations(recommendations);
+      void resolveRecommendationVisuals(recommendations);
       setBrowserAppleConnected(true);
       if (!payload.recommendations?.length) setBrowserMessage('Apple Music did not return any recommendations for this account yet.');
     } catch (error) {
@@ -1163,94 +1271,101 @@ function PartyRoomExperience({
               </div>
             )}
             {(appleCatalogResults.length > 0 || appleCatalogError) && (
-              <section className="bc-party-browser-search-results">
-                <div className="bc-party-browser-search-title">APPLE MUSIC RESULTS {filteredAppleCatalogResults.length ? '· ' + filteredAppleCatalogResults.length + (filteredAppleCatalogResults.length !== appleCatalogResults.length ? ' / ' + appleCatalogResults.length : '') : ''}</div>
-                {appleCatalogError && <p>{appleCatalogError}</p>}
-                {appleCatalogResults.length > 0 && filteredAppleCatalogResults.length === 0 && <p>No Apple Music search results advertise this format.</p>}
-                {filteredAppleCatalogResults.map(item => {
-                  const id = String(item.id || '');
-                  return (
-                    <article className="bc-party-browser-search-track" key={id}>
-                      {item.artworkUrl ? <img src={item.artworkUrl.replace('{w}', '160').replace('{h}', '160')} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
-                      <div className="bc-party-browser-track-copy">
-                        <strong>{item.title}</strong>
-                        <small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small>
-                        <span className="bc-party-format-list">
-                          {item.audioVariants?.length
-                            ? item.audioVariants.map(variant => <span className="bc-party-format-chip" key={variant}>{APPLE_AUDIO_VARIANT_LABELS[variant] || variant}</span>)
-                            : <span className="bc-party-quality-note">Format availability not reported</span>}
-                        </span>
-                      </div>
-                      <div className="bc-party-browser-search-actions">
-                        <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={!isHost || queueBusy}>{'Find in ' + sourceLabel}</button>
-                      </div>
-                    </article>
-                  );
-                })}
+              <section className="bc-party-browser-section bc-party-browser-search-section">
+                <div className="bc-party-browser-section-heading"><h3>Search Results</h3><small>{filteredAppleCatalogResults.length} results</small></div>
+                {appleCatalogError && <p className="bc-party-browser-empty-copy">{appleCatalogError}</p>}
+                {appleCatalogResults.length > 0 && filteredAppleCatalogResults.length === 0 && <p className="bc-party-browser-empty-copy">No Apple Music results offer this format.</p>}
+                <div className="bc-party-browser-cover-grid">
+                  {filteredAppleCatalogResults.map(item => {
+                    const id = String(item.id || '');
+                    const bloomKey = 'search:' + id;
+                    return (
+                      <button className="bc-party-browser-cover-tile" type="button" key={id} style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={() => void searchRecommendationInBitMono(item)} aria-label={'Find ' + item.title + ' by ' + item.artist + ' in ' + sourceLabel}>
+                        {item.artworkUrl ? <img src={item.artworkUrl.replace('{w}', '600').replace('{h}', '600')} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(bloomKey, event)}/> : <span className="bc-party-browser-cover-placeholder"><Icon name="music" size={24}/></span>}
+                        <span className="bc-party-browser-cover-bloom"><strong>{item.title}</strong><small>{item.artist}</small></span>
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
             )}
-            {browserLoading && <div className="bc-party-browser-state"><span className="bc-party-browser-spinner"/><strong>Loading your recommendations</strong><small>Checking your connected Apple Music account</small></div>}
-            {!browserLoading && browserError && <div className="bc-party-browser-state is-error"><strong>Could not load Browser</strong><small>{browserError}</small><button type="button" onClick={() => void loadAppleMusicBrowser()}>Try again</button></div>}
-            {!browserLoading && !browserError && browserMessage && (
-              <div className="bc-party-browser-state">
-                <strong>{browserAppleConnected ? 'No recommendations yet' : 'Connect Apple Music'}</strong>
-                <small>{browserMessage}</small>
-                {!browserAppleConnected && <button type="button" onClick={() => window.open('/bitconnection/?account=1', 'bitconnection-account', 'popup=yes,width=920,height=760,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no')}>Open BitAccount Center <Icon name="more" size={14}/></button>}
-              </div>
-            )}
-            {!browserLoading && !browserError && browserRecommendations.length > 0 && (
-              <div className="bc-party-browser-recommendations">
-                {browserRecommendations.map((recommendation, index) => (
-                  <article className="bc-party-browser-recommendation" key={recommendation.id || index}>
-                    <div className="bc-party-browser-recommendation-head">
-                      {recommendation.artworkUrl
-                        ? <img src={recommendation.artworkUrl} alt="" loading="lazy"/>
-                        : <span className="bc-party-browser-art-fallback"><Icon name="waveform" size={21}/></span>}
-                      <div className="bc-party-browser-section-title"><strong>{recommendation.title}</strong>{recommendation.description && <small>{recommendation.description}</small>}</div>
+            <div className="bc-party-browser-scroll">
+              {browserLoading && <div className="bc-party-browser-state"><span className="bc-party-browser-spinner"/><strong>Loading your Apple Music shelves</strong><small>Finding your playlists and album artwork</small></div>}
+              {!browserLoading && browserError && <div className="bc-party-browser-state is-error"><strong>Could not load Browser</strong><small>{browserError}</small><button type="button" onClick={() => void loadAppleMusicBrowser()}>Try again</button></div>}
+              {!browserLoading && !browserError && browserMessage && (
+                <div className="bc-party-browser-state">
+                  <strong>{browserAppleConnected ? 'No recommendations yet' : 'Connect Apple Music'}</strong>
+                  <small>{browserMessage}</small>
+                  {!browserAppleConnected && <button type="button" onClick={() => window.open('/bitconnection/?account=1', 'bitconnection-account', 'popup=yes,width=920,height=760,resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no')}>Open BitAccount Center <Icon name="more" size={14}/></button>}
+                </div>
+              )}
+              {!browserLoading && !browserError && browserRecommendations.length > 0 && (
+                <div className="bc-party-browser-content">
+                  <section className="bc-party-browser-section bc-party-browser-for-you">
+                    <div className="bc-party-browser-section-heading"><h3>For You</h3></div>
+                    <div className="bc-party-browser-featured-row">
+                      {browserRecommendations.map((recommendation, index) => {
+                        const key = recommendationKey(recommendation, index);
+                        const motion = browserMotionById[key];
+                        if (!recommendation.artworkUrl) return null;
+                        return (
+                          <button className="bc-party-browser-featured-tile" type="button" key={key} style={{ '--bc-party-bloom': browserBloomColors[key] || 'rgba(222, 104, 150, .88)' }} onClick={() => scrollToRecommendation(index)} aria-label={'View ' + recommendation.title}>
+                            <img className="bc-party-browser-cover-poster" src={recommendation.artworkUrl} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(key, event)}/>
+                            {motion?.url && <video className="bc-party-browser-cover-motion" src={motion.url} poster={motion.poster || recommendation.artworkUrl} muted loop autoPlay playsInline preload="metadata" onError={() => setBrowserMotionById(previous => ({ ...previous, [key]: { ...previous[key], url: '' } }))}/>}
+                            <span className="bc-party-browser-cover-bloom"><strong>{recommendation.title}</strong><small>Apple Music playlist</small></span>
+                          </button>
+                        );
+                      })}
                     </div>
-                    {recommendation.items?.length > 0 && (
-                      <div className="bc-party-browser-track-list">
-                        {recommendation.items.map((item, itemIndex) => {
-                          const key = String(item.id || item.title || itemIndex).slice(0, 180);
-                          const search = bitMonoSearches[key];
-                          return (
-                            <div className="bc-party-browser-track" key={key}>
-                              {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
-                              <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
-                              <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in ' + sourceLabel + ''}</button>
-                              {search && (
-                                <div className="bc-party-browser-mono-results">
-                                  {search.error
-                                    ? <small className="is-error">{search.error}</small>
-                                    : search.tracks.length
-                                      ? search.tracks.slice(0, 4).map(track => {
-                                          const id = String(track.id || '');
-                                          const prepared = bitMonoPrepared[id];
-                                          return (
-                                            <div className="bc-party-browser-mono-result" key={id}>
-                                              <span><strong>{track.title}</strong><small>{track.artist}{track.audioQuality ? ' · ' + track.audioQuality : ''}</small></span>
-                                              <div>
-                                                <button type="button" onClick={() => void addBitMonoTrackToQueue(track)}>Queue</button>
-                                                {!prepared
-                                                  ? <button type="button" onClick={() => void prepareBitMonoTrack(track)} disabled={Boolean(bitMonoPrepareBusy[id])}>{bitMonoPrepareBusy[id] ? 'Preparing…' : 'Prepare'}</button>
-                                                  : <button type="button" onClick={() => void startPreparedBitMonoTrack(track)} disabled={!isHost || queueBusy}>{isHost ? 'Play' : 'Host only'}</button>}
-                                              </div>
-                                            </div>
-                                          );
-                                        })
-                                      : <small>No {sourceLabel} matches were found.</small>}
+                  </section>
+                  {browserRecommendations.map((recommendation, index) => {
+                    const key = recommendationKey(recommendation, index);
+                    const sectionArtwork = browserSectionArtwork[key];
+                    const items = Array.isArray(recommendation.items) ? recommendation.items : [];
+                    return (
+                      <section className="bc-party-browser-section" id={'bc-party-recommendation-' + index} key={'row:' + key}>
+                        <div className="bc-party-browser-section-heading">
+                          {sectionArtwork && <img src={sectionArtwork} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom('section:' + key, event)}/>}
+                          <h3>{recommendation.title}</h3>
+                        </div>
+                        {items.length > 0 ? (
+                          <div className="bc-party-browser-cover-grid">
+                            {items.map((item, itemIndex) => {
+                              const itemKey = String(item.id || item.title || itemIndex).slice(0, 180);
+                              const bloomKey = 'item:' + key + ':' + itemKey;
+                              const search = bitMonoSearches[itemKey];
+                              return (
+                                <div className="bc-party-browser-item-wrap" key={itemKey}>
+                                  <button className="bc-party-browser-cover-tile" type="button" style={{ '--bc-party-bloom': browserBloomColors[bloomKey] || 'rgba(222, 104, 150, .88)' }} onClick={() => void searchRecommendationInBitMono(item)} aria-label={'Find ' + item.title + ' by ' + item.artist + ' in ' + sourceLabel}>
+                                    {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy" crossOrigin="anonymous" onLoad={event => captureBrowserArtworkBloom(bloomKey, event)}/> : <span className="bc-party-browser-cover-placeholder"><Icon name="music" size={24}/></span>}
+                                    <span className="bc-party-browser-cover-bloom"><strong>{item.title}</strong><small>{item.artist || item.album || 'Apple Music'}</small></span>
+                                  </button>
+                                  {search && (
+                                    <div className="bc-party-browser-inline-matches">
+                                      {search.error ? <small className="is-error">{search.error}</small> : search.tracks.length ? search.tracks.slice(0, 3).map(foundTrack => {
+                                        const foundId = String(foundTrack.id || '');
+                                        const prepared = bitMonoPrepared[foundId];
+                                        return (
+                                          <div className="bc-party-browser-inline-match" key={foundId}>
+                                            <span><strong>{foundTrack.title}</strong><small>{foundTrack.artist}{foundTrack.audioQuality ? ' · ' + foundTrack.audioQuality : ''}</small></span>
+                                            <button type="button" onClick={() => void addBitMonoTrackToQueue(foundTrack)}>Queue</button>
+                                            {!prepared ? <button type="button" onClick={() => void prepareBitMonoTrack(foundTrack)} disabled={Boolean(bitMonoPrepareBusy[foundId])}>{bitMonoPrepareBusy[foundId] ? 'Preparing…' : 'Prepare'}</button> : <button type="button" onClick={() => void startPreparedBitMonoTrack(foundTrack)} disabled={!isHost || queueBusy}>{isHost ? 'Play' : 'Host only'}</button>}
+                                          </div>
+                                        );
+                                      }) : <small>No {sourceLabel} match was found.</small>}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </article>
-                ))}
-                <p className="bc-party-browser-footnote">Apple Music provides recommendations and lyrics. Party playback always uses the selected {sourceLabel} source.</p>
-              </div>
-            )}
+                              );
+                            })}
+                          </div>
+                        ) : <p className="bc-party-browser-empty-copy">No items in this Apple Music shelf.</p>}
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </section>
         </div>,
         document.body
