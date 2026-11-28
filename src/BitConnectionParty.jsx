@@ -663,7 +663,10 @@ function PartyRoomExperience({
   }
 
   function selectedSourceBaseUrl() {
-    if (playbackSource === 'cider') return String(ciderAddonBaseUrl || '').replace(/\\/$/, '');
+    if (playbackSource === 'cider') {
+      const base = String(ciderAddonBaseUrl || '').trim();
+      return base.endsWith('/') ? base.slice(0, -1) : base;
+    }
     if (playbackSource === 'ccustom') {
       const manifest = String(customSourceManifestUrl || '').trim();
       const suffix = '/manifest.json';
@@ -1182,9 +1185,9 @@ function PartyRoomExperience({
           <section className="bc-party-browser-panel">
             <header className="bc-party-browser-heading">
               <div>
-                <span>${sourceLabel.toUpperCase()} · SELECTED PARTY SOURCE</span>
+                <span>{sourceLabel.toUpperCase()} · SELECTED PARTY SOURCE</span>
                 <h2>{sourceLabel} Browser</h2>
-                <p>Search Apple Music recommendations, then find matching tracks in ${sourceLabel} for party playback.</p>
+                <p>Search Apple Music recommendations, then find matching tracks in {sourceLabel} for party playback.</p>
               </div>
               <button type="button" onClick={() => setBrowserOpen(false)} aria-label="Close Browser"><Icon name="close" size={20}/></button>
             </header>
@@ -1312,11 +1315,6 @@ function PartyRoomExperience({
                             <div className="bc-party-browser-track" key={key}>
                               {item.artworkUrl ? <img src={item.artworkUrl} alt="" loading="lazy"/> : <span className="bc-party-browser-track-fallback"><Icon name="music" size={16}/></span>}
                               <div><strong>{item.title}</strong><small>{[item.artist, item.album].filter(Boolean).join(' · ')}</small></div>
-                              {item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) && (
-                                <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={!isHost || queueBusy} title={isHost ? 'Find this song in ' + sourceLabel : 'Only the host can choose party tracks'}>
-                                  {'Find in ' + sourceLabel}
-                                </button>
-                              )}
                               <button type="button" onClick={() => void searchRecommendationInBitMono(item)} disabled={Boolean(bitMonoLoading[key])}>{bitMonoLoading[key] ? 'Searching…' : search ? 'Search again' : 'Find in ' + sourceLabel + ''}</button>
                               {search && (
                                 <div className="bc-party-browser-mono-results">
@@ -1338,7 +1336,7 @@ function PartyRoomExperience({
                                             </div>
                                           );
                                         })
-                                      : <small>No Bit Mono matches were found.</small>}
+                                      : <small>No {sourceLabel} matches were found.</small>}
                                 </div>
                               )}
                             </div>
@@ -1348,7 +1346,7 @@ function PartyRoomExperience({
                     )}
                   </article>
                 ))}
-                <p className="bc-party-browser-footnote">Play Apple Music catalog songs directly through MusicKit, or find a compatible Bit Mono source. For party audio, the host can share this browser tab.</p>
+                <p className="bc-party-browser-footnote">Apple Music provides recommendations and lyrics. Party playback always uses the selected {sourceLabel} source.</p>
               </div>
             )}
           </section>
