@@ -2056,3 +2056,351 @@ audio.bc-party-audio-output { display: none !important; }
     transition-duration: .01ms !important;
   }
 }
+
+
+/* User-directed active-party composition: playback remains left; Lyrics is
+   the default right-side view; Room owns the two service codes and centered QR. */
+.bc-party-room {
+  grid-template-columns: minmax(340px, .92fr) minmax(0, 1.08fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: clamp(24px, 3.6vw, 62px);
+  padding: clamp(22px, 2.8vw, 44px);
+}
+.bc-party-room-share { display: none !important; }
+.bc-party-playback-panel {
+  grid-column: 1;
+  grid-row: 1;
+  padding: 0 12px 78px;
+  justify-content: center;
+}
+.bc-party-content-panel {
+  grid-column: 2;
+  grid-row: 1;
+  padding: 4px 0 0;
+}
+.bc-party-tab-content {
+  min-height: 0;
+  padding: 22px 3px 94px;
+}
+.bc-party-tab-content.is-lyrics {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bc-party-lyrics {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bc-party-lyrics-list {
+  width: 100%;
+  text-align: center;
+}
+.bc-party-lyrics-list p {
+  margin: 0;
+  padding: 8px 12px;
+  color: rgba(255, 236, 243, .42);
+  font-size: clamp(14px, 1.25vw, 18px);
+  line-height: 1.5;
+  transition: color .28s ease, opacity .28s ease, transform .28s ease;
+}
+.bc-party-lyrics-list p.is-current {
+  color: #fff7fa;
+  font-size: clamp(19px, 1.8vw, 26px);
+  font-weight: 720;
+  text-shadow: 0 0 24px rgba(255, 153, 184, .18);
+  transform: scale(1.015);
+}
+.bc-party-lyrics-list p.is-past { opacity: .46; }
+.bc-party-lyrics-empty {
+  max-width: 390px;
+  margin: auto;
+  text-align: center;
+}
+
+.bc-party-room-details {
+  display: grid;
+  gap: clamp(18px, 2.4vh, 28px);
+  padding: 2px 0 20px;
+}
+.bc-party-room-control-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 220, 233, .13);
+  border-radius: 12px;
+  color: rgba(255, 231, 239, .62);
+  background: rgba(255,255,255,.035);
+  font-size: 10px;
+}
+.bc-party-room-control-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffeaf1;
+  font-weight: 650;
+}
+.bc-party-room-control-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef8cac;
+  box-shadow: 0 0 10px rgba(239,140,172,.52);
+}
+.bc-party-room-code-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(132px, 16vw, 190px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(12px, 2vw, 28px);
+  padding: clamp(18px, 2.1vw, 28px) 0;
+}
+.bc-party-room-code-card {
+  display: flex;
+  min-width: 0;
+  min-height: 142px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 9px;
+  padding: clamp(13px, 1.5vw, 19px);
+  border: 1px solid rgba(255, 220, 233, .14);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px rgba(255,255,255,.045);
+}
+.bc-party-room-code-card > span {
+  color: rgba(255, 211, 226, .58);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .14em;
+}
+.bc-party-room-code-card > strong {
+  max-width: 100%;
+  color: #fff4f8;
+  font: 700 clamp(17px, 1.75vw, 23px)/1.25 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .07em;
+  overflow-wrap: anywhere;
+}
+.bc-party-room-code-card > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 223, 234, .15);
+  border-radius: 8px;
+  color: rgba(255, 236, 243, .78);
+  background: rgba(255,255,255,.045);
+  font-size: 9px;
+  cursor: pointer;
+}
+.bc-party-room-code-card > small {
+  color: rgba(255, 224, 235, .4);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.bc-party-room-code-card.is-mus-audio { align-items: flex-end; text-align: right; }
+.bc-party-room-qr-center {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+.bc-party-room-qr-center > span {
+  color: rgba(255, 216, 230, .58);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .19em;
+}
+.bc-party-room-qr-center .bc-party-room-qr {
+  width: clamp(116px, 14vw, 168px);
+  height: clamp(116px, 14vw, 168px);
+  padding: 8px;
+  border: 5px solid #fff;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(0,0,0,.28);
+}
+.bc-party-qr-fallback {
+  display: flex;
+  width: clamp(116px, 14vw, 168px);
+  aspect-ratio: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px;
+  border: 1px dashed rgba(255, 219, 232, .3);
+  border-radius: 12px;
+  color: rgba(255, 228, 238, .7);
+  background: rgba(255,255,255,.04);
+  text-align: center;
+}
+.bc-party-qr-fallback > span {
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.bc-party-qr-fallback > strong {
+  color: #fff4f8;
+  font: 650 13px 'DM Mono', ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+.bc-party-room-section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 11px;
+}
+.bc-party-room-section-heading > div {
+  display: grid;
+  gap: 5px;
+}
+.bc-party-room-section-heading > div > span {
+  color: rgba(255, 211, 226, .5);
+  font: 8px 'DM Mono', ui-monospace, monospace;
+  letter-spacing: .16em;
+}
+.bc-party-room-section-heading > div > strong {
+  color: #fff4f8;
+  font-size: 17px;
+  letter-spacing: -.02em;
+}
+.bc-party-room-section-heading > small {
+  color: rgba(255, 228, 238, .45);
+  font: 10px 'DM Mono', ui-monospace, monospace;
+}
+.bc-party-room-members .bc-party-members { padding: 0; }
+.bc-party-room-members .bc-party-member-card { min-height: 62px; }
+
+.bc-party-tab-bar {
+  position: fixed;
+  left: 50%;
+  right: auto;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 100;
+  width: min(540px, calc(100vw - 32px));
+  min-height: 62px;
+  margin: 0;
+  padding: 6px;
+  transform: translateX(-50%);
+}
+.bc-party-tab-bar button {
+  min-height: 48px;
+  font-size: 10px;
+  letter-spacing: .01em;
+}
+.bc-party-tab-bar button.is-leave {
+  color: rgba(255, 185, 203, .76);
+}
+.bc-party-tab-bar button.is-leave:hover {
+  color: #fff3f7;
+  background: rgba(220, 76, 119, .16);
+}
+.bc-party-tab-content.is-chat { padding-bottom: 14px; }
+.bc-party-chat {
+  min-height: 100%;
+  padding-bottom: 4px;
+}
+.bc-party-chat .bc-party-composer {
+  margin-top: auto;
+  transform: translateY(12px);
+}
+.bc-party-browser-button { z-index: 90; }
+
+@media (max-width: 900px) {
+  .bc-party-room {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px 24px;
+    padding: 18px 20px 94px;
+  }
+  .bc-party-playback-panel { grid-row: 1; padding: 0 3px 62px; }
+  .bc-party-content-panel { grid-row: 1; }
+  .bc-party-room-code-layout {
+    grid-template-columns: minmax(0,1fr) 126px minmax(0,1fr);
+    gap: 10px;
+  }
+  .bc-party-room-code-card { min-height: 126px; }
+  .bc-party-room-qr-center .bc-party-room-qr,
+  .bc-party-qr-fallback { width: 112px; }
+  .bc-party-room-qr-center .bc-party-room-qr { height: 112px; }
+}
+@media (max-width: 760px) {
+  .bc-party-room {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    padding: 14px 14px calc(104px + env(safe-area-inset-bottom));
+    overflow: visible;
+  }
+  .bc-party-playback-panel {
+    flex: 0 0 auto;
+    padding: 4px 0 14px;
+  }
+  .bc-party-content-panel {
+    flex: 1 1 auto;
+    min-height: 420px;
+    padding: 0 0 12px;
+  }
+  .bc-party-tab-content {
+    min-height: 280px;
+    padding: 15px 2px 24px;
+  }
+  .bc-party-tab-bar {
+    left: 12px;
+    right: 12px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: auto;
+    min-height: 58px;
+    transform: none;
+  }
+  .bc-party-tab-bar button {
+    flex-direction: column;
+    min-height: 46px;
+    gap: 2px;
+    font-size: 9px;
+  }
+  .bc-party-room-code-layout {
+    grid-template-columns: minmax(0,1fr) 94px minmax(0,1fr);
+    gap: 7px;
+    padding: 8px 0 14px;
+  }
+  .bc-party-room-code-card {
+    min-height: 116px;
+    gap: 7px;
+    padding: 10px 8px;
+  }
+  .bc-party-room-code-card > span { font-size: 7px; letter-spacing: .08em; }
+  .bc-party-room-code-card > strong { font-size: clamp(12px, 3vw, 16px); letter-spacing: .02em; }
+  .bc-party-room-code-card > small { font-size: 8px; }
+  .bc-party-room-qr-center .bc-party-room-qr,
+  .bc-party-qr-fallback { width: 88px; }
+  .bc-party-room-qr-center .bc-party-room-qr { height: 88px; padding: 4px; border-width: 4px; }
+  .bc-party-room-qr-center > span { font-size: 7px; }
+  .bc-party-room-control-note { padding: 10px; font-size: 9px; }
+  .bc-party-chat .bc-party-composer { transform: translateY(0); }
+  .bc-party-browser-button {
+    right: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    min-height: 40px;
+  }
+}
+@media (max-width: 380px) {
+  .bc-party-room-code-layout { grid-template-columns: minmax(0,1fr) 76px minmax(0,1fr); }
+  .bc-party-room-code-card { padding: 8px 6px; }
+  .bc-party-room-code-card > strong { font-size: 11px; }
+  .bc-party-room-qr-center .bc-party-room-qr,
+  .bc-party-qr-fallback { width: 72px; }
+  .bc-party-room-qr-center .bc-party-room-qr { height: 72px; }
+  .bc-party-tab-bar { left: 8px; right: 8px; }
+}
