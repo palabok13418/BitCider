@@ -267,7 +267,7 @@ The Deplexo backend supplies public STUN servers by default. To use a TURN relay
 
 The backend issues each authenticated room participant a short-lived TURN username and HMAC-SHA1 credential using coturn's REST authentication format. The shared secret is never sent to browsers. When TURN is not configured, ICE uses STUN and direct connectivity only; some network combinations may still fail. This repository does **not** provision or host a TURN relay, so relay connectivity becomes available only after a real TURN endpoint and its matching shared secret are supplied in Deplexo. Do not put TURN secrets in Netlify, Cloudflare, frontend build variables, or Git.
 
-Browser tab audio capture depends on browser and selected-tab support. The capture picker must expose the BitChord Web tab's audio; if the browser does not provide a tab audio track, BitConnection stops capture rather than silently sharing desktop/system audio. Guest-side audio reception is exposed as a separate transport helper; the immersive Guest View UI remains a separate implementation stage.
+The host publishes only the audio track from the selected in-page player. Guest-side audio reception uses the room's existing WebRTC receive transport. The selected source must return a browser-playable URL and permit cross-origin media access when hosted on another origin.
 
 ## 5. BitChord addon URL
 
