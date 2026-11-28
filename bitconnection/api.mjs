@@ -1167,10 +1167,11 @@ export function createBitConnectionRouter({
     const developerToken = String(appleMusicPlaybackDeveloperToken || '').trim();
     res.set('Cache-Control', 'private, no-store');
     if (!developerToken) {
-      return res.status(503).json({
-        error: 'APPLE_MUSICKIT_DEVELOPER_TOKEN_NOT_CONFIGURED',
+      return res.json({
+        provider: 'musickit-web-v3',
         configured: false,
-        message: 'Integrated MusicKit playback requires APPLE_MUSICKIT_DEVELOPER_TOKEN on Deplexo. Apple embedded-player playback remains available without it; the subscriber Media-User-Token is a separate credential.'
+        playbackMode: 'apple-music-embed',
+        message: 'Direct MusicKit playback is not configured. The official Apple Music embedded player remains available without a developer token.'
       });
     }
     return res.json({
