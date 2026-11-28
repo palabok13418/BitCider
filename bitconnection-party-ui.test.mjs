@@ -74,6 +74,13 @@ test('active-party Browser uses cover-first Apple Music shelves and a 90% rounde
   assert.match(source, /playBrowserRelease\('shuffle'\)/);
   assert.match(source, /playBrowserRelease\('play'\)/);
   assert.match(source, /X-BitConnection-CSRF/);
+  assert.doesNotMatch(source, /BITCHORD WEB AUDIO/);
+  assert.doesNotMatch(source, /bc-party-quality-mark/);
+  assert.match(source, /api\\/bitconnection\\/source-search/);
+  assert.ok(css.includes('transition:clip-path .78s cubic-bezier(.18,.76,.2,1) .72s'));
+  assert.ok(css.includes('.bc-party-browser-release-back { top:0; left:0; right:auto; }'));
+  assert.ok(css.includes('transform:none;'));
+  assert.ok(css.includes('filter:none;'));
   assert.doesNotMatch(source, /RECOMMENDED FOR YOU/);
   assert.doesNotMatch(source, /bc-party-browser-recommendation-head/);
   const forYouStart = source.indexOf('bc-party-browser-for-you');

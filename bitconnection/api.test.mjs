@@ -158,6 +158,28 @@ test('Apple Music catalog lookup can resolve EP and album cover artwork', async 
 });
 
 
+test('BitChord source search is proxied same-origin without browser CORS', async t => {
+  const seen = [];
+  const client = await harness(t, {
+    fetchImpl: async (url, options = {}) => {
+      seen.push({ url: String(url), options });
+      return new Response(JSON.stringify({ results: [{ id: 'test-track', title: 'Cobra', artist: 'LISA' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  const response = await client.request('/source-search?q=' + encodeURIComponent('Cobra LISA'));
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.results[0].title, 'Cobra');
+  assert.equal(seen.length, 1);
+  const upstream = new URL(seen[0].url);
+  assert.equal(upstream.origin, 'https://bitchord.confih.tech');
+  assert.equal(upstream.pathname, '/search');
+  assert.equal(upstream.searchParams.get('q'), 'Cobra LISA');
+  assert.equal(seen[0].options.method, 'GET');
+});
+
 test('Apple Music release details, phone/desktop motion variants, and Add to Library use the saved subscriber token', async t => {
   const seen = [];
   const fetchImpl = async (url, options = {}) => {

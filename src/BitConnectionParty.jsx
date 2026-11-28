@@ -983,8 +983,12 @@ function PartyRoomExperience({
         const base = selectedSourceBaseUrl();
         if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
         if (playbackSource === 'cider' && ciderBridgeState !== 'connected') throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
-        url = base + '/search?' + new URLSearchParams({ q: query });
-        credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
+        let sourceHost = '';
+        try { sourceHost = new URL(base).hostname.toLowerCase(); } catch { /* selected source URL is validated by the account settings */ }
+        url = sourceHost === 'bitchord.confih.tech'
+          ? '/api/bitconnection/source-search?' + new URLSearchParams({ q: query })
+          : base + '/search?' + new URLSearchParams({ q: query });
+        credentials = sourceHost === 'bitchord.confih.tech' || playbackSource === 'cider' ? 'same-origin' : 'omit';
       }
       const response = await fetch(url, { credentials, cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
@@ -1027,7 +1031,8 @@ function PartyRoomExperience({
     const origin = {
       x: coverRect && panelRect ? coverRect.left + sourceWidth / 2 - panelRect.left : targetLeft + targetSize / 2,
       y: coverRect && panelRect ? coverRect.top + sourceHeight / 2 - panelRect.top : targetTop + targetSize / 2,
-      fromX: sourceLeft - targetLeft, fromY: sourceTop - targetTop, scale: sourceWidth / targetSize
+      fromX: sourceLeft - targetLeft, fromY: sourceTop - targetTop, scale: sourceWidth / targetSize,
+      radius: sourceWidth / 2
     };
     const rawType = String(item?.type || '').toLowerCase();
     const type = rawType === 'album' || rawType === 'albums' ? 'albums' : 'songs';
@@ -1185,7 +1190,7 @@ function PartyRoomExperience({
             <span className="bc-party-quality-note">Apple selects the active format using its playback settings, device support and network conditions.</span>
           </div>
         ) : (
-          <div className="bc-party-quality" aria-label={quality?.label || 'Source audio format not reported'}>{quality?.src ? <img src={quality.src} alt={quality.label} title={quality.label}/> : <><span className="bc-party-quality-mark" />BITCHORD WEB AUDIO</>}</div>
+          {quality?.src && <div className="bc-party-quality" aria-label={quality.label || 'Source audio format'}><img src={quality.src} alt={quality.label || ''} title={quality.label || ''}/></div>}
         )}
         <div className="bc-party-transport-controls">
           <button type="button" onClick={() => void runPlaybackAction('previous')} disabled={!allowPlayback || track?.source === 'apple-music'} aria-label="Previous track" title="Previous track"><Icon name="previous" size={23}/></button>
@@ -1522,7 +1527,8 @@ function PartyRoomExperience({
                   '--bc-release-origin-y': browserReleaseOrigin.y + 'px',
                   '--bc-release-from-x': browserReleaseOrigin.fromX + 'px',
                   '--bc-release-from-y': browserReleaseOrigin.fromY + 'px',
-                  '--bc-release-from-scale': browserReleaseOrigin.scale
+                  '--bc-release-from-scale': browserReleaseOrigin.scale,
+                  '--bc-release-from-radius': browserReleaseOrigin.radius + 'px'
                 } : undefined}
                 aria-label={((browserReleaseData || browserSelectedRelease).title || 'Release') + ' details'}
               >

@@ -1573,6 +1573,36 @@ export function createBitConnectionRouter({
     }
   });
 
+  router.get('/source-search', rateAppleMusic, async (req, res) => {
+    const query = String(req.query.q || '').trim().slice(0, 180);
+    if (!query) return res.status(400).json({ error: 'SEARCH_QUERY_REQUIRED', message: 'Enter a song or artist to search.' });
+    if (typeof fetchImpl !== 'function') {
+      return res.status(503).json({ error: 'SOURCE_SEARCH_UNAVAILABLE', message: 'The BitChord search service is unavailable.' });
+    }
+    try {
+      const upstream = new URL('https://bitchord.confih.tech/search');
+      upstream.searchParams.set('q', query);
+      const response = await fetchImpl(upstream.toString(), {
+        method: 'GET', headers: { Accept: 'application/json' }, cache: 'no-store',
+        redirect: 'follow', signal: AbortSignal.timeout(10000)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return res.status(response.status >= 400 && response.status < 500 ? response.status : 502).json({
+          error: 'SOURCE_SEARCH_UPSTREAM_ERROR',
+          message: payload.message || payload.error || 'BitChord search could not complete the request.'
+        });
+      }
+      res.set('Cache-Control', 'private, max-age=15');
+      return res.json(payload);
+    } catch {
+      return res.status(502).json({
+        error: 'SOURCE_SEARCH_UPSTREAM_UNAVAILABLE',
+        message: 'Could not reach the BitChord search service. Try again shortly.'
+      });
+    }
+  });
+
   router.get('/account/providers/apple-music/catalog-search', rateAppleMusic, async (req, res) => {
     const term = String(req.query.term || '').trim().slice(0, 160);
     const storefrontValue = String(req.query.storefront || 'us').trim().toLowerCase();

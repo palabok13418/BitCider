@@ -2738,3 +2738,32 @@ audio.bc-party-audio-output { display: none !important; }
 @media (prefers-reduced-motion:reduce) {
   .bc-party-browser-browsing,.bc-party-browser-release-view,.bc-party-browser-release-cover { transition:none !important; }
 }
+
+/* Sequenced release reveal: fade shelves, move the selected cover, then open the circular detail view. */
+.bc-party-browser-browsing.is-exiting { opacity:0; transform:none; filter:none; pointer-events:none; }
+.bc-party-browser-release-view {
+  clip-path:circle(var(--bc-release-from-radius,100px) at var(--bc-release-origin-x,140px) var(--bc-release-origin-y,140px));
+  transition:clip-path .78s cubic-bezier(.18,.76,.2,1) .72s;
+}
+.bc-party-browser-release-view.is-visible { clip-path:circle(160% at var(--bc-release-origin-x,140px) var(--bc-release-origin-y,140px)); }
+.bc-party-browser-release-cover { transition:transform .72s cubic-bezier(.18,.76,.2,1); }
+.bc-party-browser-release-heading > span,
+.bc-party-browser-release-heading h2,
+.bc-party-browser-release-heading p,
+.bc-party-browser-release-actions,
+.bc-party-browser-release-tracklist { opacity:0; transition:opacity .32s ease; }
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-heading > span,
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-heading h2,
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-heading p,
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-actions,
+.bc-party-browser-release-view.is-visible .bc-party-browser-release-tracklist {
+  opacity:1; transition-delay:.92s;
+}
+.bc-party-browser-release-back { top:0; left:0; right:auto; }
+@media (max-width:760px) { .bc-party-browser-release-back { top:8px; left:6px; } }
+@media (prefers-reduced-motion:reduce) {
+  .bc-party-browser-release-view,.bc-party-browser-release-cover,
+  .bc-party-browser-release-heading > span,.bc-party-browser-release-heading h2,
+  .bc-party-browser-release-heading p,.bc-party-browser-release-actions,
+  .bc-party-browser-release-tracklist { transition:none !important; }
+}
