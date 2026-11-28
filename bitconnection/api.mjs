@@ -2770,16 +2770,34 @@ export function createBitConnectionRouter({
       const participant = participantForRoom(room, req, res);
       if (!participant || participant.status === 'left') return { status: 401, error: 'ROOM_MEMBERSHIP_REQUIRED' };
       if (isRoomOwner(room, participant)) {
+        const now = Date.now();
+        const successor = Object.values(room.participants || {})
+          .filter(item => item && item.participantId !== participant.participantId
+            && item.status !== 'left'
+            && Date.parse(item.lastSeenAt || 0) > now - PRESENCE_TTL_MS)
+          .sort((left, right) => Date.parse(left.joinedAt || 0) - Date.parse(right.joinedAt || 0))[0];
+        if (successor) {
+          participant.role = 'guest';
+          successor.role = 'host';
+          room.hostParticipantId = successor.participantId;
+          room.hostIdentityId = successor.identityId || null;
+          room.hostIdentityType = successor.identityId?.startsWith('cider:')
+            ? 'bitcider' : successor.identityId ? 'bitconnection' : null;
+          room.hostUsername = successor.username;
+          delete room.participants[participant.participantId];
+          room.updatedAt = new Date().toISOString();
+          return { ok: true, roomClosed: false, hostTransferred: true, hostParticipantId: successor.participantId };
+        }
         room.status = 'closed';
         room.updatedAt = new Date().toISOString();
         room.participants = {};
         hostLocations.delete(room.roomId);
         for (const requestId of Object.keys(room.joinRequests || {})) pendingVerificationCodes.delete(requestId);
-        return { ok: true, roomClosed: true };
+        return { ok: true, roomClosed: true, hostTransferred: false };
       }
       delete room.participants?.[participant.participantId];
       room.updatedAt = new Date().toISOString();
-      return { ok: true, roomClosed: false };
+      return { ok: true, roomClosed: false, hostTransferred: false };
     });
     if (result.status) return res.status(result.status).json({ error: result.error });
     return res.json({ ok: true, roomClosed: result.roomClosed });
