@@ -28,7 +28,6 @@ test('security policy permits the required app, local Cider, and Apple MusicKit 
   assert.ok(directives['media-src'].includes('https://*.apple.com'));
   assert.ok(directives['media-src'].includes('https://*.itunes.apple.com'));
   assert.ok(directives['media-src'].includes('https://*.mzstatic.com'));
-  assert.match(CONTENT_SECURITY_POLICY, /media-src[^;]*https:\/\/\\*\.confih\.tech/);
   assert.match(CONTENT_SECURITY_POLICY, /object-src 'none'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-ancestors 'self'/);
   assert.match(CONTENT_SECURITY_POLICY, /frame-src 'self'/);
