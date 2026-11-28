@@ -66,7 +66,7 @@ function PartyQrCode({ value }) {
       aria-label={`QR code containing room code ${value}`}
       shapeRendering="crispEdges"
     >
-      <rect width={extent} height={extent} fill="#fff" />
+      <rect width={extent} height={extent} rx="5" fill="#fff" />
       <path d={path} fill="#160a10" transform="translate(4 4)" />
     </svg>
   );
@@ -237,11 +237,6 @@ function PartyRoomExperience({
   const bitChordRoomCode = String(
     roomData.bitChordRoomCode || roomData.roomCodes?.bitChord || roomCode || ''
   ).trim();
-  const musAudioRoomCode = String(
-    roomData.musAudioRoomCode || roomData.musAudioCode || roomData.roomCodes?.musAudio
-      || room?.musAudioRoomCode || room?.musAudioCode || room?.roomCodes?.musAudio || ''
-  ).trim();
-  const hostControlsPlayback = Boolean(room?.ownerOnlyControls ?? roomState?.room?.ownerOnlyControls);
   const allowPlayback = isHost || !room?.ownerOnlyControls;
   const allowQueue = allowPlayback;
   const currentId = currentParticipant?.participantId || session?.participantId;
@@ -905,10 +900,6 @@ function PartyRoomExperience({
   return (
     <main className="bc-party-room" data-role={isHost ? 'host' : 'guest'}>
       <section className="bc-party-playback-panel" aria-label="Playback">
-        <div className="bc-party-left-heading">
-          <span className="bc-party-live-dot" />
-          <span>{isHost ? 'HOSTING PARTY' : 'LISTENING TOGETHER'}</span>
-        </div>
         <div className={'bc-party-artwork-wrap' + (!art ? ' is-empty' : '')}>
           {art ? <img className="bc-party-artwork" src={art} alt={track?.title ? 'Album artwork for ' + track.title : 'Album artwork'} /> : <div className="bc-party-artwork bc-party-artwork-empty"><Icon name="waveform" size={52}/></div>}
         </div>
@@ -952,27 +943,12 @@ function PartyRoomExperience({
           <span>{Math.round(volume * 100)}%</span>
         </div>
         {audioBlocked && !isHost && <button className="bc-party-resume-audio" type="button" onClick={onResumeAudio}>Tap to enable party audio</button>}
-        {isHost && (
-          <div className="bc-party-host-audio" aria-live="polite">
-            <div className="bc-party-host-audio-status">
-              <span className={hostAudioState === 'streaming' ? 'is-live' : ''}/>
-              {hostAudioState === 'streaming'
-                ? sourceLabel + ' audio is live to the party'
-                : sourceLabel + ' is your selected party audio source'}
-            </div>
-            {playbackSource === 'cider' && <p>{ciderBridgeMessage || (ciderBridgeState === 'connected' ? 'Cider is connected on this device.' : 'Connect Cider through BitCider on this device.')}</p>}
-            {playbackSource === 'ccustom' && <p>{customSourceManifestUrl ? 'Your CCustom add-on is configured.' : 'Add a CCustom manifest URL in BitAccount Center.'}</p>}
-            {hostAudioError && <p role="alert">{hostAudioError}</p>}
-            <small>Audio comes directly from the selected in-page player. No screen or tab sharing is used.</small>
-          </div>
-        )}
         {playbackMessage && <div className="bc-party-inline-status" role="status">{playbackMessage}</div>}
       </section>
 
       <section className="bc-party-content-panel" aria-label="Party content">
         <header className="bc-party-content-heading">
           <div>
-            <span className="bc-party-eyebrow">{isHost ? 'HOSTING' : 'JOINED'} · LISTENING PARTY</span>
             <h1>{roomName}</h1>
           </div>
           <div className="bc-party-header-actions">
@@ -1004,13 +980,6 @@ function PartyRoomExperience({
           {activeTab === 'room' && (
             <>
               <section className="bc-party-room-details" aria-label="Room details">
-                <div className="bc-party-room-control-note">
-                  <span className="bc-party-room-control-state">
-                    <i />
-                    {hostControlsPlayback ? 'Host controls playback' : 'Everyone can control playback'}
-                  </span>
-                  <span>{participants.length} {participants.length === 1 ? 'member' : 'members'} in this room</span>
-                </div>
                 <div className="bc-party-room-code-layout">
                   <article className="bc-party-room-code-card">
                     <span>BITCHORD ROOM CODE</span>
@@ -1028,16 +997,6 @@ function PartyRoomExperience({
                       : <div className="bc-party-qr-fallback"><span>QR unavailable</span><strong>No room code</strong></div>}
                     <span>SCAN TO JOIN</span>
                   </div>
-                  <article className="bc-party-room-code-card is-mus-audio">
-                    <span>MUSAUDIO ROOM CODE</span>
-                    <strong>{musAudioRoomCode || 'Not linked'}</strong>
-                    {musAudioRoomCode && (
-                      <button type="button" onClick={() => navigator.clipboard?.writeText(musAudioRoomCode).catch(() => {})}>
-                        <Icon name="copy" size={13}/>Copy code
-                      </button>
-                    )}
-                    <small>{musAudioRoomCode ? 'Enter this code in MusAudio.' : 'A separate MusAudio room code has not been provided by this room.'}</small>
-                  </article>
                 </div>
               </section>
               <section className="bc-party-room-members" aria-label="People in this room">
@@ -1065,8 +1024,8 @@ function PartyRoomExperience({
             </>
           )}
 
-          {activeTab === 'room' && (
-            <section className="bc-party-queue">
+          {activeTab === 'queue' && (
+            <section className="bc-party-queue" aria-label="Queue">
               <div className="bc-party-queue-actions">
                 <button type="button" className={queueSettings.loop ? 'is-active' : ''} onClick={() => void updateQueueSettings({ loop: !queueSettings.loop })} disabled={queueBusy} aria-pressed={Boolean(queueSettings.loop)}><Icon name="repeat" size={17}/>Loop</button>
                 <button type="button" className={queueSettings.shuffle ? 'is-active' : ''} onClick={() => void updateQueueSettings({ shuffle: !queueSettings.shuffle })} disabled={queueBusy} aria-pressed={Boolean(queueSettings.shuffle)}><Icon name="shuffle" size={17}/>Shuffle</button>
@@ -1146,6 +1105,7 @@ function PartyRoomExperience({
         <nav className="bc-party-tab-bar" aria-label="Party sections">
           {[
             { id: 'lyrics', label: 'Lyrics', symbol: '≋' },
+            { id: 'queue', label: 'Queue', symbol: '☷' },
             { id: 'room', label: 'Room', symbol: '▤' },
             { id: 'chat', label: 'Chat', symbol: '◌' },
             { id: 'leave', label: 'Leave', symbol: '↗' }
