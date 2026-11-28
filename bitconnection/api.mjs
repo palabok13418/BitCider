@@ -725,6 +725,7 @@ export function createBitConnectionRouter({
       visibility: room.visibility,
       partySize: room.partySize,
       ownerOnlyControls: room.ownerOnlyControls,
+      playbackSource: PARTY_PLAYBACK_SOURCES.has(room.playbackSource) ? room.playbackSource : 'bitmono',
       hostUsername: room.hostUsername,
       status: room.status,
       createdAt: room.createdAt,
