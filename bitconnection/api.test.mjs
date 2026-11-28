@@ -231,6 +231,7 @@ test('BitConnection requires authentication and a completed profile to create a 
   const payload = await created.json();
   assert.equal(created.status, 201);
   assert.equal(payload.room.hostUsername, 'Room Host');
+  assert.match(payload.room.roomCode, /^[A-HJ-NP-Z2-9]{6}$/);
   assert.equal(payload.inviteToken, undefined);
 
   const publicGuestCsrf = await csrfContext(client);
