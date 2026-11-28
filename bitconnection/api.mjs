@@ -23,7 +23,7 @@ import {
   WEBAUTHN_CHALLENGE_TTL_MS
 } from '../account-security.mjs';
 
-export const BITCONNECTION_API_VERSION = '2026-11-26-musickit-full-playback-v7';
+export const BITCONNECTION_API_VERSION = '2026-11-27-party-audio-sources-v8';
 const COOKIE_NAME = 'bitconnection_session';
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{40,50}$/;
 const PASSWORD_DUMMY = await createPasswordRecord(crypto.randomBytes(32).toString('base64url') + '-bitconnection-dummy');
@@ -80,6 +80,27 @@ function cleanUsername(value) {
   const username = value.trim().replace(/\s+/gu, ' ');
   if (!username || Array.from(username).length > 24 || /[\u0000-\u001f\u007f]/u.test(username)) return '';
   return username;
+}
+
+const PARTY_PLAYBACK_SOURCES = new Set(['bitmono', 'ccustom', 'cider']);
+
+function cleanCustomSourceManifestUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  if (raw.length > 512 || /[\\u0000-\\u0020\\u007f]/u.test(raw)) return null;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    const privateAddress = host === 'localhost' || host.endsWith('.localhost')
+      || host.endsWith('.local') || host === '127.0.0.1' || host === '::1'
+      || /^10\\./.test(host) || /^192\\.168\\./.test(host)
+      || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
+      || privateAddress || !url.pathname.endsWith('/manifest.json')) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function usernameKey(value) {
@@ -252,14 +273,15 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
       passkeyListing: 'enabled',
       recoveryCodes: 'enabled',
       realtimeRooms: 'polling-and-webrtc-signaling-enabled',
-      playbackSync: 'youtube-bitmono-and-apple-musickit-over-host-tab-audio',
+      playbackSync: 'bitmono-ccustom-cider-source-audio-over-webrtc',
       sharedQueue: 'youtube-bitmono-and-apple-music-track-sources-synchronized-with-room-permissions',
       queueLoopAndShuffle: 'enabled',
       partyChat: 'text-images-and-giphy-gifs-enabled',
       memberModeration: 'kick-ban-and-host-promotion-enabled',
       privateRoomVerification: 'proximity-or-host-one-time-code',
-      playbackSourceBridge: 'apple-musickit-web-v3-bitmono-in-page-audio-and-youtube-player-bridge-pending',
-      bitMonoPlayback: 'host-audio-element-captured-and-published-over-webrtc',
+      playbackSourceBridge: 'bitmono-ccustom-cider-in-page-audio-element-over-webrtc',
+      playbackSourceOptions: ['bitmono', 'ccustom', 'cider'],
+      bitMonoPlayback: 'in-page-audio-element-published-over-webrtc',
       appleMusicRecommendations: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicTtmlLyrics: 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental',
       appleMusicWebPlayerToken: 'optional-server-side-override',
@@ -841,7 +863,7 @@ export function createBitConnectionRouter({
       apiVersion: BITCONNECTION_API_VERSION,
       serviceUrl: origin ? origin + '/party' : '/party',
       apiBase: origin ? origin + apiBase : apiBase,
-      source: 'YouTube Music through BitChord Web',
+      source: 'BitMono, CCustom, or Cider selected in BitAccount Center',
       authentication: {
         host: 'BitConnection or BitCider account session with session-bound CSRF',
         guest: 'Room-scoped participant bearer credential with session-bound CSRF',
@@ -919,7 +941,14 @@ export function createBitConnectionRouter({
         provider: 'BitCider',
         identityMode: 'bitcider',
         csrfToken: identity.csrfToken,
-        profile: profile ? { username: profile.username, avatarDataUrl: profile.avatarDataUrl || null, createdAt: profile.createdAt, updatedAt: profile.updatedAt } : null,
+        profile: profile ? {
+          username: profile.username,
+          avatarDataUrl: profile.avatarDataUrl || null,
+          playbackSource: PARTY_PLAYBACK_SOURCES.has(profile.playbackSource) ? profile.playbackSource : 'bitmono',
+          customSourceManifestUrl: typeof profile.customSourceManifestUrl === 'string' ? profile.customSourceManifestUrl : '',
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt
+        } : null,
         maxPartySize: maximum
       });
     }
@@ -931,7 +960,14 @@ export function createBitConnectionRouter({
       authenticated: session.authenticated,
       provider: session.authenticated ? 'BitConnection' : null,
       identityMode: session.authenticated ? 'bitconnection' : null,
-      profile: profile ? { username: profile.username, avatarDataUrl: profile.avatarDataUrl || null, createdAt: profile.createdAt, updatedAt: profile.updatedAt } : null,
+      profile: profile ? {
+          username: profile.username,
+          avatarDataUrl: profile.avatarDataUrl || null,
+          playbackSource: PARTY_PLAYBACK_SOURCES.has(profile.playbackSource) ? profile.playbackSource : 'bitmono',
+          customSourceManifestUrl: typeof profile.customSourceManifestUrl === 'string' ? profile.customSourceManifestUrl : '',
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt
+        } : null,
       csrfToken: tokenForSession(secret, session.sessionId),
       bitCiderAccountAvailable: Boolean(cider?.authenticated && cider?.accountId),
       maxPartySize: maximum,
@@ -2001,6 +2037,33 @@ export function createBitConnectionRouter({
     return res.json({ ok: true, profile });
   });
 
+  router.put('/account/playback-settings', identityCsrf, async (req, res) => {
+    const identity = identityForRequest(req, res);
+    if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED' });
+    const playbackSource = String(req.body?.playbackSource || '');
+    if (!PARTY_PLAYBACK_SOURCES.has(playbackSource)) {
+      return res.status(400).json({ error: 'INVALID_PLAYBACK_SOURCE', message: 'Choose BitMono, CCustom, or Cider.' });
+    }
+    const customSourceManifestUrl = cleanCustomSourceManifestUrl(req.body?.customSourceManifestUrl);
+    if (customSourceManifestUrl === null) {
+      return res.status(400).json({ error: 'INVALID_CUSTOM_SOURCE_URL', message: 'CCustom needs a valid HTTPS BitChord-compatible manifest URL ending in /manifest.json.' });
+    }
+    if (playbackSource === 'ccustom' && !customSourceManifestUrl) {
+      return res.status(400).json({ error: 'CUSTOM_SOURCE_URL_REQUIRED', message: 'Enter your CCustom add-on manifest URL.' });
+    }
+    const saved = await store.update(data => {
+      const profile = profileFor(data, identity.identityId);
+      if (!profile?.username) return { status: 409, error: 'BITCONNECTION_PROFILE_REQUIRED', message: 'Finish your profile before saving party audio settings.' };
+      profile.playbackSource = playbackSource;
+      profile.customSourceManifestUrl = customSourceManifestUrl;
+      profile.updatedAt = new Date().toISOString();
+      return { ok: true };
+    });
+    if (saved.status) return res.status(saved.status).json({ error: saved.error, message: saved.message });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, playbackSettings: { playbackSource, customSourceManifestUrl } });
+  });
+
   router.post('/rooms', identityCsrf, async (req, res) => {
     const identity = identityForRequest(req, res);
     if (!identity) return res.status(401).json({ error: 'BITCONNECTION_ACCOUNT_REQUIRED', message: 'A BitConnection account or explicitly selected BitCider account is required to host a room.' });
@@ -2012,6 +2075,7 @@ export function createBitConnectionRouter({
     const visibility = req.body?.visibility;
     const partySize = Number(req.body?.partySize);
     const ownerOnlyControls = req.body?.ownerOnlyControls;
+    const playbackSource = PARTY_PLAYBACK_SOURCES.has(profile.playbackSource) ? profile.playbackSource : 'bitmono';
     if (!roomName || Array.from(roomName).length > 48 || /[\u0000-\u001f\u007f]/u.test(roomName)) {
       return res.status(400).json({ error: 'INVALID_ROOM_NAME', message: 'Room names must contain 1 to 48 characters.' });
     }
@@ -2024,7 +2088,7 @@ export function createBitConnectionRouter({
     const inviteToken = visibility === 'private' ? crypto.randomBytes(32).toString('base64url') : null;
     const now = new Date().toISOString();
     const room = {
-      roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls,
+      roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls, playbackSource,
       hostIdentityId: identity.identityId,
       hostIdentityType: identity.type,
       hostUsername: profile.username,
@@ -2036,7 +2100,7 @@ export function createBitConnectionRouter({
       chat: [],
       bannedIdentityIds: [],
       playbackState: {
-        source: 'youtube-music',
+        source: playbackSource,
         track: null,
         isPlaying: false,
         positionSeconds: 0,
@@ -2070,7 +2134,7 @@ export function createBitConnectionRouter({
     return res.status(201).json({
       ok: true,
       room: {
-        roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls,
+        roomId, roomCode, roomName, visibility, partySize, ownerOnlyControls, playbackSource,
         hostUsername: profile.username, status: room.status, createdAt: now
       },
       hostParticipantId: host.participant.participantId,
