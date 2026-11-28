@@ -1070,7 +1070,7 @@ export function createBitConnectionRouter({
       });
     }
 
-    const session = activeSession(req, res);
+    const session = accountSession;
     const profile = session.authenticated ? profileFor(session.data, 'bitconnection:' + session.accountId) : null;
     const cider = getUserSession(req, res);
     return res.json({

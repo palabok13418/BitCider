@@ -172,7 +172,7 @@ test('an existing BitConnection account can explicitly link to BitCider and rest
       'Content-Type': 'application/json',
       'X-BitConnection-CSRF': firstBitConnection.csrfToken
     },
-    body: JSON.stringify({ username, password, avatarDataUrl: null }),
+    body: JSON.stringify({ username, password }),
     cache: 'no-store'
   });
   assert.equal(registrationResponse.status, 201);
