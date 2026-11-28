@@ -166,7 +166,7 @@ function PartyRoomExperience({
   onControlAppleMusic = async () => {},
   onSeekAppleMusic = async () => {}
 }) {
-  const [activeTab, setActiveTab] = useState('lyrics');
+  const [activeTab, setActiveTab] = useState('members');
   const [volume, setVolume] = useState(1);
   const [draft, setDraft] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
@@ -867,7 +867,7 @@ function PartyRoomExperience({
           <span className="bc-party-live-dot" />
           <span>{isHost ? 'HOSTING PARTY' : 'LISTENING TOGETHER'}</span>
         </div>
-        <div className="bc-party-artwork-wrap">
+        <div className={'bc-party-artwork-wrap' + (!art ? ' is-empty' : '')}>
           {art ? <img className="bc-party-artwork" src={art} alt={track?.title ? 'Album artwork for ' + track.title : 'Album artwork'} /> : <div className="bc-party-artwork bc-party-artwork-empty"><Icon name="waveform" size={52}/></div>}
         </div>
         <div className="bc-party-track-copy">
