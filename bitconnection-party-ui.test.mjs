@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const root = new URL('./', import.meta.url);
 
-test('active party uses the required Lyrics, Room, Chat, Leave navigation in that order', async () => {
+test('active party uses Lyrics, Queue, Room, Chat, and dynamic End/Leave navigation in order', async () => {
   const source = await readFile(new URL('src/BitConnectionParty.jsx', root), 'utf8');
   assert.match(source, /useState\('lyrics'\)/);
 
@@ -15,23 +15,41 @@ test('active party uses the required Lyrics, Room, Chat, Leave navigation in tha
   const nav = source.slice(navStart, navEnd);
 
   const ids = [...nav.matchAll(/\{ id: '([a-z]+)'/g)].map(match => match[1]);
-  assert.deepEqual(ids, ['lyrics', 'room', 'chat', 'leave']);
+  assert.deepEqual(ids, ['lyrics', 'queue', 'room', 'chat', 'leave']);
   assert.match(nav, /isLeave \? void onLeave\(\) : setActiveTab\(tab\.id\)/);
   assert.match(nav, /leaveLabel = isHost && participants\.length <= 1 \? 'End party' : 'Leave party'/);
-  assert.doesNotMatch(nav, /Queue|Members/);
 });
 
-test('Room view owns the centered QR, service codes, member list, and queue controls', async () => {
+test('Room owns the six-character BitChord code, rounded QR, and member list; Queue has its own tab', async () => {
   const source = await readFile(new URL('src/BitConnectionParty.jsx', root), 'utf8');
-  assert.match(source, /activeTab === 'room'/);
-  assert.match(source, /BITCHORD ROOM CODE/);
-  assert.match(source, /MUSAUDIO ROOM CODE/);
-  assert.match(source, /className="bc-party-room-qr-center"/);
-  assert.match(source, /PartyQrCode value=\{bitChordRoomCode\}/);
-  assert.match(source, /bc-party-room-members/);
-  assert.match(source, /bc-party-queue-actions/);
-  assert.match(source, /'Not linked'/);
-  assert.doesNotMatch(source, /<section className="bc-party-room-share"/);
+  const roomStart = source.indexOf("{activeTab === 'room' && (");
+  const queueStart = source.indexOf("{activeTab === 'queue' && (");
+  assert.notEqual(roomStart, -1);
+  assert.notEqual(queueStart, -1);
+  assert.ok(queueStart > roomStart);
+  const room = source.slice(roomStart, queueStart);
+  const queue = source.slice(queueStart, source.indexOf("{activeTab === 'chat' && (", queueStart));
+  assert.match(room, /BITCHORD ROOM CODE/);
+  assert.match(room, /PartyQrCode value=\{bitChordRoomCode\}/);
+  assert.match(room, /bc-party-room-members/);
+  assert.doesNotMatch(room, /bc-party-queue|MUSAUDIO ROOM CODE|Everyone can control playback/);
+  assert.match(queue, /bc-party-queue-actions/);
+  assert.match(queue, /queue\.length \? queue\.map/);
+  assert.doesNotMatch(source, /MUSAUDIO ROOM CODE|HOSTING PARTY|LISTENING TOGETHER|HOSTING.*LISTENING PARTY|bc-party-host-audio/);
+  assert.match(source, /rx="5"/);
+  assert.doesNotMatch(source, /Share BitChord tab audio|Share the BitChord Web tab/);
+});
+test('main BitConnection page is avatar-only when signed in and responsive across devices', async () => {
+  const source = await readFile(new URL('src/BitConnection.jsx', root), 'utf8');
+  const css = await readFile(new URL('src/bitconnection.css', root), 'utf8');
+  assert.match(source, /className="bitconnection-account-avatar"/);
+  assert.doesNotMatch(source, /<span>Account<\/span>/);
+  assert.doesNotMatch(source, /YouTube Music via BitChord Web/);
+  assert.match(css, /--bitconnection-hero-top-space/);
+  assert.match(css, /@media \(max-width: 820px\)/);
+  assert.match(css, /@media \(max-width: 680px\)/);
+  assert.match(css, /@media \(max-width: 420px\)/);
+  assert.match(css, /\.bitconnection-discovery\s*\{[^}]*margin-top:\s*calc\(/s);
 });
 
 test('active party styles the navigation at viewport bottom center and adapts Room codes for mobile', async () => {
