@@ -332,14 +332,18 @@ function AccountSetupWindow({
   }
 
   useEffect(() => {
-    loadStatus().catch(err => setError(err.message || 'Could not prepare account setup.'));
-    fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' })
-      .then(async response => {
+    async function initializeAccountSetup() {
+      try {
+        const response = await fetch('/api/bitconnection/account', { cache: 'no-store', credentials: 'same-origin' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.message || 'Could not check BitConnection sign-in.');
         setBitConnectionAccount(payload.authenticated === true ? payload : null);
-      })
-      .catch(() => setBitConnectionAccount(null));
+      } catch {
+        setBitConnectionAccount(null);
+      }
+      loadStatus().catch(err => setError(err.message || 'Could not prepare account setup.'));
+    }
+    initializeAccountSetup();
   }, []);
 
   useEffect(() => {

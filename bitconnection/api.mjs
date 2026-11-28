@@ -553,10 +553,10 @@ export function createBitConnectionRouter({
     return { ...session, data };
   }
 
-  function identityForRequest(req, res) {
+  function identityForRequest(req, res, linkedCiderSession = null) {
     const identityMode = req.get('x-bitconnection-identity') || '';
     if (identityMode === 'bitcider') {
-      const cider = getUserSession(req, res);
+      const cider = linkedCiderSession?.authenticated ? linkedCiderSession : getUserSession(req, res);
       if (!cider?.authenticated || !cider.accountId) return null;
       return {
         type: 'bitcider',
@@ -1040,16 +1040,16 @@ export function createBitConnectionRouter({
     const linkedCiderAccountId = accountSession.authenticated
       ? getLinkedCiderAccountId(accountSession.accountId)
       : null;
-    if (linkedCiderAccountId) {
-      await ensureCiderSessionForLinkedBitConnection({
-        bitConnectionAccountId: accountSession.accountId,
-        req,
-        res
-      }).catch(() => false);
-    }
+    const linkedCiderSession = linkedCiderAccountId
+      ? await ensureCiderSessionForLinkedBitConnection({
+          bitConnectionAccountId: accountSession.accountId,
+          req,
+          res
+        }).catch(() => false)
+      : false;
     const identityMode = req.get('x-bitconnection-identity') || '';
     if (identityMode === 'bitcider') {
-      const identity = identityForRequest(req, res);
+      const identity = identityForRequest(req, res, linkedCiderSession);
       if (!identity) return res.status(401).json({ error: 'BITCIDER_SIGN_IN_REQUIRED' });
       const data = store.read();
       const profile = profileFor(data, identity.identityId);
@@ -1072,7 +1072,7 @@ export function createBitConnectionRouter({
 
     const session = accountSession;
     const profile = session.authenticated ? profileFor(session.data, 'bitconnection:' + session.accountId) : null;
-    const cider = getUserSession(req, res);
+    const cider = linkedCiderSession?.authenticated ? linkedCiderSession : getUserSession(req, res);
     return res.json({
       authenticated: session.authenticated,
       provider: session.authenticated ? 'BitConnection' : null,

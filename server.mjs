@@ -634,7 +634,7 @@ async function ensureCiderSessionForLinkedBitConnection({ bitConnectionAccountId
 
   const current = getUserSession(req, res);
   if (current.authenticated) {
-    return current.accountId === linked.accountId;
+    return current.accountId === linked.accountId ? current : false;
   }
 
   const sessionId = current.sessionId;
@@ -662,7 +662,9 @@ async function ensureCiderSessionForLinkedBitConnection({ bitConnectionAccountId
     createAuthenticatedSession(store, linked.accountId, res, req);
     return { ok: true };
   });
-  return result.ok === true;
+  return result.ok === true
+    ? { authenticated: true, accountId: linked.accountId, sessionId }
+    : false;
 }
 
 function tokenForUser(user) {
