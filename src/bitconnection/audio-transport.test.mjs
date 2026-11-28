@@ -37,13 +37,15 @@ class FakeMediaStream {
 }
 
 function captureDevicesFor(stream, calls = []) {
-  return {
+  const devices = {
     calls,
-    getDisplayMedia: async options => {
+    async getDisplayMedia(options) {
+      assert.equal(this, devices, 'getDisplayMedia must receive its MediaDevices receiver');
       calls.push(options);
       return stream;
     }
   };
+  return devices;
 }
 
 test('tab audio capture keeps only audio for WebRTC and retains local video capture track', async () => {
@@ -128,7 +130,11 @@ test('guest transport attaches remote stream to the audio element and exposes ge
   const audioElement = {
     paused: true,
     playCalls: 0,
-    async play() { this.playCalls += 1; this.paused = false; },
+    async play() {
+      assert.equal(this, audioElement, 'HTMLMediaElement.play must receive its element receiver');
+      this.playCalls += 1;
+      this.paused = false;
+    },
     pause() { this.paused = true; },
     set srcObject(value) { this._srcObject = value; },
     get srcObject() { return this._srcObject; }
@@ -163,7 +169,11 @@ test('host media transport publishes the captured audio-element track to guests'
   const captured = new FakeMediaStream([audio]);
   const audioElement = {
     captureStreamCalls: 0,
-    captureStream() { this.captureStreamCalls += 1; return captured; }
+    captureStream() {
+      assert.equal(this, audioElement, 'captureStream must receive its HTMLMediaElement receiver');
+      this.captureStreamCalls += 1;
+      return captured;
+    }
   };
   const calls = [];
   const session = {
