@@ -251,6 +251,57 @@ test('BitConnection requires authentication and a completed profile to create a 
   assert.equal((await closed.json()).status, 'closed');
 });
 
+test('when the host leaves, the earliest-joined guest becomes host and the room stays open', async t => {
+  const client = await harness(t);
+  const hostCsrf = await csrfContext(client);
+  const registration = await client.request('/auth/register', {
+    method: 'POST',
+    headers: hostCsrf.headers,
+    body: JSON.stringify({ username: 'Succession Host', password: 'succession-host-secret' })
+  });
+  assert.equal(registration.status, 201);
+  const created = await client.request('/rooms', {
+    method: 'POST',
+    headers: hostCsrf.headers,
+    body: JSON.stringify({ roomName: 'Succession Test', visibility: 'public', partySize: 4, ownerOnlyControls: false })
+  });
+  const room = await created.json();
+  assert.equal(created.status, 201);
+
+  const firstGuestCsrf = await csrfContext(client);
+  const firstJoin = await client.request('/rooms/' + room.room.roomCode + '/join', {
+    method: 'POST', headers: firstGuestCsrf.headers, body: JSON.stringify({})
+  });
+  const firstGuest = await firstJoin.json();
+  assert.equal(firstJoin.status, 201);
+
+  const secondGuestCsrf = await csrfContext(client);
+  const secondJoin = await client.request('/rooms/' + room.room.roomCode + '/join', {
+    method: 'POST', headers: secondGuestCsrf.headers, body: JSON.stringify({})
+  });
+  const secondGuest = await secondJoin.json();
+  assert.equal(secondJoin.status, 201);
+
+  const left = await client.request('/rooms/' + room.room.roomId + '/leave', {
+    method: 'POST',
+    headers: { ...hostCsrf.headers, Authorization: 'Bearer ' + room.hostCredential }
+  });
+  const leavePayload = await left.json();
+  assert.equal(left.status, 200);
+  assert.equal(leavePayload.roomClosed, false);
+  assert.equal(leavePayload.hostTransferred, true);
+  assert.equal(leavePayload.hostParticipantId, firstGuest.participantId);
+
+  const firstGuestHeaders = { ...firstGuestCsrf.headers, Authorization: 'Bearer ' + firstGuest.participantCredential };
+  const state = await client.request('/rooms/' + room.room.roomId + '/state', { headers: firstGuestHeaders });
+  const statePayload = await state.json();
+  assert.equal(state.status, 200);
+  assert.equal(statePayload.room.status, 'open');
+  assert.equal(statePayload.participant.role, 'host');
+  assert.equal(statePayload.participant.participantId, firstGuest.participantId);
+  assert.ok(statePayload.participants.some(item => item.participantId === secondGuest.participantId));
+});
+
 test('public directory shows only active public rooms and supports search, with a 30-person maximum', async t => {
   const client = await harness(t, { maxPartySize: 30 });
   const csrf = await csrfContext(client);
