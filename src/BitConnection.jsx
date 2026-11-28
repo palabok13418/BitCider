@@ -1803,7 +1803,7 @@ function CreateRoomWindow() {
       else Reflect.apply(player.pause, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: !player.paused, positionSeconds: player.currentTime || 0 });
     } else if (action === 'pause') {
-      player.pause();
+      Reflect.apply(player.pause, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds: player.currentTime || 0 });
     } else if (action === 'play') {
       await Reflect.apply(player.play, player, []);
@@ -1830,8 +1830,8 @@ function CreateRoomWindow() {
       const positionSeconds = Number(player.currentTime || 0);
       await hostStreamEngineRef.current?.destroy?.();
       hostStreamEngineRef.current = null;
-      player.pause();
-      player.removeAttribute('src');
+      Reflect.apply(player.pause, player, []);
+      Reflect.apply(player.removeAttribute, player, ['src']);
       Reflect.apply(player.load, player, []);
       await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds });
       if (hostSession?.getState) setRoomState(await hostSession.getState());
@@ -1848,9 +1848,9 @@ function CreateRoomWindow() {
     if (player) {
       await hostStreamEngineRef.current?.destroy?.();
       hostStreamEngineRef.current = null;
-      player.pause();
-      player.removeAttribute('src');
-      player.load();
+      Reflect.apply(player.pause, player, []);
+      Reflect.apply(player.removeAttribute, player, ['src']);
+      Reflect.apply(player.load, player, []);
     }
     hostAudioModeRef.current = 'tab';
     if (transport) await transport.stop({ leave: true });
