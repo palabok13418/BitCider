@@ -72,9 +72,10 @@ test('health identifies Deplexo and independent BitConnection auth without Cider
   assert.equal(payload.capabilities.ciderAddonCreation, 'never');
   assert.equal(payload.capabilities.partyChat, 'text-images-and-giphy-gifs-enabled');
   assert.equal(payload.capabilities.memberModeration, 'kick-ban-and-host-promotion-enabled');
-  assert.equal(payload.capabilities.playbackSourceBridge, 'apple-musickit-web-v3-bitmono-in-page-audio-and-youtube-player-bridge-pending');
+  assert.equal(payload.capabilities.playbackSourceBridge, 'bitmono-ccustom-cider-in-page-audio-element-over-webrtc');
+  assert.deepEqual(payload.capabilities.playbackSourceOptions, ['bitmono', 'ccustom', 'cider']);
   assert.equal(payload.capabilities.appleMusicRecommendations, 'automatic-web-player-bearer-plus-subscriber-token-private-endpoint-experimental');
-  assert.equal(payload.capabilities.bitMonoPlayback, 'host-audio-element-captured-and-published-over-webrtc');
+  assert.equal(payload.capabilities.bitMonoPlayback, 'in-page-audio-element-published-over-webrtc');
   assert.equal(payload.capabilities.synchronizedLyrics, 'not-connected');
   assert.equal(payload.capabilities.serverSideAutoMix, 'onnx-analysis-and-dj-planning-ready-player-bridge-required');
   assert.equal(payload.capabilities.serverSideAudioAnalysis, 'host-uploaded-to-deplexo-not-relayed');
@@ -1510,4 +1511,97 @@ test('MusicKit playback config clearly reports when its separate developer token
   assert.equal(payload.configured, false);
   assert.equal(payload.playbackMode, 'apple-music-embed');
   assert.match(payload.message, /embedded player remains available/);
+});
+
+
+test('BitAccount playback source settings persist and are inherited by CCustom and Cider rooms', async t => {
+  const client = await harness(t);
+  const csrf = await csrfContext(client);
+  const registered = await client.request('/auth/register', {
+    method: 'POST',
+    headers: csrf.headers,
+    body: JSON.stringify({ username: 'Party Source Host', password: 'party-source-host-secret' })
+  });
+  assert.equal(registered.status, 201);
+
+  async function saveSource(playbackSource, customSourceManifestUrl = '') {
+    return client.request('/account/playback-settings', {
+      method: 'PUT',
+      headers: csrf.headers,
+      body: JSON.stringify({ playbackSource, customSourceManifestUrl })
+    });
+  }
+
+  const customSaved = await saveSource('ccustom', 'https://addons.example.test/custom/manifest.json');
+  assert.equal(customSaved.status, 200);
+  const customPayload = await customSaved.json();
+  assert.equal(customPayload.playbackSettings.playbackSource, 'ccustom');
+  assert.equal(customPayload.playbackSettings.customSourceManifestUrl, 'https://addons.example.test/custom/manifest.json');
+
+  const invalidCustom = await saveSource('ccustom', 'http://addons.example.test/manifest.json');
+  assert.equal(invalidCustom.status, 400);
+  assert.equal((await invalidCustom.json()).error, 'INVALID_CUSTOM_SOURCE_URL');
+
+  const missingCustom = await saveSource('ccustom', '');
+  assert.equal(missingCustom.status, 400);
+  assert.equal((await missingCustom.json()).error, 'CUSTOM_SOURCE_URL_REQUIRED');
+
+  const accountResponse = await client.request('/account', { headers: { Cookie: csrf.cookie } });
+  const accountPayload = await accountResponse.json();
+  assert.equal(accountPayload.profile.playbackSource, 'ccustom');
+  assert.equal(accountPayload.profile.customSourceManifestUrl, 'https://addons.example.test/custom/manifest.json');
+
+  for (const source of ['ccustom', 'cider']) {
+    if (source === 'cider') {
+      const saved = await saveSource('cider');
+      assert.equal(saved.status, 200);
+    }
+    const created = await client.request('/rooms', {
+      method: 'POST',
+      headers: csrf.headers,
+      body: JSON.stringify({
+        roomName: source === 'cider' ? 'Cider Source Party' : 'CCustom Source Party',
+        visibility: 'public',
+        partySize: 4,
+        ownerOnlyControls: false
+      })
+    });
+    const roomPayload = await created.json();
+    assert.equal(created.status, 201);
+    assert.equal(roomPayload.room.playbackSource, source);
+
+    const hostHeaders = { ...csrf.headers, Authorization: 'Bearer ' + roomPayload.hostCredential };
+    const track = {
+      source,
+      id: source + '-catalog-track-01',
+      title: 'Selected Source Track',
+      artist: 'BitCider Test',
+      durationSeconds: 205,
+      artworkURL: 'https://cdn.example.test/party-source-artwork.jpg',
+      audioQuality: 'Lossless'
+    };
+    const queued = await client.request('/rooms/' + roomPayload.room.roomId + '/queue', {
+      method: 'POST',
+      headers: hostHeaders,
+      body: JSON.stringify({ action: 'add', track })
+    });
+    const queuePayload = await queued.json();
+    assert.equal(queued.status, 200);
+    assert.equal(queuePayload.queue[0].source, source);
+
+    const playback = await client.request('/rooms/' + roomPayload.room.roomId + '/playback', {
+      method: 'POST',
+      headers: hostHeaders,
+      body: JSON.stringify({
+        source,
+        track,
+        isPlaying: true,
+        positionSeconds: 0
+      })
+    });
+    const playbackPayload = await playback.json();
+    assert.equal(playback.status, 200);
+    assert.equal(playbackPayload.playbackState.source, source);
+    assert.equal(playbackPayload.playbackState.track.source, source);
+  }
 });
