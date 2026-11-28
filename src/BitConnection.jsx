@@ -1411,6 +1411,62 @@ function CreateRoomWindow() {
   }, [roomState?.participant?.role]);
 
   useEffect(() => {
+    if (stage !== 'created' || profile?.playbackSource !== 'cider') {
+      ciderBridgeAbortRef.current?.abort();
+      ciderBridgeAbortRef.current = null;
+      setCiderAddonBaseUrl('');
+      setCiderBridgeState('idle');
+      setCiderBridgeMessage('');
+      return undefined;
+    }
+    let active = true;
+    const controller = new AbortController();
+    async function startCiderBridge() {
+      try {
+        setCiderBridgeState('connecting');
+        setCiderBridgeMessage('Checking your BitCider and local Cider connection…');
+        const status = await readResponse(await fetch('/api/status', {
+          credentials: 'same-origin', cache: 'no-store'
+        }), 'Could not read your BitCider Cider connection.');
+        const addonUrl = String(status.addonUrl || '');
+        if (!status.connected || !addonUrl.endsWith('/manifest.json')) {
+          throw new Error('Link Cider to your BitCider account first, then keep the BitCider browser relay available on this device.');
+        }
+        const addonBase = addonUrl.slice(0, -'/manifest.json'.length);
+        if (active) setCiderAddonBaseUrl(addonBase);
+        if (status.ciderRelay?.online) {
+          if (active) {
+            setCiderBridgeState('connected');
+            setCiderBridgeMessage('Cider is already connected through your BitCider browser relay.');
+          }
+          return;
+        }
+        ciderBridgeAbortRef.current = controller;
+        await runCiderBrowserRelay({
+          addonUrl,
+          csrfToken: status.csrfToken,
+          signal: controller.signal,
+          onState: (nextState, message) => {
+            if (!active) return;
+            setCiderBridgeState(nextState);
+            setCiderBridgeMessage(message || '');
+          }
+        });
+      } catch (bridgeError) {
+        if (!active || controller.signal.aborted) return;
+        setCiderBridgeState('error');
+        setCiderBridgeMessage(bridgeError.message || 'Could not connect to Cider on this device.');
+      }
+    }
+    void startCiderBridge();
+    return () => {
+      active = false;
+      controller.abort();
+      if (ciderBridgeAbortRef.current === controller) ciderBridgeAbortRef.current = null;
+    };
+  }, [stage, profile?.playbackSource]);
+
+  useEffect(() => {
     let active = true;
     appleMusicPlayerRef.current = null;
     appleMusicUnsubscribeRef.current?.();
