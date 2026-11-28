@@ -45,7 +45,7 @@ const STORE_FILE = path.join(DATA_DIR, 'connection.json');
 const KEY_FILE = path.join(DATA_DIR, 'encryption.key');
 // Match the Deplexo web-service port; an injected PORT still takes precedence.
 const PORT = Number(process.env.PORT || 3000);
-const API_VERSION = '2026-11-24-account-center-v13';
+const API_VERSION = '2026-11-28-bitaccount-link-v1';
 const PUBLIC_URL = String(process.env.BITCIDER_PUBLIC_URL || '').replace(/\/+$/, '');
 const app = express();
 const browserBridges = new Map();
@@ -86,6 +86,10 @@ app.use('/api/bitconnection', express.json({ limit: '2mb' }), createBitConnectio
   },
   dataFile: path.join(DATA_DIR, 'bitconnection.json'),
   exposeAdminStore: store => { bitConnectionAdminStore = store; },
+  linkBitCiderAccount: linkBitConnectionAccountToCider,
+  getLinkedCiderAccountId: getLinkedCiderAccountIdForBitConnection,
+  getLinkedBitConnectionAccountId: getLinkedBitConnectionAccountIdForCider,
+  ensureCiderSessionForLinkedBitConnection,
   maxPartySize: 30,
   iceConfig: {
     stunUrls: process.env.BITCONNECTION_STUN_URLS,
@@ -500,6 +504,155 @@ function accountConnection(user) {
     scopes: Array.isArray(user.scopes) ? user.scopes : [],
     connectedAt: user.connectedAt || null
   };
+}
+
+function findLinkedBitCiderAccount(bitConnectionAccountId, sourceStore = readStore()) {
+  if (!bitConnectionAccountId) return null;
+  for (const [accountId, account] of Object.entries(sourceStore.accounts || {})) {
+    if (account?.linkedBitConnectionAccountId === bitConnectionAccountId && !account.suspendedAt) {
+      return { accountId, account };
+    }
+  }
+  return null;
+}
+
+function getLinkedCiderAccountIdForBitConnection(bitConnectionAccountId) {
+  return findLinkedBitCiderAccount(bitConnectionAccountId)?.accountId || null;
+}
+
+function getLinkedBitConnectionAccountIdForCider(ciderAccountId) {
+  const account = readStore().accounts?.[ciderAccountId];
+  return typeof account?.linkedBitConnectionAccountId === 'string'
+    ? account.linkedBitConnectionAccountId
+    : null;
+}
+
+async function linkBitConnectionAccountToCider({ bitConnectionAccountId, bitConnectionAccount, req, res }) {
+  if (!bitConnectionAccountId || !bitConnectionAccount || bitConnectionAccount.suspendedAt) {
+    return { status: 401, error: 'BITCONNECTION_SIGN_IN_REQUIRED', message: 'Sign in to your BitConnection account before linking it.' };
+  }
+
+  const current = getUserSession(req, res);
+  const sessionId = current.sessionId;
+  const result = await updateStore(store => {
+    const sessionHash = hashSessionId(sessionId);
+    const activeAuth = store.authSessions[sessionHash];
+    const activeAccount = activeAuth && Date.parse(activeAuth.expiresAt || 0) > Date.now()
+      ? store.accounts[activeAuth.accountId]
+      : null;
+
+    if (activeAccount && !activeAccount.suspendedAt) {
+      if (activeAccount.linkedBitConnectionAccountId
+        && activeAccount.linkedBitConnectionAccountId !== bitConnectionAccountId) {
+        return {
+          status: 409,
+          error: 'BITCIDER_ACCOUNT_ALREADY_LINKED',
+          message: 'This BitCider account is already linked to a different BitConnection account.',
+          write: false
+        };
+      }
+      activeAccount.linkedBitConnectionAccountId = bitConnectionAccountId;
+      activeAccount.linkedBitConnectionUsername = bitConnectionAccount.username || null;
+      activeAccount.identityProvider = activeAccount.password?.hash || activeAccount.accountKeyHash
+        ? 'linked'
+        : 'bitconnection';
+      activeAccount.linkedAt ||= new Date().toISOString();
+      return {
+        ok: true,
+        accountId: activeAuth.accountId,
+        alreadyLinked: activeAccount.linkedAt !== activeAccount.linkedAt,
+        identityProvider: activeAccount.identityProvider
+      };
+    }
+
+    const pendingConnection = accountConnection(store.sessions[sessionId]);
+    let linked = findLinkedBitCiderAccount(bitConnectionAccountId, store);
+    let accountId = linked?.accountId || null;
+    let account = linked?.account || null;
+
+    if (account && pendingConnection && accountConnection(account)) {
+      return {
+        status: 409,
+        error: 'CIDER_CONNECTION_ALREADY_CONFIGURED',
+        message: 'This BitConnection account is already linked to a BitCider account with a saved Cider connection. Sign in to that linked account before changing its Cider connection.',
+        write: false
+      };
+    }
+
+    if (!account) {
+      accountId = crypto.randomBytes(24).toString('base64url');
+      account = {
+        identityProvider: 'bitconnection',
+        linkedBitConnectionAccountId: bitConnectionAccountId,
+        linkedBitConnectionUsername: bitConnectionAccount.username || null,
+        linkedAt: new Date().toISOString(),
+        createdAt: bitConnectionAccount.createdAt || new Date().toISOString(),
+        webAuthnUserId: crypto.randomBytes(32).toString('base64url'),
+        passkeys: []
+      };
+      store.accounts[accountId] = account;
+    }
+
+    if (pendingConnection) Object.assign(account, pendingConnection);
+    delete store.sessions[sessionId];
+    delete store.authSessions[sessionHash];
+    const sessionInfo = createAuthenticatedSession(store, accountId, res, req);
+    return {
+      ok: true,
+      accountId,
+      alreadyLinked: Boolean(linked),
+      newlyCreated: !linked,
+      identityProvider: account.identityProvider || 'bitconnection',
+      evictedDevice: sessionInfo.evictedDevice || null
+    };
+  });
+
+  if (result.status) return result;
+  return {
+    ok: true,
+    linked: true,
+    alreadyLinked: Boolean(result.alreadyLinked),
+    newlyCreated: Boolean(result.newlyCreated),
+    identityProvider: result.identityProvider,
+    evictedDevice: result.evictedDevice || null
+  };
+}
+
+async function ensureCiderSessionForLinkedBitConnection({ bitConnectionAccountId, req, res }) {
+  const linked = findLinkedBitCiderAccount(bitConnectionAccountId);
+  if (!linked) return false;
+
+  const current = getUserSession(req, res);
+  if (current.authenticated) {
+    return current.accountId === linked.accountId;
+  }
+
+  const sessionId = current.sessionId;
+  const result = await updateStore(store => {
+    const account = store.accounts[linked.accountId];
+    if (!account || account.suspendedAt
+      || account.linkedBitConnectionAccountId !== bitConnectionAccountId) {
+      return { ok: false, write: false };
+    }
+
+    const sessionHash = hashSessionId(sessionId);
+    const active = store.authSessions[sessionHash];
+    if (active && Date.parse(active.expiresAt || 0) > Date.now()) {
+      return { ok: false, write: false };
+    }
+
+    const pendingConnection = accountConnection(store.sessions[sessionId]);
+    if (pendingConnection && accountConnection(account)) {
+      return { ok: false, write: false };
+    }
+    if (pendingConnection) Object.assign(account, pendingConnection);
+
+    delete store.sessions[sessionId];
+    delete store.authSessions[sessionHash];
+    createAuthenticatedSession(store, linked.accountId, res, req);
+    return { ok: true };
+  });
+  return result.ok === true;
 }
 
 function tokenForUser(user) {
@@ -1161,7 +1314,10 @@ app.get('/api/status', localOnly, async (req, res) => {
       createdAt: user.createdAt,
       accountKeyConfigured: Boolean(user.accountKeyHash),
       passwordConfigured: Boolean(user.password?.hash),
-      recoveryCodeCount: Array.isArray(user.recoveryCodeHashes) ? user.recoveryCodeHashes.length : 0
+      recoveryCodeCount: Array.isArray(user.recoveryCodeHashes) ? user.recoveryCodeHashes.length : 0,
+      identityProvider: user.identityProvider || 'bitcider',
+      linkedBitConnectionUsername: user.linkedBitConnectionUsername || null,
+      linkedToBitConnection: Boolean(user.linkedBitConnectionAccountId)
     } : { authenticated: false },
     error: null
   });

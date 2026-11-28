@@ -253,7 +253,12 @@ function cleanImageDataUrl(value) {
 }
 
 function profileFor(data, identityId) {
-  return data.profiles[identityId] || null;
+  const direct = data.profiles[identityId] || null;
+  if (direct) return direct;
+  if (typeof identityId === 'string' && identityId.startsWith('bitaccount:')) {
+    return data.profiles['bitconnection:' + identityId.slice('bitaccount:'.length)] || null;
+  }
+  return null;
 }
 
 function usernameAvailable(data, username, excludeIdentityId = '') {
@@ -401,7 +406,7 @@ export function bitConnectionHealthPayload(maxPartySize = 30) {
     stage: 'listening-party-workspace-v1',
     capabilities: {
       independentAccounts: 'enabled',
-      bitCiderAccountLinking: 'explicit-choice',
+      bitCiderAccountLinking: 'explicit-shared-bitaccount-identity',
       ciderAddonCreation: 'never',
       hostProfiles: 'enabled',
       roomCreation: 'enabled',
@@ -452,7 +457,11 @@ export function createBitConnectionRouter({
   decryptProviderCredential = null,
   providerCredentialEncryptionConfigured = () => false,
   automixDirectory,
-  exposeAdminStore = null
+  exposeAdminStore = null,
+  linkBitCiderAccount = async () => ({ status: 503, error: 'BITACCOUNT_LINK_UNAVAILABLE', message: 'BitAccount linking is not available on this deployment yet.' }),
+  getLinkedCiderAccountId = () => null,
+  getLinkedBitConnectionAccountId = () => null,
+  ensureCiderSessionForLinkedBitConnection = async () => false
 } = {}) {
   if (!dataFile) throw new TypeError('BitConnection dataFile is required.');
   const store = createDataStore(dataFile);
@@ -551,7 +560,9 @@ export function createBitConnectionRouter({
       if (!cider?.authenticated || !cider.accountId) return null;
       return {
         type: 'bitcider',
-        identityId: 'cider:' + cider.accountId,
+        identityId: getLinkedBitConnectionAccountId(cider.accountId)
+          ? 'bitaccount:' + getLinkedBitConnectionAccountId(cider.accountId)
+          : 'cider:' + cider.accountId,
         accountId: cider.accountId,
         username: null,
         csrfToken: csrfTokenForCiderSession(cider.sessionId)
@@ -561,7 +572,9 @@ export function createBitConnectionRouter({
     if (!session.authenticated || !session.accountId) return null;
     return {
       type: 'bitconnection',
-      identityId: 'bitconnection:' + session.accountId,
+      identityId: getLinkedCiderAccountId(session.accountId)
+        ? 'bitaccount:' + session.accountId
+        : 'bitconnection:' + session.accountId,
       accountId: session.accountId,
       username: session.account.username,
       csrfToken: tokenForSession(secret, session.sessionId),
@@ -1022,7 +1035,18 @@ export function createBitConnectionRouter({
   });
 
 
-  router.get('/account', (req, res) => {
+  router.get('/account', async (req, res) => {
+    const accountSession = activeSession(req, res);
+    const linkedCiderAccountId = accountSession.authenticated
+      ? getLinkedCiderAccountId(accountSession.accountId)
+      : null;
+    if (linkedCiderAccountId) {
+      await ensureCiderSessionForLinkedBitConnection({
+        bitConnectionAccountId: accountSession.accountId,
+        req,
+        res
+      }).catch(() => false);
+    }
     const identityMode = req.get('x-bitconnection-identity') || '';
     if (identityMode === 'bitcider') {
       const identity = identityForRequest(req, res);
@@ -1062,13 +1086,75 @@ export function createBitConnectionRouter({
           updatedAt: profile.updatedAt
         } : null,
       csrfToken: tokenForSession(secret, session.sessionId),
-      bitCiderAccountAvailable: Boolean(cider?.authenticated && cider?.accountId),
+      bitCiderAccountAvailable: Boolean((cider?.authenticated && cider?.accountId) || linkedCiderAccountId),
+      linkedToBitCider: Boolean(linkedCiderAccountId),
       maxPartySize: maximum,
       passkeyCount: session.authenticated ? publicPasskeys(session.account).length : 0
     });
   });
 
 
+
+  router.post('/account/link-bitcider', bitConnectionCsrf, rateRegister, async (req, res) => {
+    const session = activeSession(req, res);
+    if (!session.authenticated || !session.accountId) {
+      return res.status(401).json({
+        error: 'BITCONNECTION_SIGN_IN_REQUIRED',
+        message: 'Sign in to your existing BitConnection account before linking it to BitCider.'
+      });
+    }
+
+    try {
+      const result = await linkBitCiderAccount({
+        bitConnectionAccountId: session.accountId,
+        bitConnectionAccount: session.account,
+        req,
+        res
+      });
+      if (!result?.ok) {
+        return res.status(result?.status || 500).json({
+          error: result?.error || 'BITACCOUNT_LINK_FAILED',
+          message: result?.message || 'Could not link this BitConnection account to BitCider.'
+        });
+      }
+
+      const oldIdentityId = 'bitconnection:' + session.accountId;
+      const sharedIdentityId = 'bitaccount:' + session.accountId;
+      await store.update(data => {
+        const oldProfile = data.profiles[oldIdentityId];
+        if (oldProfile && !data.profiles[sharedIdentityId]) {
+          data.profiles[sharedIdentityId] = oldProfile;
+        }
+        if (data.providerConnections[oldIdentityId] && !data.providerConnections[sharedIdentityId]) {
+          data.providerConnections[sharedIdentityId] = data.providerConnections[oldIdentityId];
+        }
+        for (const room of Object.values(data.rooms || {})) {
+          if (room.hostIdentityId === oldIdentityId) room.hostIdentityId = sharedIdentityId;
+          if (Array.isArray(room.members)) {
+            for (const member of room.members) {
+              if (member?.identityId === oldIdentityId) member.identityId = sharedIdentityId;
+            }
+          }
+        }
+        return { ok: true };
+      });
+
+      res.set('Cache-Control', 'no-store');
+      return res.json({
+        ok: true,
+        linked: true,
+        alreadyLinked: result.alreadyLinked === true,
+        newlyCreated: result.newlyCreated === true,
+        identityProvider: result.identityProvider || 'bitconnection'
+      });
+    } catch (error) {
+      console.error('BitAccount link to BitCider failed:', error.message);
+      return res.status(500).json({
+        error: 'BITACCOUNT_LINK_FAILED',
+        message: 'Could not link this BitConnection account to BitCider. Your existing BitConnection account was not deleted.'
+      });
+    }
+  });
 
   function appleMusicAuthHeaders(userMediaToken, webPlayerBearer) {
     return {
