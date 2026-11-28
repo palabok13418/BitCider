@@ -669,8 +669,11 @@ function PartyRoomExperience({
   }
 
   function selectedSourceBaseUrl() {
-    if (playbackSource === 'cider') return ciderAddonBaseUrl;
-    if (playbackSource === 'ccustom') return String(customSourceManifestUrl || '').replace(/\\/manifest\\.json(?:[?#].*)?$/i, '');
+    if (playbackSource === 'cider') return String(ciderAddonBaseUrl || '').replace(/\\/$/, '');
+    if (playbackSource === 'ccustom') {
+      const manifest = String(customSourceManifestUrl || '').trim();
+      return manifest.endsWith('/manifest.json') ? manifest.slice(0, -'/manifest.json'.length) : '';
+    }
     return '';
   }
 
@@ -711,7 +714,7 @@ function PartyRoomExperience({
         if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
           throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
         }
-        url = base.replace(/\\/$/, '') + '/search?' + new URLSearchParams({ q: query });
+        url = base + '/search?' + new URLSearchParams({ q: query });
       }
       const response = await fetch(url, { credentials, cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
@@ -750,7 +753,7 @@ function PartyRoomExperience({
           throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
         }
         credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
-        const response = await fetch(base.replace(/\\/$/, '') + '/stream/' + encodeURIComponent(id) + (playbackSource === 'cider' ? '?quality=high' : ''), {
+        const response = await fetch(base + '/stream/' + encodeURIComponent(id) + (playbackSource === 'cider' ? '?quality=high' : ''), {
           credentials, cache: 'no-store'
         });
         payload = await response.json().catch(() => ({}));
@@ -816,37 +819,8 @@ function PartyRoomExperience({
   }
 
   async function playRecommendedAppleMusicItem(item) {
-    if (!isHost) {
-      setPlaybackMessage('Only the host can start Apple Music playback for this party.');
-      return;
-    }
-    if (!/^[0-9]{1,20}$/.test(String(item?.id || item?.appleMusicSongId || ''))) {
-      setPlaybackMessage('This item does not include a playable Apple Music catalog song ID.');
-      return;
-    }
-    setQueueBusy(true);
-    setPlaybackMessage(appleMusicPlaybackStatus === 'ready'
-      ? 'Opening Apple Music authorization and starting the full-length track…'
-      : 'Opening Apple Music’s embedded player…');
-    try {
-      const result = await onPlayAppleMusicTrack(item);
-      if (result?.playbackMode === 'embed' && result.embedUrl) {
-        setAppleMusicEmbed({
-          url: result.embedUrl,
-          openUrl: String(item.url || item.appleMusicUrl || result.embedUrl.replace('https://embed.music.apple.com/', 'https://music.apple.com/')),
-          title: String(item.title || 'Apple Music track'),
-          artist: String(item.artist || '')
-        });
-        setPlaybackMessage('Apple Music's embedded player is separate from party audio. Choose tracks from your saved party source to send audio to guests.');
-      } else {
-        setAppleMusicEmbed(null);
-        setPlaybackMessage('Apple Music is playing locally; choose a track from the selected party source to share audio with guests.');
-      }
-    } catch (error) {
-      setPlaybackMessage(error.message || 'Apple Music could not start this track.');
-    } finally {
-      setQueueBusy(false);
-    }
+    await searchRecommendationInBitMono(item);
+    setPlaybackMessage('Find the matching song in ' + sourceLabel + ' results, then prepare and start it for the party.');
   }
 
   async function startPreparedBitMonoTrack(track) {
@@ -878,13 +852,28 @@ function PartyRoomExperience({
     setBitMonoLoading(previous => ({ ...previous, [key]: true }));
     setBitMonoSearches(previous => ({ ...previous, [key]: null }));
     try {
-      const query = [item.title, item.artist].filter(Boolean).join(' ');
-      const response = await fetch('/bitmono/search?' + new URLSearchParams({ q: query }), {
-        credentials: 'same-origin', cache: 'no-store'
-      });
+      const query = [item.title, item.artist].filter(Boolean).join(' ').trim();
+      if (!query) throw new Error('This recommendation is missing a title or artist.');
+      let url;
+      let credentials = 'omit';
+      if (playbackSource === 'bitmono') {
+        url = '/bitmono/search?' + new URLSearchParams({ q: query });
+        credentials = 'same-origin';
+      } else {
+        const base = selectedSourceBaseUrl();
+        if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
+        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
+          throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
+        }
+        url = base + '/search?' + new URLSearchParams({ q: query });
+        credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
+      }
+      const response = await fetch(url, { credentials, cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
-      const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
+      if (!response.ok) throw new Error(payload.message || payload.error || (sourceLabel + ' search is unavailable.'));
+      const tracks = playbackSource === 'bitmono'
+        ? (Array.isArray(payload.tracks) ? payload.tracks : [])
+        : normalizeSourceSearchRows(payload);
       const appleMusicSongId = item.type === 'songs' && /^[0-9]{1,20}$/.test(String(item.id || '')) ? String(item.id) : '';
       let appleMusicStorefront = 'us';
       try {
@@ -896,8 +885,11 @@ function PartyRoomExperience({
         ...(appleMusicSongId ? { appleMusicSongId, appleMusicStorefront } : {})
       }));
       setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: matchedTracks, error: '' } }));
+      setBrowserQuery(query);
+      setBrowserSearchResults(matchedTracks);
+      setBrowserSearchError(matchedTracks.length ? '' : 'No ' + sourceLabel + ' matches were found for this recommendation.');
     } catch (error) {
-      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || 'Bit Mono search failed.' } }));
+      setBitMonoSearches(previous => ({ ...previous, [key]: { tracks: [], error: error.message || sourceLabel + ' search failed.' } }));
     } finally {
       setBitMonoLoading(previous => ({ ...previous, [key]: false }));
     }
@@ -1190,13 +1182,13 @@ function PartyRoomExperience({
         document.body
       )}
       {browserOpen && createPortal(
-        <div className="bc-party-browser-overlay" role="dialog" aria-modal="true" aria-label="Apple Music Browser" onMouseDown={event => { if (event.target === event.currentTarget) setBrowserOpen(false); }}>
+        <div className="bc-party-browser-overlay" role="dialog" aria-modal="true" aria-label="Party Audio Browser" onMouseDown={event => { if (event.target === event.currentTarget) setBrowserOpen(false); }}>
           <section className="bc-party-browser-panel">
             <header className="bc-party-browser-heading">
               <div>
-                <span>APPLE MUSIC · PERSONALIZED FOR YOU</span>
-                <h2>Browser</h2>
-                <p>Your Apple Music recommendations, with Bit Mono catalogue matches.</p>
+                <span>${sourceLabel.toUpperCase()} · SELECTED PARTY SOURCE</span>
+                <h2>{sourceLabel} Browser</h2>
+                <p>Search Apple Music recommendations, then find matching tracks in ${sourceLabel} for party playback.</p>
               </div>
               <button type="button" onClick={() => setBrowserOpen(false)} aria-label="Close Browser"><Icon name="close" size={20}/></button>
             </header>
@@ -1232,7 +1224,7 @@ function PartyRoomExperience({
                   loading="lazy"
                   referrerPolicy="strict-origin-when-cross-origin"
                 />
-                <p>Sign in to Apple Music in the player for full-length playback. The host must share this browser tab for party guests to hear it. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
+                <p>Sign in to Apple Music in the player for full-length playback. The Apple Music embed is not used as the party audio source. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
               </section>
             )}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
