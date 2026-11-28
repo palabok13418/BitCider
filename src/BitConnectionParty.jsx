@@ -155,16 +155,16 @@ function PartyRoomExperience({
   onRoomState = () => {},
   onLeave = () => {},
   audioRef,
-  hostAudioState = 'idle',
-  hostAudioError = '',
-  onStartHostAudio = () => {},
-  onStopHostAudio = () => {},
   audioBlocked = false,
   onResumeAudio = () => {},
-  onPlayBitMonoTrack = async () => {},
-  onControlBitMono = async () => {},
-  onSeekBitMono = async () => {},
-  onPlayAppleMusicTrack = async () => {},
+  playbackSource = 'bitmono',
+  customSourceManifestUrl = '',
+  ciderAddonBaseUrl = '',
+  ciderBridgeState = 'idle',
+  ciderBridgeMessage = '',
+  onPlayPartySourceTrack = async () => {},
+  onControlPartySource = async () => {},
+  onSeekPartySource = async () => {},
   onSearchAppleMusicCatalog = async () => [],
   appleMusicPlaybackStatus = 'checking',
   appleMusicPlaybackError = '',
@@ -372,14 +372,14 @@ function PartyRoomExperience({
         if (!isHost) throw new Error('Only the host can control the Apple Music playback session.');
         await onControlAppleMusic(action);
         setPlaybackMessage('Apple Music playback control updated.');
-      } else if (track?.source === 'bitmono') {
-        if (!isHost) throw new Error('Only the host can control the active Bit Mono audio stream.');
+      } else if (['bitmono', 'ccustom', 'cider'].includes(track?.source)) {
+        if (!isHost) throw new Error('Only the host can control the active party audio source.');
         if (action === 'next' || action === 'previous') {
-          setPlaybackMessage('Queue-based next and previous playback will be connected in the next player pass.');
+          setPlaybackMessage('Use the selected source Browser to choose the next track.');
           return;
         }
-        await onControlBitMono(action);
-        setPlaybackMessage('Bit Mono playback control updated.');
+        await onControlPartySource(action);
+        setPlaybackMessage('Party audio control updated.');
       } else {
         if (action === 'toggle') await session?.updatePlayback?.({ isPlaying: !isPlaying });
         setPlaybackMessage('Party playback state was sent. Direct BitChord source controls still need the player bridge.');
@@ -397,8 +397,8 @@ function PartyRoomExperience({
     }
     setProgressSeconds(next);
     try {
-      if (track?.source === 'apple-music' && isHost) await onSeekAppleMusic(next);
-      else if (track?.source === 'bitmono' && isHost) await onSeekBitMono(next);
+      if (['bitmono', 'ccustom', 'cider'].includes(track?.source) && isHost) await onSeekPartySource(next);
+      else if (track?.source === 'apple-music' && isHost) await onSeekAppleMusic(next);
       else await session?.updatePlayback?.({ positionSeconds: next });
       window.dispatchEvent(new CustomEvent('bitconnection:playback-control', {
         detail: { roomId: room?.roomId, action: 'seek', positionSeconds: next }
@@ -564,7 +564,7 @@ function PartyRoomExperience({
       await session.moderateMember(person.participantId, action);
       await refreshState();
       if (action === 'promote' && person.participantId === currentId) {
-        setPlaybackMessage('You are now the host. Start sharing your BitChord tab audio to host the party stream.');
+        setPlaybackMessage('You are now the host. Choose a track from your saved party audio source in the Browser to start the stream.');
       }
     } catch (error) {
       setPlaybackMessage(error.message || 'That member action failed.');
@@ -665,6 +665,28 @@ function PartyRoomExperience({
     }
   }
 
+  function selectedSourceBaseUrl() {
+    if (playbackSource === 'cider') return ciderAddonBaseUrl;
+    if (playbackSource === 'ccustom') return String(customSourceManifestUrl || '').replace(/\\/manifest\\.json(?:[?#].*)?$/i, '');
+    return '';
+  }
+
+  function normalizeSourceSearchRows(payload) {
+    const rows = Array.isArray(payload?.tracks) ? payload.tracks
+      : Array.isArray(payload?.results) ? payload.results
+        : Array.isArray(payload?.data?.tracks) ? payload.data.tracks : [];
+    return rows.slice(0, 30).map(row => ({
+      ...row,
+      id: String(row.id || row.trackId || row.catalogId || ''),
+      title: String(row.title || row.name || row.attributes?.name || ''),
+      artist: String(row.artist || row.artistName || row.attributes?.artistName || ''),
+      album: String(row.album || row.albumName || row.attributes?.albumName || ''),
+      duration: Number(row.duration || row.durationSeconds || (row.durationInMillis ? row.durationInMillis / 1000 : 0)),
+      thumbnailUrl: String(row.thumbnailUrl || row.artworkURL || row.artworkUrl || row.artwork || row.attributes?.artwork?.url || ''),
+      audioQuality: String(row.audioQuality || row.quality || '')
+    })).filter(row => row.id && row.title && row.artist);
+  }
+
   async function searchBitMonoCatalog(event) {
     event?.preventDefault?.();
     const query = browserQuery.trim();
@@ -673,15 +695,31 @@ function PartyRoomExperience({
     setBrowserSearchError('');
     setBrowserSearchResults([]);
     try {
-      const response = await fetch('/bitmono/search?' + new URLSearchParams({ q: query }), {
-        credentials: 'same-origin', cache: 'no-store'
-      });
+      let url;
+      let credentials = 'omit';
+      if (playbackSource === 'bitmono') {
+        url = '/bitmono/search?' + new URLSearchParams({ q: query });
+        credentials = 'same-origin';
+      } else {
+        const base = selectedSourceBaseUrl();
+        if (!base) throw new Error(playbackSource === 'cider'
+          ? 'Cider is not linked in BitAccount Center on this device.'
+          : 'Add your CCustom manifest URL in BitAccount Center first.');
+        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
+          throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
+        }
+        url = base.replace(/\\/$/, '') + '/search?' + new URLSearchParams({ q: query });
+      }
+      const response = await fetch(url, { credentials, cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.message || 'Bit Mono search is unavailable.');
-      setBrowserSearchResults(Array.isArray(payload.tracks) ? payload.tracks.slice(0, 30) : []);
-      if (!payload.tracks?.length) setBrowserSearchError('No Bit Mono matches were found for that search.');
+      if (!response.ok) throw new Error(payload.message || payload.error || (playbackSource + ' search is unavailable.'));
+      const tracks = playbackSource === 'bitmono'
+        ? (Array.isArray(payload.tracks) ? payload.tracks.slice(0, 30) : [])
+        : normalizeSourceSearchRows(payload);
+      setBrowserSearchResults(tracks);
+      if (!tracks.length) setBrowserSearchError('No ' + ({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource] || 'audio source') + ' matches were found.');
     } catch (error) {
-      setBrowserSearchError(error.message || 'Could not search Bit Mono.');
+      setBrowserSearchError(error.message || 'Could not search the selected audio source.');
     } finally {
       setBrowserSearchBusy(false);
     }
@@ -689,42 +727,62 @@ function PartyRoomExperience({
 
   async function prepareBitMonoTrack(track) {
     const id = String(track?.id || '');
-    if (!/^(?:mono_|dzr_)[A-Za-z0-9_-]{1,128}$/.test(id)) return;
+    if (!id || id.length > 180) return;
+    if (playbackSource === 'bitmono' && !/^(?:mono_|dzr_)[A-Za-z0-9_-]{1,128}$/.test(id)) return;
     setBitMonoPrepareBusy(previous => ({ ...previous, [id]: true }));
     setPlaybackMessage('');
     try {
-      const response = await fetch('/bitmono/stream/' + encodeURIComponent(id) + '?quality=auto', {
-        credentials: 'same-origin', cache: 'no-store'
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.message || payload.error || 'Bit Mono could not prepare this track.');
-      const resolved = new URL(payload.url || '', window.location.origin);
-      if (!resolved.pathname.startsWith('/bitmono/audio/')) {
-        throw new Error('Bit Mono returned an invalid audio cache URL.');
+      let payload;
+      let credentials = 'omit';
+      if (playbackSource === 'bitmono') {
+        const response = await fetch('/bitmono/stream/' + encodeURIComponent(id) + '?quality=auto', {
+          credentials: 'same-origin', cache: 'no-store'
+        });
+        payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || payload.error || 'BitMono could not prepare this track.');
+      } else {
+        const base = selectedSourceBaseUrl();
+        if (!base) throw new Error('The selected source is not configured in BitAccount Center.');
+        if (playbackSource === 'cider' && ciderBridgeState !== 'connected') {
+          throw new Error(ciderBridgeMessage || 'Cider is not connected on this device yet.');
+        }
+        credentials = playbackSource === 'cider' ? 'same-origin' : 'omit';
+        const response = await fetch(base.replace(/\\/$/, '') + '/stream/' + encodeURIComponent(id) + (playbackSource === 'cider' ? '?quality=high' : ''), {
+          credentials, cache: 'no-store'
+        });
+        payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || payload.error || 'The selected add-on could not prepare this track.');
+      }
+      const resolved = new URL(payload.url || payload.streamUrl || '', playbackSource === 'bitmono' ? window.location.origin : selectedSourceBaseUrl() + '/');
+      if (playbackSource === 'bitmono' && !resolved.pathname.startsWith('/bitmono/audio/')) {
+        throw new Error('BitMono returned an invalid audio cache URL.');
+      }
+      if (playbackSource !== 'bitmono' && resolved.protocol !== 'https:' && resolved.origin !== window.location.origin) {
+        throw new Error('The selected source returned an insecure stream URL.');
       }
       const stream = {
-        url: resolved.pathname + resolved.search,
+        url: playbackSource === 'bitmono' ? resolved.pathname + resolved.search : resolved.href,
         track: {
           trackId: id,
-          title: String(track.title || '').slice(0, 180),
-          artist: String(track.artist || '').slice(0, 180),
-          durationSeconds: Number(track.duration || track.durationSeconds || 0),
-          thumbnailUrl: String(track.artworkURL || track.thumbnailUrl || track.artwork || ''),
-          audioQuality: String(payload.audioQuality || track.audioQuality || 'LOSSLESS'),
+          title: String(track.title || track.name || '').slice(0, 180),
+          artist: String(track.artist || track.artistName || '').slice(0, 180),
+          durationSeconds: Number(track.duration || track.durationSeconds || (track.durationInMillis ? track.durationInMillis / 1000 : 0)),
+          thumbnailUrl: String(track.artworkURL || track.thumbnailUrl || track.artworkUrl || track.artwork || ''),
+          audioQuality: String(payload.audioQuality || payload.quality || track.audioQuality || track.quality || ''),
           ...( /^[0-9]{1,20}$/.test(String(track.appleMusicSongId || '')) ? { appleMusicSongId: String(track.appleMusicSongId) } : {}),
           ...( /^[a-z]{2}$/.test(String(track.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(track.appleMusicStorefront).toLowerCase() } : {})
         },
         format: String(payload.format || track.format || ''),
-        quality: String(payload.audioQuality || track.audioQuality || ''),
-        mimeType: String(payload.mimeType || '')
+        quality: String(payload.audioQuality || payload.quality || track.audioQuality || ''),
+        mimeType: String(payload.mimeType || payload.contentType || track.mimeType || '')
       };
       if (!stream.track.title || !stream.track.artist || !Number.isFinite(stream.track.durationSeconds) || stream.track.durationSeconds <= 0) {
-        throw new Error('Bit Mono returned incomplete track metadata.');
+        throw new Error('The selected source returned incomplete track metadata.');
       }
       setBitMonoPrepared(previous => ({ ...previous, [id]: stream }));
-      setPlaybackMessage('Bit Mono audio is prepared and ready for the host.');
+      setPlaybackMessage(({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource]) + ' audio is prepared and ready for the host.');
     } catch (error) {
-      setPlaybackMessage(error.message || 'Could not prepare this Bit Mono track.');
+      setPlaybackMessage(error.message || 'Could not prepare this track.');
     } finally {
       setBitMonoPrepareBusy(previous => ({ ...previous, [id]: false }));
     }
@@ -736,7 +794,7 @@ function PartyRoomExperience({
       await session.updateQueue({
         action: 'add',
         track: {
-          source: 'bitmono',
+          source: playbackSource,
           id: track.id,
           title: track.title,
           artist: track.artist,
@@ -797,8 +855,8 @@ function PartyRoomExperience({
     }
     try {
       setQueueBusy(true);
-      await onPlayBitMonoTrack(prepared.track, prepared.url, prepared.mimeType);
-      setPlaybackMessage('Bit Mono is now playing for the party.');
+      await onPlayPartySourceTrack(prepared.track, prepared.url, prepared.mimeType, playbackSource);
+      setPlaybackMessage(({ bitmono: 'BitMono', ccustom: 'CCustom', cider: 'Cider' }[playbackSource]) + ' is now playing for the party.');
     } catch (error) {
       setPlaybackMessage(error.message || 'Could not start Bit Mono playback.');
     } finally {
