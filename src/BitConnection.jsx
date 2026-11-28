@@ -1328,6 +1328,7 @@ function JoinPublicPartyWindow({ roomId }) {
           onRoomState={setRoomState}
           onLeave={leaveParty}
           audioRef={audioRef}
+          playbackSource={room?.playbackSource || roomState?.playbackState?.source || 'bitmono'}
           audioBlocked={audioBlocked}
           onResumeAudio={playAudio}
         />
