@@ -197,7 +197,6 @@ function PartyRoomExperience({
   const [appleCatalogBusy, setAppleCatalogBusy] = useState(false);
   const [appleCatalogError, setAppleCatalogError] = useState('');
   const [appleCatalogFormatFilter, setAppleCatalogFormatFilter] = useState('all');
-  const [appleMusicEmbed, setAppleMusicEmbed] = useState(null);
   const [bitMonoPrepared, setBitMonoPrepared] = useState({});
   const [bitMonoPrepareBusy, setBitMonoPrepareBusy] = useState({});
   const [appleMusicLyrics, setAppleMusicLyrics] = useState([]);
@@ -817,10 +816,6 @@ function PartyRoomExperience({
     }
   }
 
-  async function playRecommendedAppleMusicItem(item) {
-    await searchRecommendationInBitMono(item);
-    setPlaybackMessage('Find the matching song in ' + sourceLabel + ' results, then prepare and start it for the party.');
-  }
 
   async function startPreparedBitMonoTrack(track) {
     const prepared = bitMonoPrepared[String(track.id || '')];
@@ -1196,25 +1191,7 @@ function PartyRoomExperience({
               <button type="button" onClick={() => void loadAppleMusicBrowser()} disabled={browserLoading}><Icon name="repeat" size={14}/>{browserLoading ? 'Loading…' : 'Refresh'}</button>
             </div>
             <div className="bc-party-inline-status" role="status">Party playback source: {sourceLabel}. Apple Music is available here for catalogue discovery and timed lyrics only.</div>
-            {appleMusicEmbed && (
-              <section className="bc-party-apple-embed" aria-label="Apple Music player">
-                <header>
-                  <div><strong>{appleMusicEmbed.title}</strong><small>{appleMusicEmbed.artist || 'Apple Music'}</small></div>
-                  <button type="button" onClick={() => setAppleMusicEmbed(null)} aria-label="Close Apple Music player"><Icon name="close" size={17}/></button>
-                </header>
-                <iframe
-                  title={'Apple Music player — ' + appleMusicEmbed.title}
-                  src={appleMusicEmbed.url}
-                  width="100%"
-                  height="175"
-                  frameBorder="0"
-                  allow="autoplay *; encrypted-media *; fullscreen *; clipboard-write"
-                  loading="lazy"
-                  referrerPolicy="strict-origin-when-cross-origin"
-                />
-                <p>Apple Music is used here for discovery only. Find this track in {sourceLabel} to play it for the party. <a href={appleMusicEmbed.openUrl} target="_blank" rel="noopener noreferrer">Open in Apple Music</a></p>
-              </section>
-            )}
+}
             <form className="bc-party-browser-search" onSubmit={searchAppleCatalog}>
               <Icon name="music" size={17}/>
               <input value={appleCatalogQuery} onChange={event => setAppleCatalogQuery(event.target.value)} placeholder="Search the Apple Music catalog…" aria-label="Search Apple Music catalog"/>
