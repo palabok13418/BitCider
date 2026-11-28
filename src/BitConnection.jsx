@@ -1292,47 +1292,6 @@ function JoinPublicPartyWindow({ roomId }) {
       setAudioBlocked(true);
     }
   }
-  async function startPromotedHostAudio() {
-    const session = sessionRef.current;
-    if (!session || hostAudioState === 'requesting' || hostAudioState === 'streaming') return;
-    session.role = 'host';
-    setHostAudioState('requesting');
-    setHostAudioError('');
-    // Start the native tab picker before awaiting anything so the click gesture is preserved.
-    const startPromise = startBitConnectionHostTransport({
-      session,
-      onRoomState: state => {
-        setRoomState(state);
-        if (state.room) setRoom(state.room);
-      },
-      onError: transportError => setHostAudioError(transportError.message || 'The room connection encountered an error.'),
-      onCaptureEnded: () => {
-        transportRef.current = null;
-        setHostAudioState('idle');
-        setHostAudioError('BitChord tab sharing stopped. Start sharing again to resume the room audio.');
-      }
-    });
-    const previousTransport = transportRef.current;
-    transportRef.current = null;
-    try {
-      if (previousTransport) await previousTransport.stop({ leave: false });
-      const transport = await startPromise;
-      transportRef.current = transport;
-      setHostAudioState('streaming');
-    } catch (transportError) {
-      setHostAudioState('idle');
-      setHostAudioError(transportError.message || 'Could not start BitChord tab audio.');
-    }
-  }
-
-  async function stopPromotedHostAudio() {
-    const transport = transportRef.current;
-    transportRef.current = null;
-    if (transport) await transport.stop({ leave: false });
-    setHostAudioState('idle');
-  }
-
-
   async function leaveParty() {
     const transport = transportRef.current;
     const session = sessionRef.current;
@@ -1369,10 +1328,6 @@ function JoinPublicPartyWindow({ roomId }) {
           onRoomState={setRoomState}
           onLeave={leaveParty}
           audioRef={audioRef}
-          hostAudioState={hostAudioState}
-          hostAudioError={hostAudioError}
-          onStartHostAudio={startPromotedHostAudio}
-          onStopHostAudio={stopPromotedHostAudio}
           audioBlocked={audioBlocked}
           onResumeAudio={playAudio}
         />
@@ -1424,8 +1379,12 @@ function CreateRoomWindow() {
   const [hostAudioError, setHostAudioError] = useState('');
   const hostTransportRef = useRef(null);
   const hostPlayerRef = useRef(null);
+  const ciderBridgeAbortRef = useRef(null);
+  const [ciderBridgeState, setCiderBridgeState] = useState('idle');
+  const [ciderBridgeMessage, setCiderBridgeMessage] = useState('');
+  const [ciderAddonBaseUrl, setCiderAddonBaseUrl] = useState('');
   const hostStreamEngineRef = useRef(null);
-  const hostAudioModeRef = useRef('tab');
+  const hostAudioModeRef = useRef('none');
   const appleMusicPlayerRef = useRef(null);
   const appleMusicUnsubscribeRef = useRef(null);
   const [appleMusicPlaybackStatus, setAppleMusicPlaybackStatus] = useState('checking');
@@ -1779,38 +1738,21 @@ function CreateRoomWindow() {
     }
   }
 
-  async function startHostAudio() {
-    if (!createdRoom?.room?.roomId || !hostSession || hostAudioState === 'requesting' || hostTransportRef.current) return;
-    setHostAudioState('requesting');
-    setHostAudioError('');
-    try {
-      const transport = await startBitConnectionHostTransport({
-        session: hostSession,
-        onRoomState: setRoomState,
-        onError: transportError => setHostAudioError(transportError.message || 'The room connection encountered an error.'),
-        onCaptureEnded: () => {
-          hostTransportRef.current = null;
-          setHostAudioState('idle');
-          setHostAudioError('BitChord tab sharing stopped. Start sharing again to resume the room audio.');
-        }
-      });
-      hostTransportRef.current = transport;
-      setHostAudioState('streaming');
-    } catch (transportError) {
-      setHostAudioState('idle');
-      setHostAudioError(transportError.message || 'Could not start BitChord tab audio.');
+  async function playPartySourceTrack(track, streamUrl, mimeType = '', source = profile?.playbackSource || 'bitmono') {
+    if (!hostSession || hostSession.role !== 'host') throw new Error('Only the host can start a party source stream.');
+    if (!['bitmono', 'ccustom', 'cider'].includes(source)) throw new Error('Choose BitMono, CCustom, or Cider in BitAccount Center.');
+    if (!track?.trackId || !streamUrl) throw new Error('The selected audio source did not return a playable stream.');
+    const streamLocation = new URL(String(streamUrl), window.location.href);
+    if (streamLocation.protocol !== 'https:' && streamLocation.origin !== window.location.origin) {
+      throw new Error('The party source returned an insecure audio URL.');
     }
-  }
-
-
-
-  async function playBitMonoTrack(track, streamUrl, mimeType = '') {
-    if (!hostSession || hostSession.role !== 'host') throw new Error('Only the host can start a Bit Mono stream.');
-    if (!track?.trackId || !String(streamUrl || '').startsWith('/bitmono/audio/')) throw new Error('The Bit Mono stream is not ready yet.');
+    if (source === 'bitmono' && !streamLocation.pathname.startsWith('/bitmono/audio/')) {
+      throw new Error('BitMono did not return a verified audio stream.');
+    }
     const player = hostPlayerRef.current;
     if (!player) throw new Error('The party audio player is not ready.');
     const cleanTrack = {
-      source: 'bitmono',
+      source,
       trackId: String(track.trackId),
       title: String(track.title || '').slice(0, 180),
       artist: String(track.artist || '').slice(0, 180),
@@ -1821,10 +1763,11 @@ function CreateRoomWindow() {
       ...( /^[a-z]{2}$/.test(String(track.appleMusicStorefront || '').toLowerCase()) ? { appleMusicStorefront: String(track.appleMusicStorefront).toLowerCase() } : {})
     };
     if (!cleanTrack.title || !cleanTrack.artist || !Number.isFinite(cleanTrack.durationSeconds) || cleanTrack.durationSeconds <= 0) {
-      throw new Error('The Bit Mono result is missing valid track metadata.');
+      throw new Error('The selected source returned incomplete track metadata.');
     }
 
     setHostAudioError('');
+    player.crossOrigin = 'anonymous';
     Reflect.apply(player.pause, player, []);
     await hostStreamEngineRef.current?.destroy?.();
     hostStreamEngineRef.current = null;
@@ -1836,7 +1779,7 @@ function CreateRoomWindow() {
     const playPromise = Reflect.apply(player.play, player, []);
     let startedNewTransport = false;
     let transportPromise = Promise.resolve(hostTransportRef.current);
-    if (!hostTransportRef.current || hostAudioModeRef.current !== 'bitmono') {
+    if (!hostTransportRef.current || hostAudioModeRef.current !== source) {
       if (hostTransportRef.current) {
         const old = hostTransportRef.current;
         hostTransportRef.current = null;
@@ -1858,10 +1801,10 @@ function CreateRoomWindow() {
 
     try {
       await Promise.all([transportPromise, playPromise]);
-      hostAudioModeRef.current = 'bitmono';
+      hostAudioModeRef.current = source;
       setHostAudioState('streaming');
       const result = await hostSession.updatePlayback({
-        source: 'bitmono', track: cleanTrack, isPlaying: true, positionSeconds: 0
+        source, track: cleanTrack, isPlaying: true, positionSeconds: 0
       });
       setRoomState(await hostSession.getState());
       return result;
@@ -1871,20 +1814,20 @@ function CreateRoomWindow() {
         hostTransportRef.current = null;
         await failedTransport.stop({ leave: false }).catch(() => {});
       }
-      if (startedNewTransport) hostAudioModeRef.current = 'tab';
+      if (startedNewTransport) hostAudioModeRef.current = 'none';
       const failedStreamEngine = hostStreamEngineRef.current;
       hostStreamEngineRef.current = null;
       if (failedStreamEngine) await failedStreamEngine.destroy().catch(() => {});
       Reflect.apply(player.pause, player, []);
       setHostAudioState('idle');
-      setHostAudioError(error.message || 'Could not start Bit Mono audio for the party.');
+      setHostAudioError(error.message || 'Could not start the selected audio source for the party.');
       throw error;
     }
   }
 
-  async function controlBitMonoPlayback(action) {
+  async function controlPartySourcePlayback(action) {
     const player = hostPlayerRef.current;
-    if (!player || hostAudioModeRef.current !== 'bitmono') return;
+    if (!player || !['bitmono', 'ccustom', 'cider'].includes(hostAudioModeRef.current)) return;
     if (action === 'toggle') {
       if (player.paused) await Reflect.apply(player.play, player, []);
       else Reflect.apply(player.pause, player, []);
@@ -1899,16 +1842,16 @@ function CreateRoomWindow() {
     setRoomState(await hostSession.getState());
   }
 
-  async function seekBitMonoPlayback(positionSeconds) {
+  async function seekPartySourcePlayback(positionSeconds) {
     const player = hostPlayerRef.current;
-    if (!player || hostAudioModeRef.current !== 'bitmono') return;
+    if (!player || !['bitmono', 'ccustom', 'cider'].includes(hostAudioModeRef.current)) return;
     const next = Math.max(0, Math.min(Number(player.duration || 86400), Number(positionSeconds) || 0));
     player.currentTime = next;
     await hostSession?.updatePlayback?.({ positionSeconds: next, isPlaying: !player.paused });
     setRoomState(await hostSession.getState());
   }
 
-  async function stopHostAudio() {
+  async function stopPartySourceAudio() {
     const transport = hostTransportRef.current;
     hostTransportRef.current = null;
     if (transport) await transport.stop({ leave: false });
@@ -1923,7 +1866,7 @@ function CreateRoomWindow() {
       await hostSession?.updatePlayback?.({ isPlaying: false, positionSeconds });
       if (hostSession?.getState) setRoomState(await hostSession.getState());
     }
-    hostAudioModeRef.current = 'tab';
+    hostAudioModeRef.current = 'none';
     setHostAudioState('idle');
   }
 
@@ -2070,13 +2013,18 @@ function CreateRoomWindow() {
           onLeave={leaveCreatedRoom}
           hostAudioState={hostAudioState}
           hostAudioError={hostAudioError}
-          onStartHostAudio={startHostAudio}
-          onStopHostAudio={stopHostAudio}
-          onPlayBitMonoTrack={playBitMonoTrack}
-          onControlBitMono={controlBitMonoPlayback}
-          onSeekBitMono={seekBitMonoPlayback}
+          onPlayPartySourceTrack={playPartySourceTrack}
+          onControlPartySource={controlPartySourcePlayback}
+          onSeekPartySource={seekPartySourcePlayback}
+          
+          
           onPlayAppleMusicTrack={playAppleMusicTrack}
           onSearchAppleMusicCatalog={searchAppleMusicCatalog}
+          playbackSource={profile?.playbackSource || createdRoom.room.playbackSource || 'bitmono'}
+          customSourceManifestUrl={profile?.customSourceManifestUrl || ''}
+          ciderAddonBaseUrl={ciderAddonBaseUrl}
+          ciderBridgeState={ciderBridgeState}
+          ciderBridgeMessage={ciderBridgeMessage}
           appleMusicPlaybackStatus={appleMusicPlaybackStatus}
           appleMusicPlaybackError={appleMusicPlaybackError}
           onControlAppleMusic={controlAppleMusic}
